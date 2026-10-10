@@ -187,9 +187,9 @@ class ProfileStore:
         paths = sorted(directory.glob("*.md"), key=lambda p: p.stem)[-limit:]
         return [(path.stem, path.read_text()) for path in paths]
 
-    def write_community_file(self, filename: str, content: str, message: str) -> None:
+    def write_community_file(self, filename: str, content: str, message: str, author: str = "community") -> None:
         (self.root / filename).write_text(content)
-        self._repo.commit([filename], message, author="community")
+        self._repo.commit([filename], message, author=author)
 
     def public(self, agent_id: str) -> PublicProfile | None:
         path = self._dir(agent_id) / "public.toml"
