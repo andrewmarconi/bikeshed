@@ -283,3 +283,34 @@ async def test_seed_is_recorded_and_fixes_post_order(tmp_path, community, script
         return [r["author"] for r in rows]
 
     assert await order(7) == await order(7)
+
+
+def add_control(store, agent_id="d", name="Dee"):
+    store.create(agent_id, "fake", "Seed temperament.", control=True)
+    store.set_public(agent_id, name, f"{name} headline", f"I am {name}.")
+    store.save_seed_public(agent_id)
+
+
+async def test_start_resets_control_agents_but_resume_does_not(tmp_path, community, scripted, runner_factory):
+    store, conn = community
+    add_control(store)
+    store.write_private("d", "lessons.md", "LEARNED")
+    agents = [*AGENTS, "d"]
+    runner = runner_factory(store, conn, {a: scripted({}) for a in agents}, max_rounds=1)
+    run_id = runner.start("G", agents)
+    assert store.private("d")["lessons.md"] == ""
+    store.write_private("d", "lessons.md", "AFTER-START")
+    await runner.run(run_id)
+    assert store.private("d")["lessons.md"] == "AFTER-START"
+    names = [e["event"] for e in read_events(tmp_path / "runs" / run_id / "events.jsonl")]
+    assert names[:2] == ["run_started", "control_reset"]
+
+
+def test_start_refuses_a_control_agent_without_a_seed_profile(community, scripted, runner_factory):
+    store, conn = community
+    store.create("d", "fake", "Seed.", control=True)
+    store.set_public("d", "Dee", "H", "I am Dee.")
+    runner = runner_factory(store, conn, {})
+    with pytest.raises(ValueError, match="agents introduce d"):
+        runner.start("G", ["a", "d"])
+    assert conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0

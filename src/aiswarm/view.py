@@ -72,7 +72,7 @@ def collect_inputs(
         own_notes={name: private[name] for name in _OWN_NOTES},
         profiles={i: store.public(i) for i in store.ids()},
         files=workspace.list_files(), view_entries=view_entries,
-        journals=tuple(store.journals(agent_id, 2)),
+        journals=() if store.record(agent_id).control else tuple(store.journals(agent_id, 2)),
         norms=_norms(store),
         reputations={i: reputation(board.conn, i, half_life) for i in store.ids()},
         library=tuple(library),

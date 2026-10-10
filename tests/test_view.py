@@ -159,3 +159,14 @@ def test_member_lines_show_dimension_scores(tmp_path, community, make_run):
     inputs = replace(inputs, dimension_scores={"b": [("Care", Reputation(4.5, 2)), ("Candour", Reputation(None, 0))]})
     view = build_view(inputs, budget_chars=50_000)
     assert "- Bea (b) — Bea headline · no reviews yet · Care 4.5\n" in view
+
+
+def test_control_agents_see_no_earlier_journals_and_never_their_status(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    store.create("d", "fake", "Seed.", control=True)
+    store.set_public("d", "Dee", "Dee headline", "I am Dee.")
+    store.write_journal_file("d", "20260101-000000-aaaa", "JOURNAL-D-OLD\n")
+    store.write_journal_file("a", "20260101-000000-aaaa", "JOURNAL-A-OLD\n")
+    view = view_for("d", 2, store, board, ws)
+    assert "JOURNAL-D-OLD" not in view and "control" not in view.lower()
+    assert "JOURNAL-A-OLD" in view_for("a", 2, store, board, ws)

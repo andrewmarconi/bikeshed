@@ -68,6 +68,10 @@ class Runner:
         unknown = [a for a in agent_ids if a not in self.store.ids()]
         if unknown:
             raise ValueError(f"unknown agents: {unknown}")
+        controls = [a for a in agent_ids if self.store.record(a).control]
+        for agent_id in controls:
+            if not self.store.has_seed_public(agent_id):
+                raise ValueError(f"control agent {agent_id} has no seed profile; run `aiswarm agents introduce {agent_id}`")
         run_id = new_run_id()
         seed = secrets.randbits(32)
         (self.runs_dir / run_id).mkdir(parents=True)
@@ -78,7 +82,13 @@ class Runner:
             )
             Board(self.conn, run_id).append(0, SYSTEM, "goal", {"goal": goal})
         self._workspace(run_id)
-        self._events(run_id).emit("run_started", run_id=run_id, goal=goal, agents=list(agent_ids))
+        events = self._events(run_id)
+        events.emit("run_started", run_id=run_id, goal=goal, agents=list(agent_ids))
+        for agent_id in controls:  # control agents carry no experience between runs
+            name_restored = self.store.reset_to_seed(agent_id)
+            events.emit("control_reset", agent=agent_id)
+            if not name_restored:
+                events.emit("control_reset_name_kept", agent=agent_id)
         return run_id
 
     async def run(self, run_id: str) -> RunResult:

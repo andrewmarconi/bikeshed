@@ -239,7 +239,10 @@ def run(
         narrator_client = limited.pop(_NARRATOR, None)
         runner = Runner(settings=cfg.run, conn=conn, store=store, runs_dir=cfg.runs_dir, clients=limited,
                         sink=_print_event, embedder=embedder, library_top_k=cfg.library.top_k)
-        run_id = resume or runner.start(goal or "", agent_ids)
+        try:
+            run_id = resume or runner.start(goal or "", agent_ids)
+        except ValueError as exc:
+            _fail(str(exc))
         await capture(conn, run_id, "resume" if resume else "start", cfg, backends, probe=probe_server)
         result = await runner.run(run_id)
         if result.status == "paused":

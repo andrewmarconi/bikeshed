@@ -534,3 +534,13 @@ async def test_a_dead_narrator_does_not_pause_the_cycle(tmp_path, community, mak
     post = PostRun(conn=conn, store=store, runs_dir=tmp_path / "runs", clients=clients, narrator=FakeModel(fail_times=99))
     result = await post.run(run_id)
     assert (result.status, result.failed) == ("done", 1)
+
+
+async def test_postrun_requests_never_include_earlier_journals(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    store.write_journal_file("c", "20200101-000000-0000", "EARLIER-JOURNAL\n")
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    sent = json.dumps([call[:2] for client in clients.values() for call in client.calls])
+    assert "EARLIER-JOURNAL" not in sent
