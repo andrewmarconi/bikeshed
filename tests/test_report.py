@@ -1,6 +1,6 @@
-from aiswarm.board import Entry
+from aiswarm.board import SYSTEM, Entry
 from aiswarm.consensus import StopDecision
-from aiswarm.report import write_report
+from aiswarm.report import account, write_report
 
 
 def e(id, round, author, type, **payload):
@@ -52,3 +52,47 @@ def test_no_consensus_lists_latest_proposal_per_member(tmp_path):
     assert "## Competing positions" in answer
     assert "Teal" in answer and "Red" in answer and "Blue" not in answer
     assert "_No consensus was reached._" in read(tmp_path, "minority.md")
+
+
+def _e(id, round, author, type, **payload):
+    refs = [payload["target"]] if "target" in payload else list(payload.get("refs", []))
+    return Entry(id, "r1", round, author, type, payload, refs, "all", "t")
+
+
+WHO = {"a": "Alpha (a)", "b": "Bea (b)", "c": "Cyd (c)", SYSTEM: "system"}.get
+
+
+def test_account_lists_key_moments_in_agents_own_words():
+    entries = [
+        _e(1, 0, SYSTEM, "goal", goal="G"),
+        _e(2, 1, "a", "propose", answer_summary="RED-SUMMARY", method="RED-METHOD"),
+        _e(3, 1, "b", "propose", answer_summary="BLUE", method="M"),
+        _e(4, 2, "b", "critique", target=2, about="method", points="TOO-VAGUE"),
+        _e(5, 3, "a", "refine", target=2, change="SHARPER", reason="r"),
+        _e(6, 3, "c", "adopt", target=2, reason="PERSUADED"),
+        _e(7, 4, "c", "adopt", target=2, reason="AGAIN"),
+        _e(8, 4, "a", "call_consensus", synthesis="SYNTH", refs=[2], credits=[]),
+        _e(9, 5, "b", "vote", target=8, stance="object", reason="NOT-YET"),
+        _e(10, 5, SYSTEM, "run_closed", reason="budget", call_id=None),
+    ]
+    text = account("Pick a colour", entries, StopDecision("budget"), WHO)
+    assert text.startswith("# Account\n\n**Goal:** Pick a colour\n\n**Ended:** budget after 5 rounds\n")
+    assert '- #2 Alpha (a): "RED-SUMMARY" — method: "RED-METHOD"' in text
+    assert '- #4 Bea (b) critiqued #2 (Alpha (a)): "TOO-VAGUE" → #5 Alpha (a) refined it: "SHARPER"' in text
+    assert '- r3: Cyd (c) adopted #2 (Alpha (a)): "PERSUADED"' in text and "AGAIN" not in text
+    assert '- #8 by Alpha (a) in r4: "SYNTH"' in text and "critiqued: no" in text
+    assert '  - r5 Bea (b) object: "NOT-YET"' in text
+
+
+def test_account_handles_a_quiet_run_and_long_quotes():
+    entries = [_e(1, 0, SYSTEM, "goal", goal="G"), _e(2, 1, "a", "propose", answer_summary="x" * 400, method="m")]
+    text = account("G", entries, StopDecision("stagnation"), WHO)
+    assert "**Ended:** stagnation after 1 round\n" in text
+    assert '"' + "x" * 300 + '…"' in text
+    assert text.count("_None._") == 3
+
+
+def test_write_report_writes_account(tmp_path):
+    entries = [_e(1, 0, SYSTEM, "goal", goal="G"), _e(2, 1, "a", "propose", answer_summary="S", method="M")]
+    write_report(tmp_path, "G", entries, StopDecision("budget"), WHO)
+    assert (tmp_path / "report" / "account.md").read_text().startswith("# Account")
