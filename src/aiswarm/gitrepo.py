@@ -2,6 +2,9 @@
 
 import os
 import subprocess
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 _ISOLATION = ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"]
@@ -16,6 +19,14 @@ def _git_env() -> dict[str, str]:
 
 class GitError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class Commit:
+    at: datetime
+    author: str
+    subject: str
+    patch: str
 
 
 class GitRepo:
@@ -60,3 +71,23 @@ class GitRepo:
     def reset_hard(self, commit: str) -> None:
         self._git("reset", "-q", "--hard", commit)
         self._git("clean", "-q", "-ffdx")
+
+    def is_dirty(self) -> bool:
+        return bool(self._git("status", "--porcelain"))
+
+    def log(self, path: str, exclude: Sequence[str] = ()) -> list[Commit]:
+        """Commits touching `path` (minus `exclude`), oldest first, each with its patch."""
+        if self.head() is None:
+            return []
+        out = self._git(
+            "log", "--reverse", "-p", "--format=%x1e%aI%x1f%an%x1f%s", "--", path,
+            *(f":(exclude){p}" for p in exclude),
+        )
+        commits: list[Commit] = []
+        for record in out.split("\x1e"):
+            if not record.strip():
+                continue
+            header, _, patch = record.partition("\n")
+            at, author, subject = header.split("\x1f", 2)
+            commits.append(Commit(datetime.fromisoformat(at), author, subject, patch.strip("\n")))
+        return commits

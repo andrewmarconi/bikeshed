@@ -166,6 +166,27 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (review_id, dimension_id)
     );
     """,
+    """
+    ALTER TABLE runs ADD COLUMN seed INTEGER;
+    ALTER TABLE runs ADD COLUMN goal_id TEXT;
+    ALTER TABLE runs ADD COLUMN goal_category TEXT;
+    ALTER TABLE runs ADD COLUMN is_benchmark INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE run_provenance (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL REFERENCES runs(id),
+        phase TEXT NOT NULL CHECK (phase IN ('start', 'resume', 'postrun')),
+        code_commit TEXT,
+        code_dirty INTEGER,
+        config TEXT NOT NULL,
+        prompts TEXT NOT NULL,
+        models TEXT NOT NULL,
+        servers TEXT NOT NULL,
+        seed INTEGER,
+        fingerprint TEXT NOT NULL,
+        captured_at TEXT NOT NULL
+    );
+    CREATE INDEX run_provenance_by_run ON run_provenance (run_id, id);
+    """,
 ]
 
 
