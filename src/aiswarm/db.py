@@ -61,7 +61,48 @@ MIGRATIONS: list[str] = [
         reasoning TEXT NOT NULL
     );
     """,
-]
+    """
+    CREATE TABLE reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL REFERENCES runs(id),
+        reviewer TEXT NOT NULL,
+        reviewee TEXT NOT NULL,
+        is_self INTEGER NOT NULL,
+        more_of TEXT NOT NULL,
+        less_of TEXT NOT NULL,
+        private_note TEXT NOT NULL,
+        evidence TEXT NOT NULL,
+        overall INTEGER NOT NULL CHECK (overall BETWEEN 1 AND 5),
+        overall_reason TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (run_id, reviewer, reviewee)
+    );
+    CREATE TABLE review_responses (
+        review_id INTEGER PRIMARY KEY REFERENCES reviews(id),
+        stance TEXT NOT NULL CHECK (stance IN ('accept', 'dispute')),
+        reason TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE journals (
+        run_id TEXT NOT NULL REFERENCES runs(id),
+        agent_id TEXT NOT NULL,
+        section TEXT NOT NULL CHECK (section IN ('before', 'after')),
+        text TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (run_id, agent_id, section)
+    );
+    CREATE TABLE postrun_steps (
+        run_id TEXT NOT NULL REFERENCES runs(id),
+        step TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        subject TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL CHECK (status IN ('done', 'failed')),
+        detail TEXT NOT NULL DEFAULT '',
+        reasoning TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (run_id, step, agent_id, subject)
+    );
+    """,]
 
 
 def now_iso() -> str:

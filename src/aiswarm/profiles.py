@@ -128,6 +128,20 @@ class ProfileStore:
         (self._dir(agent_id) / filename).write_text(content)
         self._repo.commit([f"agents/{agent_id}/{filename}"], f"{agent_id} updated {filename}", author=agent_id)
 
+    def write_journal_file(self, agent_id: str, run_id: str, content: str) -> None:
+        path = self._dir(agent_id) / "journal" / f"{run_id}.md"
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(content)
+        self._repo.commit([f"agents/{agent_id}/journal/{run_id}.md"], f"{agent_id} journal for {run_id}", author=agent_id)
+
+    def journals(self, agent_id: str, limit: int) -> list[tuple[str, str]]:
+        """The latest `limit` journal files as (run_id, text), oldest first. Run ids sort by time."""
+        directory = self._dir(agent_id) / "journal"
+        if not directory.exists() or limit <= 0:
+            return []
+        paths = sorted(directory.glob("*.md"), key=lambda p: p.stem)[-limit:]
+        return [(path.stem, path.read_text()) for path in paths]
+
     def public(self, agent_id: str) -> PublicProfile | None:
         path = self._dir(agent_id) / "public.toml"
         if not path.exists():
