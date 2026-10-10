@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from aiswarm.board import SYSTEM, Board, Entry
 from aiswarm.view import build_view, collect_inputs, make_who, render_entry
 from aiswarm.workspace import Workspace
@@ -146,3 +148,14 @@ def test_view_shows_methods_from_earlier_runs(tmp_path, community, make_run):
     assert "# Methods from earlier runs\n- #9 in run old" in view
     assert view.index("# Methods from earlier runs") < view.index("# Workspace files")
     assert "# Methods from earlier runs" not in view_for("a", 2, store, board, ws)
+
+
+def test_member_lines_show_dimension_scores(tmp_path, community, make_run):
+    from aiswarm.reviews import Reputation
+
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    inputs = collect_inputs(agent_id="a", goal="Pick a colour", round=2, board=board, store=store, workspace=ws,
+                            view_entries=15)
+    inputs = replace(inputs, dimension_scores={"b": [("Care", Reputation(4.5, 2)), ("Candour", Reputation(None, 0))]})
+    view = build_view(inputs, budget_chars=50_000)
+    assert "- Bea (b) — Bea headline · no reviews yet · Care 4.5\n" in view

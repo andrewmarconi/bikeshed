@@ -425,3 +425,36 @@ async def test_critiques_must_name_open_proposals_and_votes_cover_each(tmp_path,
     assert steps(conn)[("norms_critique", "b", "")] == "failed"
     assert steps(conn)[("norms_vote", "b", "")] == "failed"
     assert result.failed == 2
+
+
+async def test_reviews_rate_dimensions_adopted_in_earlier_runs_only(tmp_path, community, make_run, postrun_reply):
+    from aiswarm.reviews import ratings_for
+
+    store, conn = community
+    conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES ('old', 'g', 'closed', '[]', 't')")
+    conn.execute("INSERT INTO norm_proposals (run_id, author, kind, name, question, status, created_at) "
+                 "VALUES ('old', 'a', 'dimension', 'Care', 'Do they take care?', 'adopted', 't')")
+    conn.execute("INSERT INTO dimensions (name, question, proposal_id, adopted_run) VALUES ('Care', 'Do they take care?', 1, 'old')")
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "bc"}
+    clients["a"] = proposing(postrun_reply, kind="dimension", name="Candour", question="Are they candid?")
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    review_request = next(m[0]["content"] for _, m, _ in clients["b"].calls if m[0]["content"].startswith("# Post-run: review"))
+    assert '- "Care": Do they take care?' in review_request and "Candour" not in review_request
+    ids = [r["id"] for r in conn.execute("SELECT id FROM reviews")]
+    assert all([x.dimension for x in ratings_for(conn, ids)[i]] == ["Care"] for i in ids)
+
+
+async def test_a_review_missing_a_dimension_rating_is_corrected(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES ('old', 'g', 'closed', '[]', 't')")
+    conn.execute("INSERT INTO norm_proposals (run_id, author, kind, name, question, status, created_at) "
+                 "VALUES ('old', 'a', 'dimension', 'Care', 'Q?', 'adopted', 't')")
+    conn.execute("INSERT INTO dimensions (name, question, proposal_id, adopted_run) VALUES ('Care', 'Q?', 1, 'old')")
+    run_id = finished_run(conn, tmp_path, make_run)
+    unrated = json.dumps({"more_of": "m", "less_of": "l", "private_note": "p", "evidence": [2], "overall": 3,
+                          "overall_reason": "r"})
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "bc"}
+    clients["a"] = FakeModel(responder(postrun_reply, review=lambda request: unrated))
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    assert steps(conn)[("review", "a", "a")] == "failed"

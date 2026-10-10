@@ -18,7 +18,7 @@ from aiswarm.models.factory import make_client
 from aiswarm.models.openai_compat import OpenAICompatClient
 from aiswarm.postrun import PostRun, PostRunResult
 from aiswarm.profiles import PRIVATE_FILES, ProfileError, ProfileStore
-from aiswarm.reviews import render_review, reputation, responses_for, reviews_of
+from aiswarm.reviews import dimension_reputations, ratings_for, render_review, reputation, responses_for, reviews_of
 from aiswarm.runner import Runner
 from aiswarm.view import make_who
 
@@ -140,14 +140,18 @@ def agents_show(agent_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
         if profile.former_names:
             typer.echo(f"\nformerly: {', '.join(profile.former_names)}")
     typer.echo(f"\nreputation: {reputation(conn, agent_id, cfg.run.reputation_half_life_runs).label()}")
+    for name, rep in dimension_reputations(conn, agent_id, cfg.run.reputation_half_life_runs):
+        typer.echo(f"{name}: {rep.label()}")
     private = store.private(agent_id)
     for filename in PRIVATE_FILES:
         typer.echo(f"\n## {filename}\n{private[filename].strip() or '(empty)'}")
     who = make_who({i: store.public(i) for i in store.ids()})
     reviews = reviews_of(conn, agent_id, include_self=True)
     responses = responses_for(conn, [r.id for r in reviews])
+    ratings = ratings_for(conn, [r.id for r in reviews])
     typer.echo("\n## Reviews received")
-    typer.echo("\n\n".join(render_review(r, who, private=True, response=responses.get(r.id)) for r in reviews) or "(none)")
+    typer.echo("\n\n".join(render_review(r, who, private=True, response=responses.get(r.id), ratings=ratings[r.id])
+                          for r in reviews) or "(none)")
     journals = store.journals(agent_id, 1)
     if journals:
         typer.echo(f"\n## Latest journal\n{journals[0][1].strip()}")

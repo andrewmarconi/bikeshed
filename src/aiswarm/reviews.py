@@ -114,7 +114,53 @@ def reputation(conn: sqlite3.Connection, agent_id: str, half_life: float) -> Rep
     return Reputation(score, len(rows))
 
 
-def render_review(review: Review, who: Who, *, private: bool, response: Response | None = None) -> str:
+@dataclass(frozen=True)
+class Rating:
+    dimension: str
+    rating: int
+    reason: str
+
+
+def set_ratings(conn: sqlite3.Connection, review_id: int, ratings: Sequence[tuple[int, int, str]]) -> None:
+    for dimension_id, rating, reason in ratings:
+        conn.execute(
+            "INSERT INTO review_ratings (review_id, dimension_id, rating, reason) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT (review_id, dimension_id) DO UPDATE SET rating = excluded.rating, reason = excluded.reason",
+            (review_id, dimension_id, rating, reason),
+        )
+
+
+def ratings_for(conn: sqlite3.Connection, review_ids: Sequence[int]) -> dict[int, list[Rating]]:
+    out: dict[int, list[Rating]] = {i: [] for i in review_ids}
+    if not review_ids:
+        return out
+    marks = ", ".join("?" for _ in review_ids)
+    rows = conn.execute(
+        f"SELECT rr.review_id, d.name, rr.rating, rr.reason FROM review_ratings rr JOIN dimensions d "
+        f"ON d.id = rr.dimension_id WHERE rr.review_id IN ({marks}) ORDER BY d.id", list(review_ids))
+    for row in rows:
+        out[row["review_id"]].append(Rating(row["name"], row["rating"], row["reason"]))
+    return out
+
+
+def dimension_reputations(conn: sqlite3.Connection, agent_id: str, half_life: float) -> list[tuple[str, Reputation]]:
+    rows = conn.execute(
+        "SELECT d.name, rr.rating, (SELECT COUNT(*) FROM runs later WHERE later.status = 'closed' "
+        "AND (later.created_at, later.id) > (u.created_at, u.id)) AS age "
+        "FROM review_ratings rr JOIN reviews r ON r.id = rr.review_id JOIN runs u ON u.id = r.run_id "
+        "JOIN dimensions d ON d.id = rr.dimension_id WHERE r.reviewee = ? AND r.is_self = 0 ORDER BY d.id",
+        (agent_id,),
+    ).fetchall()
+    grouped: dict[str, list[tuple[float, int]]] = {}
+    for row in rows:
+        grouped.setdefault(row["name"], []).append((0.5 ** (row["age"] / half_life), row["rating"]))
+    return [(name, Reputation(sum(w * r for w, r in pairs) / sum(w for w, _ in pairs), len(pairs)))
+            for name, pairs in grouped.items()]
+
+
+def render_review(
+    review: Review, who: Who, *, private: bool, response: Response | None = None, ratings: Sequence[Rating] = (),
+) -> str:
     kind = "Self-review" if review.is_self else "Review"
     lines = [
         f"{kind} {review.id} of {who(review.reviewee)} by {who(review.reviewer)} after run {review.run_id}",
@@ -127,6 +173,7 @@ def render_review(review: Review, who: Who, *, private: bool, response: Response
         f"  evidence: {', '.join(f'#{i}' for i in review.evidence)}",
         f"  overall: {review.overall}/5 — {review.overall_reason}",
     ]
+    lines += [f"  {r.dimension}: {r.rating}/5 — {r.reason}" for r in ratings]
     if response:
         lines.append(f"  response: {response.stance} — {response.reason}")
     return "\n".join(lines)
@@ -138,7 +185,10 @@ def render_public_reviews(conn: sqlite3.Connection, agent_id: str, who: Who, max
     if not reviews:
         return f"No reviews of {who(agent_id)} yet."
     responses = responses_for(conn, [r.id for r in reviews])
-    text = "\n\n".join(render_review(r, who, private=False, response=responses.get(r.id)) for r in reviews)
+    ratings = ratings_for(conn, [r.id for r in reviews])
+    text = "\n\n".join(
+        render_review(r, who, private=False, response=responses.get(r.id), ratings=ratings[r.id]) for r in reviews
+    )
     if len(text) > max_chars:
         text = text[:max_chars] + f"\n[truncated: {len(text)} characters in total]"
     return text

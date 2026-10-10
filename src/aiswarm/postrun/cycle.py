@@ -25,7 +25,9 @@ from aiswarm.postrun.replies import (
 )
 from aiswarm.profiles import HEADLINE_MAX, INTRO_MAX, NAME_MAX, PRIVATE_MAX, PRONOUNS_MAX, ProfileError, ProfileStore
 from aiswarm.prompts import render
-from aiswarm.reviews import Review, add_response, add_review, render_review, responses_for, reviews_of
+from aiswarm.reviews import (
+    Review, add_response, add_review, ratings_for, render_review, responses_for, reviews_of, set_ratings,
+)
 from aiswarm.view import Who, make_who
 
 STEPS = ("journal", "review", "responses", "update", "norms_critique", "norms_vote", "library")
@@ -209,6 +211,12 @@ class PostRun:
         client = self.clients[reviewer]
         own = reviewer == reviewee
         name = ctx.who(reviewee)
+        dims = dimensions(self.conn, exclude_run=ctx.run_id)
+        dimension_block = "" if not dims else (
+            f"\nAlso rate {'yourself' if own else 'them'} on each of the community's rating dimensions, "
+            "as an integer from 1 to 5 with a reason:\n" + "\n".join(f'- "{d.name}": {d.question}' for d in dims) + "\n"
+        )
+        dimension_json = "" if not dims else ', "dimension_ratings": [{"dimension": "<name>", "rating": <1-5>, "reason": "..."}]'
         request = render(
             "review_request.md",
             heading="yourself" if own else name,
@@ -223,6 +231,7 @@ class PostRun:
                 "Other members will not see this self-review." if own else
                 "Your review is signed with your name. Other members can read it in later runs, except private_note."
             ),
+            dimension_block=dimension_block, dimension_json=dimension_json,
         )
         valid = {entry.id for entry in ctx.entries}
 
@@ -230,12 +239,18 @@ class PostRun:
             unknown = [i for i in reply.evidence if i not in valid]
             if unknown:
                 raise ReplyError(f"entry #{unknown[0]} is not part of this run")
+            names = sorted(d.name.casefold() for d in dims)
+            if sorted(x.dimension.strip().casefold() for x in reply.dimension_ratings) != names:
+                raise ReplyError(f"rate each dimension exactly once: {[d.name for d in dims]}")
 
         answer = await ask(client, self._system(ctx, reviewer), request, ReviewReply, check)
         r = answer.reply
-        add_review(self.conn, run_id=ctx.run_id, reviewer=reviewer, reviewee=reviewee, more_of=r.more_of,
+        stored = add_review(self.conn, run_id=ctx.run_id, reviewer=reviewer, reviewee=reviewee, more_of=r.more_of,
                    less_of=r.less_of, private_note=r.private_note, evidence=r.evidence, overall=r.overall,
                    overall_reason=r.overall_reason)
+        by_name = {d.name.casefold(): d.id for d in dims}
+        set_ratings(self.conn, stored.id, [(by_name[x.dimension.strip().casefold()], x.rating, x.reason)
+                                           for x in r.dimension_ratings])
         return answer.reasoning
 
     async def _responses(self, ctx: _Context, agent_id: str) -> str | None:
@@ -257,12 +272,14 @@ class PostRun:
     async def _update(self, ctx: _Context, agent_id: str) -> str | None:
         reviews = reviews_of(self.conn, agent_id, run_id=ctx.run_id)
         responses = responses_for(self.conn, [r.id for r in reviews])
+        ratings = ratings_for(self.conn, [r.id for r in reviews])
         request = render(
             "update_request.md",
             packet=self._packet(ctx, agent_id),
             first_journal=journal_section(self.conn, agent_id, ctx.run_id, "before") or "(none)",
             reviews="\n\n".join(
-                render_review(r, ctx.who, private=True, response=responses.get(r.id)) for r in reviews
+                render_review(r, ctx.who, private=True, response=responses.get(r.id), ratings=ratings[r.id])
+                for r in reviews
             ) or "(no reviews)",
             journal_max=JOURNAL_MAX, private_max=PRIVATE_MAX, name_max=NAME_MAX, pronouns_max=PRONOUNS_MAX,
             headline_max=HEADLINE_MAX, intro_max=INTRO_MAX,

@@ -56,7 +56,7 @@ def test_postrun_templates_render():
     assert render("journal_request.md", packet="P", journal_max=6000).startswith("# Post-run: journal")
     assert render("review_request.md", heading="H", run_id="r1", goal="G", authors="you", transcript="T",
                   instruction="I", subject="you", object="yourself", private_reader="Only you will read this.",
-                  visibility="V").startswith("# Post-run: review")
+                  visibility="V", dimension_block="", dimension_json="").startswith("# Post-run: review")
     assert render("responses_request.md", run_id="r1", reviews="R").startswith("# Post-run: responses")
     assert render("update_request.md", packet="P", first_journal="J", reviews="R", journal_max=1, private_max=2,
                   name_max=3, pronouns_max=6, headline_max=4, intro_max=5, norms="N", norm_max=7, dimension_max=8).startswith("# Post-run: update")

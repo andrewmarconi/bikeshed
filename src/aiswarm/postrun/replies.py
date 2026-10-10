@@ -20,6 +20,12 @@ class JournalReply(_Reply):
     journal: JournalText
 
 
+class DimensionRating(_Reply):
+    dimension: Text
+    rating: int = Field(ge=1, le=5)
+    reason: Text
+
+
 class ReviewReply(_Reply):
     more_of: Text
     less_of: Text
@@ -27,6 +33,7 @@ class ReviewReply(_Reply):
     evidence: list[int] = Field(min_length=1)
     overall: int = Field(ge=1, le=5)
     overall_reason: Text
+    dimension_ratings: list[DimensionRating] = Field(default_factory=list)
 
 
 class ResponseItem(_Reply):

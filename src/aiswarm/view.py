@@ -8,7 +8,7 @@ from typing import Any
 from aiswarm.board import SYSTEM, Board, Entry
 from aiswarm.consensus import call_status
 from aiswarm.profiles import ProfileStore, PublicProfile
-from aiswarm.reviews import Reputation, reputation
+from aiswarm.reviews import Reputation, dimension_reputations, reputation
 from aiswarm.workspace import Workspace
 
 Who = Callable[[str], str]
@@ -51,6 +51,7 @@ class ViewInputs:
     norms: str = ""
     reputations: Mapping[str, Reputation] = field(default_factory=dict)
     library: tuple[str, ...] = ()
+    dimension_scores: Mapping[str, list[tuple[str, Reputation]]] = field(default_factory=dict)
 
 
 def _norms(store: ProfileStore) -> str:
@@ -75,6 +76,7 @@ def collect_inputs(
         norms=_norms(store),
         reputations={i: reputation(board.conn, i, half_life) for i in store.ids()},
         library=tuple(library),
+        dimension_scores={i: dimension_reputations(board.conn, i, half_life) for i in store.ids()},
     )
 
 
@@ -145,6 +147,8 @@ def build_view(inputs: ViewInputs, budget_chars: int) -> str:
             continue
         rep = inputs.reputations.get(agent_id)
         suffix = f" · {rep.label()}" if rep else ""
+        suffix += "".join(f" · {name} {score.score:.1f}" for name, score in inputs.dimension_scores.get(agent_id, [])
+                          if score.count and score.score is not None)
         pronouns = f" · {profile.pronouns}" if profile.pronouns else ""
         block = f"- {profile.name} ({agent_id}){pronouns} — {profile.headline}{suffix}\n  {profile.introduction}"
         if profile.former_names:
