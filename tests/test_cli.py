@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 import aiswarm.cli as cli
-from aiswarm.models.fake import FakeModel
+from aiswarm.models.fake import FakeEmbedder, FakeModel
 
 runner = CliRunner()
 
@@ -29,6 +29,7 @@ def project(tmp_path, monkeypatch, postrun_reply):
         return json.dumps({"action": {"type": "pass"}})
 
     monkeypatch.setattr(cli, "make_client", lambda backend, retries: FakeModel(respond))
+    monkeypatch.setattr(cli, "make_embedder", lambda backend: FakeEmbedder())
     config = tmp_path / "aiswarm.toml"
     result = runner.invoke(cli.app, ["init", "-c", str(config)])
     assert result.exit_code == 0, result.output
@@ -177,3 +178,14 @@ def test_agents_checkin_renames_and_records_pronouns(project, monkeypatch):
     assert only_a.exit_code == 0 and "(b)" not in only_a.output
     shown = invoke("agents", "show", "a", "-c", config)
     assert "# Alder (a) · they/them" in shown.output
+
+
+def test_narrator_and_show(project):
+    tmp_path, config = project
+    config.write_text(config.read_text().replace('# narrator = "claude"', 'narrator = "local"'))
+    make_agents(config, "a")
+    result = invoke("run", "Pick a colour", "--max-rounds", "1", "-c", config)
+    assert result.exit_code == 0, result.output
+    run_id = run_id_from(result.output)
+    shown = invoke("show", run_id, "-c", config)
+    assert "# Account" in shown.output and "# Narrative" in shown.output

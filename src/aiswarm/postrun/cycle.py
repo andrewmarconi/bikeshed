@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from aiswarm.board import Board, Entry
+from aiswarm.consensus import StopDecision
 from aiswarm.db import now_iso, transaction
 from aiswarm.events import EventLog
 from aiswarm.journal import JOURNAL_MAX, journal_section, write_journal
@@ -21,16 +22,17 @@ from aiswarm.norms import (
 from aiswarm.postrun.ask import ReplyError, ask
 from aiswarm.postrun.feedback import feedback_packet, interactions, transcript
 from aiswarm.postrun.replies import (
-    JournalReply, NormCritiquesReply, NormVotesReply, ResponsesReply, ReviewReply, UpdateReply,
+    JournalReply, NarrativeReply, NormCritiquesReply, NormVotesReply, ResponsesReply, ReviewReply, UpdateReply,
 )
 from aiswarm.profiles import HEADLINE_MAX, INTRO_MAX, NAME_MAX, PRIVATE_MAX, PRONOUNS_MAX, ProfileError, ProfileStore
 from aiswarm.prompts import render
+from aiswarm.report import account
 from aiswarm.reviews import (
     Review, add_response, add_review, ratings_for, render_review, responses_for, reviews_of, set_ratings,
 )
 from aiswarm.view import Who, make_who
 
-STEPS = ("journal", "review", "responses", "update", "norms_critique", "norms_vote", "library")
+STEPS = ("journal", "review", "responses", "update", "norms_critique", "norms_vote", "library", "narrative")
 _NOTES = ("self.md", "lessons.md", "peer-notes.md")
 
 
@@ -64,7 +66,7 @@ class PostRun:
     def __init__(
         self, *, conn: sqlite3.Connection, store: ProfileStore, runs_dir: Path,
         clients: Mapping[str, ModelClient], sink: Callable[[dict[str, Any]], None] | None = None,
-        embedder: Embedder | None = None, quorum_slack: int = 1,
+        embedder: Embedder | None = None, quorum_slack: int = 1, narrator: ModelClient | None = None,
     ):
         self.conn = conn
         self.store = store
@@ -73,6 +75,7 @@ class PostRun:
         self.sink = sink
         self.embedder = embedder
         self.quorum_slack = quorum_slack
+        self.narrator = narrator
 
     async def run(self, run_id: str) -> PostRunResult:
         row = self.conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
@@ -132,6 +135,8 @@ class PostRun:
             return [_Call(step, a, "", lambda a=a, m=method: m(ctx, a)) for a in ctx.agent_ids]
         if step == "library":
             return [_Call(step, "system", "", lambda: self._library(ctx))]
+        if step == "narrative":
+            return [_Call(step, "narrator", "", lambda: self._narrative(ctx))] if self.narrator else []
         raise ValueError(f"unknown step {step!r}")
 
     def _done(self, run_id: str, call: _Call) -> bool:
@@ -382,3 +387,23 @@ class PostRun:
         record_methods(self.conn, ctx.run_id, ctx.goal, ctx.entries)
         if self.embedder is not None:
             await embed_missing(self.conn, self.embedder)
+
+    async def _narrative(self, ctx: _Context) -> str | None:
+        assert self.narrator is not None
+        closed = next((e for e in reversed(ctx.entries) if e.type == "run_closed"), None)
+        decision = StopDecision(closed.payload.get("reason", "budget"), closed.payload.get("call_id")) if closed \
+            else StopDecision("budget")
+        report = self.runs_dir / ctx.run_id / "report"
+        minority = report / "minority.md"
+        request = render(
+            "narrative_request.md", account=account(ctx.goal, ctx.entries, decision, ctx.who),
+            answer=ctx.answer.strip() or "(no report)",
+            minority=minority.read_text().strip() if minority.exists() else "(none)", narrative_max=JOURNAL_MAX,
+        )
+        answer = await ask(self.narrator, render("narrator_system.md"), request, NarrativeReply)
+        report.mkdir(parents=True, exist_ok=True)
+        (report / "narrative.md").write_text(
+            "# Narrative\n\n_Written by the narrator model from the account. No agent ever sees this._\n\n"
+            + answer.reply.narrative.strip() + "\n"
+        )
+        return answer.reasoning

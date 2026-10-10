@@ -98,3 +98,7 @@ class NormVote(_Reply):
 
 class NormVotesReply(_Reply):
     votes: list[NormVote]
+
+
+class NarrativeReply(_Reply):
+    narrative: JournalText

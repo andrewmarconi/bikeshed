@@ -14,7 +14,7 @@ from aiswarm.checkin import checkin
 from aiswarm.introduce import introduce
 from aiswarm.models.base import ModelError, limit_clients
 from aiswarm.models.claude_cli import ClaudeCliClient, leak_check
-from aiswarm.models.factory import make_client
+from aiswarm.models.factory import make_client, make_embedder
 from aiswarm.models.openai_compat import OpenAICompatClient
 from aiswarm.postrun import PostRun, PostRunResult
 from aiswarm.profiles import PRIVATE_FILES, ProfileError, ProfileStore
@@ -168,6 +168,15 @@ def _clients(cfg: Config, store: ProfileStore, agent_ids: list[str]) -> dict[str
     return {a: make_client(cfg.models[store.record(a).model], cfg.run.model_retries) for a in agent_ids}
 
 
+_NARRATOR = "#narrator"  # never a valid agent id, so it can share the limited-clients dict
+
+
+def _support(cfg: Config) -> tuple[Any, Any]:
+    narrator = make_client(cfg.models[cfg.report.narrator], cfg.run.model_retries) if cfg.report.narrator else None
+    embedder = make_embedder(cfg.models[cfg.library.embeddings]) if cfg.library.embeddings else None
+    return narrator, embedder
+
+
 def _report_postrun(run_id: str, result: PostRunResult) -> None:
     if result.status == "paused":
         typer.echo(f"post-run paused; resume with `aiswarm postrun {run_id}`")
@@ -219,11 +228,13 @@ def run(
         if not agent_ids:
             _fail("no agents yet; create some with `aiswarm agents new`")
     clients = _clients(cfg, store, agent_ids)
+    narrator, embedder = _support(cfg)
 
     async def go() -> None:
-        limited = limit_clients(clients, cfg.run.max_concurrent_calls)
+        limited = limit_clients({**clients, **({_NARRATOR: narrator} if narrator else {})}, cfg.run.max_concurrent_calls)
+        narrator_client = limited.pop(_NARRATOR, None)
         runner = Runner(settings=cfg.run, conn=conn, store=store, runs_dir=cfg.runs_dir, clients=limited,
-                        sink=_print_event)
+                        sink=_print_event, embedder=embedder, library_top_k=cfg.library.top_k)
         run_id = resume or runner.start(goal or "", agent_ids)
         result = await runner.run(run_id)
         if result.status == "paused":
@@ -233,6 +244,7 @@ def run(
         typer.echo(f"report: {cfg.runs_dir / run_id / 'report'}")
         if not no_postrun:
             post = await PostRun(conn=conn, store=store, runs_dir=cfg.runs_dir, clients=limited,
+                                 narrator=narrator_client, embedder=embedder, quorum_slack=cfg.run.quorum_slack,
                                  sink=_print_event).run(run_id)
             _report_postrun(run_id, post)
 
@@ -251,10 +263,13 @@ def postrun(run_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
     if row["status"] != "closed":
         _fail(f"run {run_id} is not closed; finish it with `aiswarm run --resume {run_id}`")
     clients = _clients(cfg, store, json.loads(row["agent_ids"]))
+    narrator, embedder = _support(cfg)
 
     async def go() -> PostRunResult:
-        limited = limit_clients(clients, cfg.run.max_concurrent_calls)
+        limited = limit_clients({**clients, **({_NARRATOR: narrator} if narrator else {})}, cfg.run.max_concurrent_calls)
+        narrator_client = limited.pop(_NARRATOR, None)
         return await PostRun(conn=conn, store=store, runs_dir=cfg.runs_dir, clients=limited,
+                             narrator=narrator_client, embedder=embedder, quorum_slack=cfg.run.quorum_slack,
                              sink=_print_event).run(run_id)
 
     _report_postrun(run_id, asyncio.run(go()))
@@ -266,8 +281,10 @@ def show(run_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
     report = _load(config).runs_dir / run_id / "report"
     if not report.exists():
         _fail(f"no report for run {run_id!r}")
-    typer.echo((report / "answer.md").read_text())
-    typer.echo((report / "minority.md").read_text())
+    for name in ("answer.md", "minority.md", "account.md", "narrative.md"):
+        path = report / name
+        if path.exists():
+            typer.echo(path.read_text())
 
 
 @app.command()

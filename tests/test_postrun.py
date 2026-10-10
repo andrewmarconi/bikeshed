@@ -458,3 +458,25 @@ async def test_a_review_missing_a_dimension_rating_is_corrected(tmp_path, commun
     clients["a"] = FakeModel(responder(postrun_reply, review=lambda request: unrated))
     await cycle(store, conn, tmp_path, clients).run(run_id)
     assert steps(conn)[("review", "a", "a")] == "failed"
+
+
+async def test_the_narrator_writes_a_user_only_narrative(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)                    # no account.md, like a pre-2b run
+    narrator = FakeModel(responder(postrun_reply))
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    post = PostRun(conn=conn, store=store, runs_dir=tmp_path / "runs", clients=clients, narrator=narrator)
+    assert (await post.run(run_id)).status == "done"
+    text = (tmp_path / "runs" / run_id / "report" / "narrative.md").read_text()
+    assert text.startswith("# Narrative\n") and "It went the way the account says." in text
+    request = narrator.calls[0][1][0]["content"]
+    assert request.startswith("# Post-run: narrative") and "# Account" in request and "COMPETING-POSITIONS" in request
+    for client in clients.values():
+        assert all("It went the way" not in m["content"] for _, ms, _ in client.calls for m in ms)
+
+
+async def test_no_narrator_means_no_narrative(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    await cycle(store, conn, tmp_path, {a: FakeModel(responder(postrun_reply)) for a in "abc"}).run(run_id)
+    assert not (tmp_path / "runs" / run_id / "report" / "narrative.md").exists()
