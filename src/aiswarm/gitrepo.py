@@ -1,9 +1,17 @@
 """Minimal git wrapper. Commits are isolated from the user's signing and hook config."""
 
+import os
 import subprocess
 from pathlib import Path
 
 _ISOLATION = ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"]
+
+
+def _git_env() -> dict[str, str]:
+    """Ignore the user's global/system git config and any inherited GIT_* variables."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    return env
 
 
 class GitError(RuntimeError):
@@ -19,11 +27,13 @@ class GitRepo:
         path.mkdir(parents=True, exist_ok=True)
         repo = cls(path)
         if not (path / ".git").exists():
-            repo._git("init", "-q", "-b", "main")
+            repo._git("init", "-q", "--template=", "-b", "main")
         return repo
 
     def _git(self, *args: str) -> str:
-        result = subprocess.run(["git", *_ISOLATION, *args], cwd=self.path, capture_output=True, text=True)
+        result = subprocess.run(
+            ["git", *_ISOLATION, *args], cwd=self.path, capture_output=True, text=True, env=_git_env()
+        )
         if result.returncode != 0:
             raise GitError(f"git {' '.join(args)}: {result.stderr.strip()}")
         return result.stdout.strip()
@@ -31,7 +41,7 @@ class GitRepo:
     def commit(self, paths: list[str], message: str, author: str) -> str:
         email = f"{author}@aiswarm.local"
         if paths:
-            self._git("add", "-A", "--", *paths)
+            self._git("add", "-A", "-f", "--", *paths)
         self._git(
             "-c", f"user.name={author}", "-c", f"user.email={email}",
             "commit", "-q", "--allow-empty", "-m", message, "--author", f"{author} <{email}>",
@@ -49,4 +59,4 @@ class GitRepo:
 
     def reset_hard(self, commit: str) -> None:
         self._git("reset", "-q", "--hard", commit)
-        self._git("clean", "-q", "-f", "-d")
+        self._git("clean", "-q", "-ffdx")

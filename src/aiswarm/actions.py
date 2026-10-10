@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 Text = Annotated[str, Field(min_length=1)]
+MAX_FILE_CHARS = 20_000
 
 
 class _Action(BaseModel):
@@ -49,7 +50,7 @@ class WriteFile(_Action):
     type: Literal["write_file"]
     path: Text
     base_version: int = Field(ge=0)
-    content: str
+    content: str = Field(max_length=MAX_FILE_CHARS)
     note: Text
 
 
@@ -108,27 +109,37 @@ class ActionError(ValueError):
     """The model's reply was not a valid action."""
 
 
-_FENCE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+_THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
+_FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
 
 def extract_json(text: str) -> Any:
-    """Parse JSON from a reply, tolerating a code fence or surrounding prose."""
-    raw = text.strip()
-    fenced = _FENCE.match(raw)
-    if fenced:
-        raw = fenced.group(1)
+    """Parse JSON from a reply, tolerating think blocks, code fences, and surrounding prose.
+
+    The last JSON object wins: drafts and asides come before the final answer.
+    """
+    raw = _THINK.sub("", text).strip()
+    fences = _FENCE.findall(raw)
+    if fences:
+        raw = fences[-1]
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
         pass
-    start = raw.find("{")
-    if start == -1:
+    decoder = json.JSONDecoder()
+    candidates: list[Any] = []
+    index = 0
+    while (start := raw.find("{", index)) != -1:
+        try:
+            value, end = decoder.raw_decode(raw, start)
+        except json.JSONDecodeError:
+            index = start + 1
+            continue
+        candidates.append(value)
+        index = end
+    if not candidates:
         raise ActionError("No JSON object found in the reply.")
-    try:
-        value, _ = json.JSONDecoder().raw_decode(raw[start:])
-    except json.JSONDecodeError as exc:
-        raise ActionError(f"The reply is not valid JSON: {exc.msg}.") from exc
-    return value
+    return candidates[-1]
 
 
 def parse_action(text: str) -> Any:

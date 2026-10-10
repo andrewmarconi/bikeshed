@@ -64,3 +64,29 @@ def test_reset_to_restores_files(ws):
     ws.reset_to(checkpoint)
     assert (ws.root / "a.md").read_text() == "one"
     assert not (ws.root / "stray.md").exists()
+
+
+@pytest.mark.parametrize("bad", [".GIT/config", ".Git/x", "sub/.git/x", ".gitignore", ".gitattributes", "a‌.md".replace("a", ".git")])
+def test_git_metadata_paths_are_rejected_in_any_case(ws, bad):
+    with pytest.raises(InvalidPath):
+        ws.write(bad, 0, "x", author="a", note="n")
+    assert (ws.root / ".git" / "config").read_text().count("fsmonitor") == 0
+
+
+def test_case_and_unicode_variants_share_one_version_history(ws):
+    ws.write("draft.md", 0, "from a", author="a", note="n")
+    with pytest.raises(WriteConflict):
+        ws.write("Draft.md", 0, "from b", author="b", note="n")
+    assert ws.write("DRAFT.md", 1, "from b", author="b", note="n") == 2
+    assert ws.list_files() == [("draft.md", 2)]
+    ws.write("café.md", 0, "nfd", author="a", note="n")
+    assert ws.current_version("café.md") == 1
+
+
+def test_ignored_paths_are_still_committed(ws, monkeypatch, tmp_path):
+    excludes = tmp_path / "excludes"
+    excludes.write_text("*.log\n")
+    gitconfig = tmp_path / "gitconfig"
+    gitconfig.write_text(f"[core]\n\texcludesFile = {excludes}\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
+    assert ws.write("run.log", 0, "x", author="a", note="n") == 1

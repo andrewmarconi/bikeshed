@@ -131,3 +131,12 @@ def test_system_prompt_contains_identity_and_rules():
     assert "Curious." in text
     assert "up to 3 reads" in text
     assert '"call_consensus"' in text
+
+
+def test_reader_truncates_large_files(tmp_path, make_run):
+    conn = connect(tmp_path / "c.db")
+    make_run(conn)
+    ws = Workspace(conn, "r1", tmp_path / "ws")
+    ws.write("big.md", 0, "y" * 10_000, author="a", note="n")
+    text = make_reader(ws, [], lambda a: a, max_chars=500)(ReadFile(type="read_file", path="big.md"))
+    assert len(text) < 700 and "truncated" in text

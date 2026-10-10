@@ -143,3 +143,36 @@ def test_start_rejects_unknown_agents(community, runner_factory):
     store, conn = community
     with pytest.raises(ValueError, match="zed"):
         runner_factory(store, conn, {}).start("G", ["a", "zed"])
+
+
+async def test_workspace_errors_become_rejected_writes(tmp_path, community, scripted, runner_factory):
+    store, conn = community
+    clients = {
+        "a": scripted({1: propose, 2: lambda v: {"type": "write_file", "path": "notes", "base_version": 0, "content": "x", "note": "n"},
+                       3: lambda v: {"type": "write_file", "path": "notes/x.md", "base_version": 0, "content": "y", "note": "n"}}),
+        "b": scripted({1: propose, 2: lambda v: {"type": "write_file", "path": "dir/f.md", "base_version": 0, "content": "x", "note": "n"},
+                       3: lambda v: {"type": "write_file", "path": "dir", "base_version": 0, "content": "y", "note": "n"}}),
+        "c": scripted({1: propose}),
+    }
+    run_id = runner_factory(store, conn, clients, max_rounds=3).start("G", AGENTS)
+    result = await runner_factory(store, conn, clients, max_rounds=3).run(run_id)
+    assert result.status == "closed"
+    kinds = [r[0] for r in conn.execute("SELECT kind FROM failures WHERE run_id = ?", (run_id,))]
+    assert kinds.count("write_error") == 2
+    assert entry_types(conn, run_id).count("write_rejected") == 2
+
+
+async def test_unexpected_step_exception_becomes_failed_pass(community, scripted, runner_factory):
+    store, conn = community
+
+    class Broken:
+        context_window = 32768
+
+        async def chat(self, system, messages, json_schema=None):
+            raise IndexError("choices[0] on empty list")
+
+    clients = {"a": Broken(), "b": scripted({1: propose}), "c": scripted({1: propose})}
+    run_id = runner_factory(store, conn, clients).start("G", AGENTS)
+    result = await runner_factory(store, conn, clients).run(run_id)
+    assert result.status == "closed"
+    assert "step_error" in [r[0] for r in conn.execute("SELECT kind FROM failures WHERE run_id = ?", (run_id,))]

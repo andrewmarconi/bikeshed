@@ -71,3 +71,23 @@ def test_step_schema_is_simplified_for_strict_backends():
 def test_simplify_schema_keeps_property_names():
     schema = {"type": "object", "properties": {"title": {"type": "string", "title": "Title"}}}
     assert simplify_schema(schema) == {"type": "object", "properties": {"title": {"type": "string"}}}
+
+
+def test_ignores_json_inside_think_block():
+    text = '<think>maybe {"type": "propose", "answer_summary": "A", "method": "M"}? no.</think>{"action": {"type": "pass"}}'
+    assert isinstance(parse_action(text), Pass)
+
+
+def test_prose_with_braces_before_a_fenced_action():
+    text = 'Here is my {action} wrapper:\n```json\n{"action": {"type": "pass"}}\n```\nDone.'
+    assert isinstance(parse_action(text), Pass)
+
+
+def test_prose_with_braces_before_plain_json():
+    assert isinstance(parse_action('I considered {options}. {"action": {"type": "list_files"}}'), ListFiles)
+
+
+def test_write_file_content_is_capped():
+    big = json.dumps({"action": {"type": "write_file", "path": "a.md", "base_version": 0, "content": "x" * 20_001, "note": "n"}})
+    with pytest.raises(ActionError):
+        parse_action(big)

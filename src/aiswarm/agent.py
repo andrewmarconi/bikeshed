@@ -103,7 +103,7 @@ def make_validator(entries: Sequence[Entry], agent_ids: Sequence[str]) -> Valida
     return validate
 
 
-def make_reader(workspace: Workspace, entries: Sequence[Entry], who: Who) -> Reader:
+def make_reader(workspace: Workspace, entries: Sequence[Entry], who: Who, max_chars: int = 8_000) -> Reader:
     by_id = {e.id: e for e in entries}
 
     def read(action: Any) -> str:
@@ -116,6 +116,8 @@ def make_reader(workspace: Workspace, entries: Sequence[Entry], who: Who) -> Rea
                 return f"No such file: {action.path}"
             except InvalidPath as exc:
                 return str(exc)
+            if len(content) > max_chars:
+                content = content[:max_chars] + f"\n[truncated: {len(content)} characters in total]"
             return f"{normalise_path(action.path)} (v{version}):\n{content}"
         entry = by_id.get(action.id)
         return render_entry(entry, who) if entry else f"No entry #{action.id} is visible to you."

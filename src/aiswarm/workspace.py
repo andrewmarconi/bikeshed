@@ -1,6 +1,7 @@
 """Per-run shared workspace: versioned files in a git repo, writes serialised by the Runner."""
 
 import sqlite3
+import unicodedata
 from pathlib import Path, PurePosixPath
 
 from aiswarm.db import now_iso
@@ -21,12 +22,19 @@ class WriteConflict(Exception):
 
 
 def normalise_path(path: str) -> str:
-    stripped = path.strip()
+    """Validate an agent-supplied path. Agent output is hostile filesystem input, and macOS
+    filesystems are case-insensitive and normalisation-insensitive, so git metadata is
+    rejected in any case or Unicode form."""
+    stripped = unicodedata.normalize("NFC", path.strip())
     invalid = InvalidPath(f"Invalid workspace path: {path!r}")
     if not stripped or len(stripped) > MAX_PATH or "\\" in stripped or "\x00" in stripped:
         raise invalid
+    if any(unicodedata.category(ch) in ("Cc", "Cf") for ch in stripped):
+        raise invalid
     pure = PurePosixPath(stripped)
-    if pure.is_absolute() or not pure.parts or ".." in pure.parts or pure.parts[0] == ".git":
+    if pure.is_absolute() or not pure.parts or ".." in pure.parts:
+        raise invalid
+    if any(part.casefold().startswith(".git") for part in pure.parts):
         raise invalid
     return str(pure)
 
@@ -40,9 +48,21 @@ class Workspace:
         if self._repo.head() is None:
             self._repo.commit([], "workspace created", author="system")
 
+    def _canonical(self, rel: str) -> str:
+        """The first-written spelling of a path; case variants alias the same file on disk."""
+        key = rel.casefold()
+        for path, _ in self.list_files():
+            if path.casefold() == key:
+                return path
+        return rel
+
+    def canonical_path(self, path: str) -> str:
+        return self._canonical(normalise_path(path))
+
     def current_version(self, path: str) -> int:
+        rel = self._canonical(normalise_path(path))
         row = self._conn.execute(
-            "SELECT MAX(version) FROM files WHERE run_id = ? AND path = ?", (self.run_id, path)
+            "SELECT MAX(version) FROM files WHERE run_id = ? AND path = ?", (self.run_id, rel)
         ).fetchone()
         return row[0] or 0
 
@@ -53,14 +73,14 @@ class Workspace:
         return [(row[0], row[1]) for row in rows]
 
     def read(self, path: str) -> tuple[str, int]:
-        rel = normalise_path(path)
+        rel = self._canonical(normalise_path(path))
         version = self.current_version(rel)
         if version == 0:
             raise FileNotFoundError(rel)
         return (self.root / rel).read_text(), version
 
     def write(self, path: str, base_version: int, content: str, author: str, note: str) -> int:
-        rel = normalise_path(path)
+        rel = self._canonical(normalise_path(path))
         current = self.current_version(rel)
         if base_version != current:
             raise WriteConflict(rel, current)

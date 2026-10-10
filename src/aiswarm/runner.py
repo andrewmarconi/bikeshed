@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from aiswarm.actions import WriteFile, target_refs
+from aiswarm.actions import Pass, WriteFile, target_refs
 from aiswarm.agent import StepOutcome, make_reader, make_validator, system_prompt, take_step
 from aiswarm.board import SYSTEM, Board
 from aiswarm.config import RunSettings
@@ -22,7 +22,8 @@ from aiswarm.models.base import ModelClient
 from aiswarm.profiles import ProfileStore
 from aiswarm.report import write_report
 from aiswarm.view import build_view, collect_inputs, make_who
-from aiswarm.workspace import Workspace, WriteConflict, normalise_path
+from aiswarm.gitrepo import GitError
+from aiswarm.workspace import InvalidPath, Workspace, WriteConflict
 
 
 @dataclass(frozen=True)
@@ -125,17 +126,22 @@ class Runner:
         board: Board, ws: Workspace, events: EventLog,
     ) -> StepOutcome:
         events.emit("agent_step_started", round=rnd, agent=agent_id)
-        inputs = collect_inputs(agent_id=agent_id, goal=goal, round=rnd, board=board, store=self.store,
-                                workspace=ws, view_entries=self.settings.view_entries)
-        who = make_who(inputs.profiles)
-        system = system_prompt(who(agent_id), self.store.private(agent_id)["temperament.md"], self.settings.max_reads)
-        client = self.clients[agent_id]
-        budget = max(2_000, int(client.context_window * 3 * 0.75) - len(system))
-        outcome = await take_step(
-            client=client, system=system, view=build_view(inputs, budget_chars=budget), round=rnd,
-            max_reads=self.settings.max_reads, reader=make_reader(ws, inputs.entries, who),
-            validate=make_validator(inputs.entries, agent_ids),
-        )
+        try:
+            inputs = collect_inputs(agent_id=agent_id, goal=goal, round=rnd, board=board, store=self.store,
+                                    workspace=ws, view_entries=self.settings.view_entries)
+            who = make_who(inputs.profiles)
+            system = system_prompt(
+                who(agent_id), self.store.private(agent_id)["temperament.md"], self.settings.max_reads
+            )
+            client = self.clients[agent_id]
+            budget = max(2_000, int(client.context_window * 3 * 0.75) - len(system))
+            outcome = await take_step(
+                client=client, system=system, view=build_view(inputs, budget_chars=budget), round=rnd,
+                max_reads=self.settings.max_reads, reader=make_reader(ws, inputs.entries, who, budget // 4),
+                validate=make_validator(inputs.entries, agent_ids),
+            )
+        except Exception as exc:  # one agent's bad step must never take down the run
+            outcome = StepOutcome(Pass(type="pass"), "step_error", f"{type(exc).__name__}: {exc}")
         events.emit("agent_step_finished", round=rnd, agent=agent_id, action=outcome.action.type, failure=outcome.failure)
         return outcome
 
@@ -154,9 +160,17 @@ class Runner:
             entry = board.append(rnd, agent_id, "pass", {"failure": failure})
             self._fail(run_id, rnd, agent_id, failure, outcome.detail)
         elif isinstance(action, WriteFile):
-            path = normalise_path(action.path)
+            path = action.path
             try:
                 version = ws.write(path, action.base_version, action.content, author=agent_id, note=action.note)
+                path = ws.canonical_path(path)
+            except (InvalidPath, OSError, GitError, UnicodeError) as exc:
+                failure = "write_error"
+                entry = board.append(rnd, agent_id, "pass", {"failure": failure})
+                self._fail(run_id, rnd, agent_id, failure, f"{type(exc).__name__}: {exc}")
+                board.append(rnd, SYSTEM, "write_rejected", {
+                    "agent": agent_id, "path": path, "reason": f"{type(exc).__name__}: {exc}",
+                }, refs=[entry.id])
             except WriteConflict as exc:
                 failure = "write_conflict"
                 entry = board.append(rnd, agent_id, "pass", {"failure": failure})
