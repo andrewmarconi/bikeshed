@@ -103,6 +103,69 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (run_id, step, agent_id, subject)
     );
     """,
+    """
+    CREATE TABLE methods (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL REFERENCES runs(id),
+        entry_id INTEGER NOT NULL REFERENCES entries(id),
+        author TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('propose', 'refine')),
+        goal TEXT NOT NULL,
+        text TEXT NOT NULL,
+        reception TEXT NOT NULL,
+        embedding BLOB,
+        created_at TEXT NOT NULL,
+        UNIQUE (run_id, entry_id)
+    );
+    CREATE TABLE norm_proposals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL REFERENCES runs(id),
+        author TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('norm', 'amendment', 'dimension')),
+        text TEXT NOT NULL DEFAULT '',
+        target INTEGER,
+        name TEXT NOT NULL DEFAULT '',
+        question TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'adopted', 'rejected')),
+        created_at TEXT NOT NULL,
+        UNIQUE (run_id, author)
+    );
+    CREATE TABLE norm_critiques (
+        proposal_id INTEGER NOT NULL REFERENCES norm_proposals(id),
+        author TEXT NOT NULL,
+        points TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (proposal_id, author)
+    );
+    CREATE TABLE norm_votes (
+        proposal_id INTEGER NOT NULL REFERENCES norm_proposals(id),
+        author TEXT NOT NULL,
+        stance TEXT NOT NULL CHECK (stance IN ('support', 'object')),
+        reason TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (proposal_id, author)
+    );
+    CREATE TABLE norms (
+        number INTEGER PRIMARY KEY,
+        text TEXT NOT NULL,
+        proposal_id INTEGER NOT NULL REFERENCES norm_proposals(id),
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE dimensions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        question TEXT NOT NULL,
+        proposal_id INTEGER NOT NULL REFERENCES norm_proposals(id),
+        adopted_run TEXT NOT NULL REFERENCES runs(id)
+    );
+    CREATE TABLE review_ratings (
+        review_id INTEGER NOT NULL REFERENCES reviews(id),
+        dimension_id INTEGER NOT NULL REFERENCES dimensions(id),
+        rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+        reason TEXT NOT NULL,
+        PRIMARY KEY (review_id, dimension_id)
+    );
+    """,
 ]
 
 
