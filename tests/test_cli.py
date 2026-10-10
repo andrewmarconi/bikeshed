@@ -12,11 +12,14 @@ runner = CliRunner()
 
 
 @pytest.fixture
-def project(tmp_path, monkeypatch):
+def project(tmp_path, monkeypatch, postrun_reply):
     counter = itertools.count(1)
 
     def respond(system, messages):
         first = messages[0]["content"]
+        reply = postrun_reply(first)
+        if reply:
+            return reply
         if "introduce yourself" in first.lower():
             n = next(counter)
             return json.dumps({"name": f"Member {n}", "headline": f"Headline {n}", "introduction": f"Hello from {n}."})
@@ -108,3 +111,49 @@ def test_doctor_warns_that_subscription_mode_is_not_fully_isolated(tmp_path, mon
 def test_agents_new_help_names_the_models_table():
     result = runner.invoke(cli.app, ["agents", "new", "--help"], terminal_width=200)
     assert "[models]" in result.output
+
+
+def make_agents(config, *ids):
+    for agent_id in ids:
+        result = invoke("agents", "new", agent_id, "--model", "local", "--temperament", f"T{agent_id}.", "-c", config)
+        assert result.exit_code == 0, result.output
+
+
+def run_id_from(output):
+    return re.search(r"run (\S+) closed", output).group(1)
+
+
+def test_run_triggers_the_postrun_cycle(project):
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    result = invoke("run", "Pick a colour", "--max-rounds", "2", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert "— post-run —" in result.output and "post-run done (0 failed steps)" in result.output
+    run_id = run_id_from(result.output)
+    assert (tmp_path / "community" / "agents" / "a" / "journal" / f"{run_id}.md").exists()
+    shown = invoke("agents", "show", "a", "-c", config)
+    assert "reputation: no reviews yet" in shown.output
+    assert "## Reviews received" in shown.output and "Self-review" in shown.output
+    assert "## Latest journal" in shown.output and "After reviews." in shown.output
+
+
+def test_no_postrun_skips_the_cycle_and_postrun_runs_it_later(project):
+    tmp_path, config = project
+    make_agents(config, "a")
+    result = invoke("run", "Pick a colour", "--max-rounds", "1", "--no-postrun", "-c", config)
+    assert result.exit_code == 0, result.output
+    run_id = run_id_from(result.output)
+    assert "post-run" not in result.output
+    assert not (tmp_path / "community" / "agents" / "a" / "journal").exists()
+    later = invoke("postrun", run_id, "-c", config)
+    assert later.exit_code == 0, later.output
+    assert "post-run done" in later.output
+    assert (tmp_path / "community" / "agents" / "a" / "journal" / f"{run_id}.md").exists()
+    again = invoke("postrun", run_id, "-c", config)
+    assert again.exit_code == 0 and "post-run done (0 failed steps)" in again.output
+
+
+def test_postrun_rejects_unknown_runs(project):
+    tmp_path, config = project
+    result = invoke("postrun", "nope", "-c", config)
+    assert result.exit_code == 1 and "no run 'nope'" in result.output
