@@ -95,3 +95,8 @@ async def test_thinking_left_to_server_by_default(server):
 async def test_thinking_sent_as_chat_template_kwarg(server, thinking):
     await OpenAICompatClient(backend(server, thinking=thinking)).chat("S", [])
     assert server.requests[0][1]["chat_template_kwargs"] == {"enable_thinking": thinking}
+
+
+async def test_thinking_drops_the_schema_because_oMLX_skips_thinking_under_one(server):
+    await OpenAICompatClient(backend(server, thinking=True)).chat("S", [], json_schema={"type": "object"})
+    assert "response_format" not in server.requests[0][1]

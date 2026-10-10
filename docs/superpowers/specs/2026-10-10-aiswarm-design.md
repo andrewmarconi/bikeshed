@@ -74,7 +74,7 @@ goal prompt
 
 | Unit | Responsibility | Depends on |
 |---|---|---|
-| **Model client** | One interface, two backends: OpenAI-compatible (oMLX; chat + embeddings) and `claude -p` (chat only); structured JSON output; retry with backoff | oMLX, Claude Code CLI |
+| **Model client** | One interface, two backends: OpenAI-compatible (oMLX; chat + embeddings) and `claude -p` (chat only); structured JSON output (not enforced for `thinking = true` agents, because oMLX skips thinking under a JSON schema; their JSON is parsed from the reply); retry with backoff | oMLX, Claude Code CLI |
 | **Board** | Append-only typed entries with author, round, timestamp, `refs` (entry ids), `to` (always `all` in Phase 1) | SQLite |
 | **Workspace** | Per-run git repo; versioned file read/write with optimistic concurrency; each write auto-posts an `artifact_changed` entry | git, Board |
 | **Agent** | Config + one-step function: receive View → return one validated Action | Model client, View builder |
@@ -95,7 +95,7 @@ goal prompt
 3. **Open rounds.** Each round, all agents step concurrently on the same board snapshot; resulting entries are appended in randomised order.
 4. **Stop conditions** (checked after each round):
    - **Consensus:** a `call_consensus` receives `support` from all agents but at most one, **and** received at least one `critique` before passing. Unchallenged agreement doesn't count.
-   - **Stagnation:** all agents `pass` for 2 consecutive rounds.
+   - **Stagnation:** for 2 consecutive rounds every agent is idle: it passes, or re-adopts an entry it has already adopted (seen in a 2026-10-10 run where agents circled on repeat adopts and never stopped).
    - **Budget:** `max_rounds` reached (default 12).
 5. **Post-run**, in order: Reporter → Reflection → Review cycle → Reputation update → library/norms commits.
 

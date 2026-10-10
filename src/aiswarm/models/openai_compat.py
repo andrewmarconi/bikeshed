@@ -20,7 +20,8 @@ class OpenAICompatClient:
         self, system: str, messages: list[Message], json_schema: dict[str, Any] | None = None
     ) -> ChatResult:
         kwargs: dict[str, Any] = {}
-        if json_schema is not None and self.backend.json_schema:
+        # oMLX skips thinking entirely under a JSON schema, so thinking agents get prompt-only JSON.
+        if json_schema is not None and self.backend.json_schema and not self.backend.thinking:
             kwargs["response_format"] = {"type": "json_schema", "json_schema": {"name": "reply", "schema": json_schema}}
         if self.backend.thinking is not None:
             kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": self.backend.thinking}}

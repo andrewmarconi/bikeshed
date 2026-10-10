@@ -62,7 +62,7 @@ def _introduce(cfg: Config, store: ProfileStore, agent_id: str) -> None:
 @agents_app.command("new")
 def agents_new(
     agent_id: str,
-    model: Annotated[str, typer.Option(help="Backend name from [models] in the config.")],
+    model: Annotated[str, typer.Option(help="Backend name from \\[models] in the config.")],
     temperament: Annotated[str | None, typer.Option(help="Seed temperament text.")] = None,
     temperament_file: Annotated[Path | None, typer.Option(help="File containing the seed temperament.")] = None,
     config: ConfigOpt = DEFAULT_PATH,

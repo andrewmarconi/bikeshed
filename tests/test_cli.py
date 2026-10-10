@@ -103,3 +103,8 @@ def test_doctor_warns_that_subscription_mode_is_not_fully_isolated(tmp_path, mon
     assert "not fully isolated" in result.output
     config.write_text('[models.claude]\nkind = "claude_cli"\nbare = true\n')
     assert "not fully isolated" not in invoke("doctor", "-c", config).output
+
+
+def test_agents_new_help_names_the_models_table():
+    result = runner.invoke(cli.app, ["agents", "new", "--help"], terminal_width=200)
+    assert "[models]" in result.output

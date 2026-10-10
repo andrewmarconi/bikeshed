@@ -90,6 +90,18 @@ def build_view(inputs: ViewInputs, budget_chars: int) -> str:
     notes = [f"## {name}\n{text.strip()}" for name, text in inputs.own_notes.items() if text.strip()]
     if notes:
         fixed.append("# Your private notes (only you can see these)\n" + "\n\n".join(notes))
+    positions: list[str] = []
+    adopted: set[int] = set()
+    for entry in inputs.entries:
+        if entry.author != inputs.agent_id:
+            continue
+        if entry.type == "propose":
+            positions.append(f"- You proposed #{entry.id} (r{entry.round})")
+        elif entry.type == "adopt" and entry.payload.get("target") not in adopted:
+            adopted.add(entry.payload.get("target"))
+            positions.append(f"- You adopted #{entry.payload.get('target')} (r{entry.round})")
+    if positions:
+        fixed.append("# Your positions\n" + "\n".join(positions))
     calls = [e for e in inputs.entries if e.type == "call_consensus"]
     if calls:
         lines = []

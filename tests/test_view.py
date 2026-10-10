@@ -86,3 +86,14 @@ def test_render_entry_and_who(community):
     text = render_entry(Entry(7, "r1", 2, "a", "critique", {"target": 3, "points": "p"}, [3], "all", "t"), who)
     assert text.splitlines()[0] == "#7 [r2] Alpha (a) critique → #3"
     assert "  points: p" in text
+
+
+def test_shows_what_i_have_proposed_and_adopted(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    mine = board.append(1, "a", "propose", {"answer_summary": "Red", "method": "M"})
+    theirs = board.append(1, "b", "propose", {"answer_summary": "Blue", "method": "M"})
+    board.append(2, "a", "adopt", {"target": theirs.id, "reason": "r"}, refs=[theirs.id])
+    board.append(3, "a", "adopt", {"target": theirs.id, "reason": "again"}, refs=[theirs.id])
+    view = view_for("a", 4, store, board, ws)
+    assert f"# Your positions\n- You proposed #{mine.id} (r1)\n- You adopted #{theirs.id} (r2)\n" in view + "\n"
+    assert "# Your positions" not in view_for("c", 4, store, board, ws)

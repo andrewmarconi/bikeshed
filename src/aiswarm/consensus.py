@@ -43,9 +43,22 @@ def call_status(entries: Sequence[Entry], call_id: int) -> CallStatus:
     )
 
 
-def _all_passed(entries: Sequence[Entry], agent_ids: Sequence[str], round: int) -> bool:
+def _is_idle(entry: Entry, entries: Sequence[Entry]) -> bool:
+    """A pass, or an adopt repeating one the same author already made."""
+    if entry.type == "pass":
+        return True
+    if entry.type != "adopt":
+        return False
+    target = entry.payload.get("target")
+    return any(
+        e.id < entry.id and e.author == entry.author and e.type == "adopt" and e.payload.get("target") == target
+        for e in entries
+    )
+
+
+def _idle_round(entries: Sequence[Entry], agent_ids: Sequence[str], round: int) -> bool:
     posted = [e for e in entries if e.round == round and e.author in agent_ids]
-    return bool(posted) and all(e.type == "pass" for e in posted)
+    return bool(posted) and all(_is_idle(e, entries) for e in posted)
 
 
 def stop_decision(
@@ -59,7 +72,7 @@ def stop_decision(
             if status.critiqued and len(status.supporters & members) >= needed:
                 return StopDecision("consensus", entry.id)
     window = range(round - settings.stagnation_rounds + 1, round + 1)
-    if round >= settings.stagnation_rounds and all(_all_passed(entries, agent_ids, r) for r in window):
+    if round >= settings.stagnation_rounds and all(_idle_round(entries, agent_ids, r) for r in window):
         return StopDecision("stagnation")
     if round >= settings.max_rounds:
         return StopDecision("budget")

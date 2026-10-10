@@ -86,3 +86,19 @@ def test_budget_at_max_rounds_and_consensus_takes_precedence():
         e(7, 12, "c", "vote", target=5, stance="support", reason="r"),
     ]
     assert stop_decision(entries, AGENTS, 12, RunSettings()) == StopDecision("consensus", 5)
+
+
+def test_readopting_the_same_entry_counts_as_idle():
+    entries = base()[:4] + [e(5, 2, "a", "adopt", target=2, reason="r"), e(6, 2, "b", "pass"), e(7, 2, "c", "pass")] + [
+        e(8, 3, "a", "adopt", target=2, reason="again"), e(9, 3, "b", "pass"), e(10, 3, "c", "pass"),
+        e(11, 4, "a", "adopt", target=2, reason="again"), e(12, 4, "b", "pass"), e(13, 4, "c", "pass"),
+    ]
+    assert stop_decision(entries, AGENTS, 3, RunSettings()) is None  # round 2's first adopt was progress
+    assert stop_decision(entries, AGENTS, 4, RunSettings()) == StopDecision("stagnation")
+
+
+def test_adopting_a_different_entry_is_progress():
+    entries = base()[:4] + [e(5, 2, "a", "adopt", target=2, reason="r"), e(6, 2, "b", "pass"), e(7, 2, "c", "pass")] + [
+        e(8, 3, "a", "adopt", target=3, reason="changed mind"), e(9, 3, "b", "pass"), e(10, 3, "c", "pass"),
+    ]
+    assert stop_decision(entries, AGENTS, 3, RunSettings()) is None
