@@ -2,7 +2,9 @@
 
 import json
 import re
+import sqlite3
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -147,3 +149,47 @@ def add_goal(store: ProfileStore, text: str, category: str, goal_id: str | None 
         raise GoalError(summarise_validation(exc)) from exc
     store.write_community_file(GOALS_FILE, render_goals(updated), f"add goal {goal.id}", author="aiswarm")
     return goal
+
+
+@dataclass(frozen=True)
+class Selected:
+    id: str
+    text: str
+    category: str
+    is_benchmark: bool
+
+
+def _last_benchmark_rowid(conn: sqlite3.Connection) -> int | None:
+    return conn.execute("SELECT MAX(rowid) FROM runs WHERE is_benchmark = 1").fetchone()[0]
+
+
+def runs_since_benchmark(conn: sqlite3.Connection) -> int | None:
+    """Runs of any kind started since the last benchmark run; None if it has never run."""
+    last = _last_benchmark_rowid(conn)
+    if last is None:
+        return None
+    return conn.execute("SELECT COUNT(*) FROM runs WHERE rowid > ?", (last,)).fetchone()[0]
+
+
+def benchmark_due(conn: sqlite3.Connection, every: int) -> bool:
+    since = runs_since_benchmark(conn)
+    return since is None or since >= every - 1
+
+
+def used_goals(conn: sqlite3.Connection) -> dict[str, str]:
+    """Queue goal id -> the first run that used it."""
+    used: dict[str, str] = {}
+    for row in conn.execute("SELECT goal_id, id FROM runs WHERE goal_id IS NOT NULL AND is_benchmark = 0 ORDER BY rowid"):
+        used.setdefault(row["goal_id"], row["id"])
+    return used
+
+
+def next_goal(conn: sqlite3.Connection, gf: GoalFile) -> Selected:
+    """The benchmark when due, else the first unused queue goal. Selecting does not consume a goal; starting a run does."""
+    if benchmark_due(conn, gf.benchmark.every):
+        return Selected(BENCHMARK_ID, gf.benchmark.text, gf.benchmark.category, True)
+    used = used_goals(conn)
+    for goal in gf.goals:
+        if goal.id not in used:
+            return Selected(goal.id, goal.text, goal.category, False)
+    raise GoalError("goal queue is empty; add goals with `aiswarm goals add`")

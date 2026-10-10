@@ -11,6 +11,7 @@ import typer
 from aiswarm.config import DEFAULT_CONFIG, ClaudeCliBackend, Config, load_config
 from aiswarm.db import connect
 from aiswarm.checkin import checkin
+from aiswarm.goals import GOALS_FILE, GoalError, add_goal, load_goals, next_goal, runs_since_benchmark, seed_goals, used_goals
 from aiswarm.introduce import introduce
 from aiswarm.models.base import ModelError, limit_clients
 from aiswarm.models.claude_cli import ClaudeCliClient, leak_check
@@ -26,6 +27,8 @@ from aiswarm.view import make_who
 app = typer.Typer(no_args_is_help=True, help="A self-organising community of LLM agents.")
 agents_app = typer.Typer(no_args_is_help=True, help="Create and inspect agents.")
 app.add_typer(agents_app, name="agents")
+goals_app = typer.Typer(no_args_is_help=True, help="Manage the goal queue (categories are never shown to agents).")
+app.add_typer(goals_app, name="goals")
 
 ConfigOpt = Annotated[Path, typer.Option("--config", "-c", help="Path to aiswarm.toml.")]
 DEFAULT_PATH = Path("aiswarm.toml")
@@ -49,7 +52,9 @@ def init(config: ConfigOpt = DEFAULT_PATH) -> None:
         config.write_text(DEFAULT_CONFIG)
         typer.echo(f"wrote {config} — set models.local.model before using local agents")
     cfg = load_config(config)
-    ProfileStore(cfg.community_dir)
+    store = ProfileStore(cfg.community_dir)
+    if seed_goals(store):
+        typer.echo(f"wrote {cfg.community_dir / GOALS_FILE} — the goal queue for `aiswarm run --next`")
     connect(cfg.db_path).close()
     cfg.runs_dir.mkdir(parents=True, exist_ok=True)
     typer.echo(f"community ready at {cfg.community_dir}")
@@ -207,6 +212,7 @@ def _print_event(event: dict[str, Any]) -> None:
 @app.command()
 def run(
     goal: Annotated[str | None, typer.Argument(help="The goal prompt.")] = None,
+    next_: Annotated[bool, typer.Option("--next", help="Take the next goal from the queue (or the benchmark when due).")] = False,
     resume: Annotated[str | None, typer.Option(help="Resume a paused or interrupted run.")] = None,
     agent: Annotated[list[str] | None, typer.Option("--agent", help="Agent ids to include (default: all).")] = None,
     max_rounds: Annotated[int | None, typer.Option(help="Override the round budget.")] = None,
@@ -219,14 +225,24 @@ def run(
         cfg.run.max_rounds = max_rounds
     store = ProfileStore(cfg.community_dir)
     conn = connect(cfg.db_path)
+    selected = None
     if resume:
         row = conn.execute("SELECT agent_ids FROM runs WHERE id = ?", (resume,)).fetchone()
         if row is None:
             _fail(f"no run {resume!r}")
         agent_ids = json.loads(row["agent_ids"])
     else:
+        if next_ and goal:
+            _fail("give a goal or --next, not both")
+        if next_:
+            try:
+                selected = next_goal(conn, load_goals(cfg.community_dir / GOALS_FILE))
+            except GoalError as exc:
+                _fail(str(exc))
+            goal = selected.text
+            typer.echo(f"goal ({selected.id}, {selected.category}): {goal}")
         if not goal:
-            _fail("give a goal, or --resume RUN_ID")
+            _fail("give a goal, --next, or --resume RUN_ID")
         agent_ids = agent or store.ids()
         if not agent_ids:
             _fail("no agents yet; create some with `aiswarm agents new`")
@@ -240,7 +256,12 @@ def run(
         runner = Runner(settings=cfg.run, conn=conn, store=store, runs_dir=cfg.runs_dir, clients=limited,
                         sink=_print_event, embedder=embedder, library_top_k=cfg.library.top_k)
         try:
-            run_id = resume or runner.start(goal or "", agent_ids)
+            run_id = resume or runner.start(
+                goal or "", agent_ids,
+                goal_id=selected.id if selected else None,
+                goal_category=selected.category if selected else None,
+                is_benchmark=bool(selected and selected.is_benchmark),
+            )
         except ValueError as exc:
             _fail(str(exc))
         await capture(conn, run_id, "resume" if resume else "start", cfg, backends, probe=probe_server)
@@ -258,6 +279,50 @@ def run(
             _report_postrun(run_id, post)
 
     asyncio.run(go())
+
+
+@goals_app.command("list")
+def goals_list(config: ConfigOpt = DEFAULT_PATH) -> None:
+    """Show the benchmark, the queue (used and unused), and what `run --next` would take."""
+    cfg = _load(config)
+    conn = connect(cfg.db_path)
+    try:
+        gf = load_goals(cfg.community_dir / GOALS_FILE)
+    except GoalError as exc:
+        _fail(str(exc))
+    b = gf.benchmark
+    since = runs_since_benchmark(conn)
+    if since is None:
+        status = "never run; due now"
+    else:
+        last = conn.execute("SELECT id FROM runs WHERE is_benchmark = 1 ORDER BY rowid DESC LIMIT 1").fetchone()["id"]
+        left = b.every - 1 - since
+        status = f"last run {last}; " + ("due now" if left <= 0 else f"due after {left} more run{'s' if left != 1 else ''}")
+    typer.echo(f"benchmark ({b.category}, every {b.every}): {b.text}\n  {status}\n")
+    used = used_goals(conn)
+    for g in gf.goals:
+        mark = f"used by {used[g.id]}" if g.id in used else "unused"
+        typer.echo(f"{g.id}\t{g.category}\t{mark}\t{g.text}")
+    try:
+        typer.echo(f"\nnext: {next_goal(conn, gf).id}")
+    except GoalError as exc:
+        typer.echo(f"\nnext: none ({exc})")
+
+
+@goals_app.command("add")
+def goals_add(
+    text: str,
+    category: Annotated[str, typer.Option(help="neutral, trade-off, or contested (Observer-only).")],
+    goal_id: Annotated[str | None, typer.Option("--id", help="Goal id (default: derived from the text).")] = None,
+    config: ConfigOpt = DEFAULT_PATH,
+) -> None:
+    """Append a goal to the queue."""
+    cfg = _load(config)
+    try:
+        goal = add_goal(ProfileStore(cfg.community_dir), text, category, goal_id)
+    except GoalError as exc:
+        _fail(str(exc))
+    typer.echo(f"added {goal.id} ({goal.category}): {goal.text}")
 
 
 @app.command()

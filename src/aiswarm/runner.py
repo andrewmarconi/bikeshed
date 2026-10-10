@@ -62,7 +62,10 @@ class Runner:
     def _workspace(self, run_id: str) -> Workspace:
         return Workspace(self.conn, run_id, self.runs_dir / run_id / "workspace")
 
-    def start(self, goal: str, agent_ids: Sequence[str]) -> str:
+    def start(
+        self, goal: str, agent_ids: Sequence[str], *, goal_id: str | None = None,
+        goal_category: str | None = None, is_benchmark: bool = False,
+    ) -> str:
         if not agent_ids:
             raise ValueError("a run needs at least one agent")
         unknown = [a for a in agent_ids if a not in self.store.ids()]
@@ -77,8 +80,9 @@ class Runner:
         (self.runs_dir / run_id).mkdir(parents=True)
         with transaction(self.conn):
             self.conn.execute(
-                "INSERT INTO runs (id, goal, status, agent_ids, created_at, seed) VALUES (?, ?, 'running', ?, ?, ?)",
-                (run_id, goal, json.dumps(list(agent_ids)), now_iso(), seed),
+                "INSERT INTO runs (id, goal, status, agent_ids, created_at, seed, goal_id, goal_category, is_benchmark) "
+                "VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?)",
+                (run_id, goal, json.dumps(list(agent_ids)), now_iso(), seed, goal_id, goal_category, int(is_benchmark)),
             )
             Board(self.conn, run_id).append(0, SYSTEM, "goal", {"goal": goal})
         self._workspace(run_id)

@@ -220,3 +220,44 @@ def test_agents_new_control_creates_a_seeded_control_agent(project):
     assert "control = true" in (tmp_path / "community" / "agents" / "e" / "agent.toml").read_text()
     assert (tmp_path / "community" / "agents" / "e" / "seed" / "public.toml").exists()
     assert "control" in invoke("agents", "list", "-c", config).output
+
+
+def test_init_seeds_the_goal_queue(project):
+    tmp_path, config = project
+    assert "best-fruit" in (tmp_path / "community" / "goals.toml").read_text()
+
+
+def test_run_next_takes_the_benchmark_then_the_queue(project):
+    tmp_path, config = project
+    for agent_id in ("a", "b"):
+        assert invoke("agents", "new", agent_id, "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    first = invoke("run", "--next", "--max-rounds", "2", "--no-postrun", "-c", config)
+    assert first.exit_code == 0, first.output
+    assert "goal (benchmark, trade-off): Pick one pizza topping combination" in first.output
+    second = invoke("run", "--next", "--max-rounds", "2", "--no-postrun", "-c", config)
+    assert "goal (best-fruit, contested): Come to an agreement on the best fruit." in second.output
+    listing = invoke("goals", "list", "-c", config).output
+    assert "best-fruit\tcontested\tused by" in listing and "next: hot-dog-sandwich" in listing
+    assert "due after 3 more runs" in listing
+
+
+def test_run_rejects_a_goal_together_with_next(project):
+    tmp_path, config = project
+    result = invoke("run", "Pick a colour", "--next", "-c", config)
+    assert result.exit_code != 0 and "not both" in result.output
+
+
+def test_goals_add(project):
+    tmp_path, config = project
+    result = invoke("goals", "add", "Rank the best sandwiches.", "--category", "contested", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert "added rank-the-best-sandwiches (contested)" in result.output
+    bad = invoke("goals", "add", "Fine.", "--category", "serious", "-c", config)
+    assert bad.exit_code != 0 and "category" in bad.output
+
+
+def test_goals_list_reports_a_broken_file(project):
+    tmp_path, config = project
+    (tmp_path / "community" / "goals.toml").write_text("[benchmark\n")
+    result = invoke("goals", "list", "-c", config)
+    assert result.exit_code != 0 and "goals.toml" in result.output and "Traceback" not in result.output

@@ -79,3 +79,55 @@ def test_add_goal_rejects_bad_input(store):
         add_goal(store, "Again.", "neutral", goal_id="best-fruit")
     with pytest.raises(GoalError, match="single line"):
         add_goal(store, "two\nlines", "neutral")
+
+
+from aiswarm.db import connect  # noqa: E402
+from aiswarm.goals import BENCHMARK_ID, benchmark_due, next_goal, runs_since_benchmark, used_goals  # noqa: E402
+
+
+@pytest.fixture
+def conn(tmp_path):
+    return connect(tmp_path / "c.db")
+
+
+def add_run(conn, run_id, goal_id=None, benchmark=False):
+    conn.execute(
+        "INSERT INTO runs (id, goal, status, agent_ids, created_at, goal_id, is_benchmark) "
+        "VALUES (?, 'g', 'closed', '[]', 't', ?, ?)", (run_id, goal_id, int(benchmark)))
+
+
+def test_benchmark_is_due_when_never_run_even_after_ad_hoc_runs(conn):
+    for n in range(5):
+        add_run(conn, f"r{n}")
+    assert runs_since_benchmark(conn) is None
+    assert next_goal(conn, DEFAULT_GOALS).is_benchmark
+
+
+def test_benchmark_recurs_every_n_runs_counting_ad_hoc_runs(conn):
+    add_run(conn, "b1", BENCHMARK_ID, benchmark=True)
+    assert not benchmark_due(conn, 5)
+    add_run(conn, "r1", "best-fruit")
+    add_run(conn, "r2")                      # ad hoc
+    add_run(conn, "r3", "hot-dog-sandwich")
+    assert runs_since_benchmark(conn) == 3 and not benchmark_due(conn, 5)
+    add_run(conn, "r4", "greatest-board-game")
+    assert benchmark_due(conn, 5)
+    assert next_goal(conn, DEFAULT_GOALS) == next_goal(conn, DEFAULT_GOALS)  # pure: selecting does not consume
+    assert next_goal(conn, DEFAULT_GOALS).id == BENCHMARK_ID
+
+
+def test_next_goal_takes_the_first_unused_queue_goal(conn):
+    add_run(conn, "b1", BENCHMARK_ID, benchmark=True)
+    add_run(conn, "r1", "best-fruit")
+    selected = next_goal(conn, DEFAULT_GOALS)
+    assert (selected.id, selected.category, selected.is_benchmark) == ("hot-dog-sandwich", "contested", False)
+    assert used_goals(conn) == {"best-fruit": "r1"}
+
+
+def test_next_goal_fails_when_the_queue_is_used_up(conn):
+    gf = GoalFile(benchmark=Benchmark(text="B.", category="neutral", every=100),
+                  goals=[Goal(id="only", text="Only.", category="neutral")])
+    add_run(conn, "b1", BENCHMARK_ID, benchmark=True)
+    add_run(conn, "r1", "only")
+    with pytest.raises(GoalError, match="goals add"):
+        next_goal(conn, gf)

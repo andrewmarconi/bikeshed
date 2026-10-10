@@ -314,3 +314,15 @@ def test_start_refuses_a_control_agent_without_a_seed_profile(community, scripte
     with pytest.raises(ValueError, match="agents introduce d"):
         runner.start("G", ["a", "d"])
     assert conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
+
+
+async def test_start_records_goal_metadata_and_never_shows_it_to_agents(community, scripted, runner_factory):
+    store, conn = community
+    clients = {a: scripted({1: propose}) for a in AGENTS}
+    runner = runner_factory(store, conn, clients, max_rounds=2)
+    run_id = runner.start("Pick one pizza.", AGENTS, goal_id="benchmark", goal_category="trade-off", is_benchmark=True)
+    await runner.run(run_id)
+    row = conn.execute("SELECT goal_id, goal_category, is_benchmark FROM runs WHERE id = ?", (run_id,)).fetchone()
+    assert tuple(row) == ("benchmark", "trade-off", 1)
+    sent = json.dumps([call[:2] for client in clients.values() for call in client.calls])
+    assert "trade-off" not in sent and "benchmark" not in sent.lower()
