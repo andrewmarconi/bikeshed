@@ -14,16 +14,21 @@ from aiswarm.events import EventLog
 from aiswarm.journal import JOURNAL_MAX, journal_section, write_journal
 from aiswarm.library import embed_missing, record_methods
 from aiswarm.models.base import Embedder, ModelClient, ModelError
-from aiswarm.norms import DIMENSION_NAME_MAX, NORM_MAX, add_proposal, current_norms, dimensions, render_norms
+from aiswarm.norms import (
+    DIMENSION_NAME_MAX, NORM_MAX, add_norm_critique, add_norm_vote, add_proposal, critiques_of, current_norms, decide,
+    dimensions, proposals, render_norms, render_proposal,
+)
 from aiswarm.postrun.ask import ReplyError, ask
 from aiswarm.postrun.feedback import feedback_packet, interactions, transcript
-from aiswarm.postrun.replies import JournalReply, ResponsesReply, ReviewReply, UpdateReply
+from aiswarm.postrun.replies import (
+    JournalReply, NormCritiquesReply, NormVotesReply, ResponsesReply, ReviewReply, UpdateReply,
+)
 from aiswarm.profiles import HEADLINE_MAX, INTRO_MAX, NAME_MAX, PRIVATE_MAX, PRONOUNS_MAX, ProfileError, ProfileStore
 from aiswarm.prompts import render
 from aiswarm.reviews import Review, add_response, add_review, render_review, responses_for, reviews_of
 from aiswarm.view import Who, make_who
 
-STEPS = ("journal", "review", "responses", "update", "library")
+STEPS = ("journal", "review", "responses", "update", "norms_critique", "norms_vote", "library")
 _NOTES = ("self.md", "lessons.md", "peer-notes.md")
 
 
@@ -57,7 +62,7 @@ class PostRun:
     def __init__(
         self, *, conn: sqlite3.Connection, store: ProfileStore, runs_dir: Path,
         clients: Mapping[str, ModelClient], sink: Callable[[dict[str, Any]], None] | None = None,
-        embedder: Embedder | None = None,
+        embedder: Embedder | None = None, quorum_slack: int = 1,
     ):
         self.conn = conn
         self.store = store
@@ -65,6 +70,7 @@ class PostRun:
         self.clients = clients
         self.sink = sink
         self.embedder = embedder
+        self.quorum_slack = quorum_slack
 
     async def run(self, run_id: str) -> PostRunResult:
         row = self.conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
@@ -84,15 +90,16 @@ class PostRun:
         failed = 0
         for step in STEPS:
             pending = [call for call in self._calls(step, ctx) if not self._done(run_id, call)]
-            if not pending:
-                continue
-            outcomes = await asyncio.gather(*(self._attempt(ctx, call) for call in pending))
-            failed += sum(outcome != "done" for outcome in outcomes)
-            # Pause only for an outage: every call hit a model error and nothing in this step ever finished.
-            # A resumed step whose only pending calls belong to one dead backend must not stall everyone else.
-            if all(outcome == "model_error" for outcome in outcomes) and not self._step_started(run_id, step):
-                ctx.events.emit("postrun_paused", step=step)
-                return PostRunResult(run_id, "paused", failed)
+            if pending:
+                outcomes = await asyncio.gather(*(self._attempt(ctx, call) for call in pending))
+                failed += sum(outcome != "done" for outcome in outcomes)
+                # Pause only for an outage: every call hit a model error and nothing in this step ever finished.
+                # A resumed step whose only pending calls belong to one dead backend must not stall everyone else.
+                if all(outcome == "model_error" for outcome in outcomes) and not self._step_started(run_id, step):
+                    ctx.events.emit("postrun_paused", step=step)
+                    return PostRunResult(run_id, "paused", failed)
+            if step == "norms_vote":
+                self._decide(ctx)
         ctx.events.emit("postrun_finished", failed=failed)
         return PostRunResult(run_id, "done", failed)
 
@@ -116,6 +123,11 @@ class PostRun:
             ]
         if step == "update":
             return [_Call(step, a, "", lambda a=a: self._update(ctx, a)) for a in ctx.agent_ids]
+        if step in ("norms_critique", "norms_vote"):
+            if not proposals(self.conn, ctx.run_id, "open"):
+                return []
+            method = self._norms_critique if step == "norms_critique" else self._norms_vote
+            return [_Call(step, a, "", lambda a=a, m=method: m(ctx, a)) for a in ctx.agent_ids]
         if step == "library":
             return [_Call(step, "system", "", lambda: self._library(ctx))]
         raise ValueError(f"unknown step {step!r}")
@@ -296,6 +308,58 @@ class PostRun:
             journal += "\n\nRejected changes (previous versions kept):\n" + "\n".join(f"- {r}" for r in rejected)
         write_journal(self.conn, self.store, agent_id, ctx.run_id, "after", journal)
         return answer.reasoning
+
+    def _proposals_text(self, ctx: _Context, with_critiques: bool) -> str:
+        texts = dict(current_norms(self.conn))
+        blocks = []
+        for p in proposals(self.conn, ctx.run_id, "open"):
+            lines = [render_proposal(p, ctx.who, texts)]
+            if with_critiques:
+                critiques = critiques_of(self.conn, p.id)
+                lines += [f"  critique by {ctx.who(a)}: {points}" for a, points in critiques] or ["  (no critiques)"]
+            blocks.append("\n".join(lines))
+        return "\n\n".join(blocks)
+
+    async def _norms_critique(self, ctx: _Context, agent_id: str) -> str | None:
+        open_ids = {p.id for p in proposals(self.conn, ctx.run_id, "open")}
+        request = render("norms_critique_request.md", run_id=ctx.run_id, proposals=self._proposals_text(ctx, False),
+                         norms=render_norms(self.conn) or "(none adopted yet)")
+
+        def check(reply: NormCritiquesReply) -> None:
+            unknown = [c.proposal_id for c in reply.critiques if c.proposal_id not in open_ids]
+            if unknown:
+                raise ReplyError(f"proposal {unknown[0]} is not one of the open proposals {sorted(open_ids)}")
+
+        answer = await ask(self.clients[agent_id], self._system(ctx, agent_id), request, NormCritiquesReply, check)
+        with transaction(self.conn):
+            for c in answer.reply.critiques:
+                add_norm_critique(self.conn, c.proposal_id, agent_id, c.points)
+        return answer.reasoning
+
+    async def _norms_vote(self, ctx: _Context, agent_id: str) -> str | None:
+        expected = sorted(p.id for p in proposals(self.conn, ctx.run_id, "open"))
+        request = render("norms_vote_request.md", run_id=ctx.run_id, proposals=self._proposals_text(ctx, True),
+                         norms=render_norms(self.conn) or "(none adopted yet)", slack=self.quorum_slack)
+
+        def check(reply: NormVotesReply) -> None:
+            if sorted(v.proposal_id for v in reply.votes) != expected:
+                raise ReplyError(f"give exactly one vote for each proposal id: {expected}")
+
+        answer = await ask(self.clients[agent_id], self._system(ctx, agent_id), request, NormVotesReply, check)
+        with transaction(self.conn):
+            for v in answer.reply.votes:
+                add_norm_vote(self.conn, v.proposal_id, agent_id, v.stance, v.reason)
+        return answer.reasoning
+
+    def _decide(self, ctx: _Context) -> None:
+        decided = decide(self.conn, ctx.run_id, ctx.agent_ids, self.quorum_slack)
+        content = render_norms(self.conn)
+        path = self.store.root / "norms.md"
+        if content and (not path.exists() or path.read_text() != content):
+            self.store.write_community_file("norms.md", content, f"norms after run {ctx.run_id}")
+        if decided:
+            ctx.events.emit("norms_decided", adopted=[p.id for p in decided if p.status == "adopted"],
+                            rejected=[p.id for p in decided if p.status == "rejected"])
 
     async def _library(self, ctx: _Context) -> None:
         record_methods(self.conn, ctx.run_id, ctx.goal, ctx.entries)

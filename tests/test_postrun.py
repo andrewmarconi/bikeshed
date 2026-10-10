@@ -351,3 +351,77 @@ async def test_a_dimension_must_not_reuse_a_name(tmp_path, community, make_run, 
         proposal={"kind": "dimension", "name": "care", "question": "Again?"})))
     await cycle(store, conn, tmp_path, clients).run(run_id)
     assert proposals(conn, run_id) == []
+
+
+def proposing(postrun_reply, kind="norm", **fields):
+    proposal = {"kind": kind, **fields}
+    return FakeModel(responder(postrun_reply, update=update_reply(proposal=proposal)))
+
+
+async def test_a_critiqued_proposal_with_quorum_is_adopted_into_norms_md(tmp_path, community, make_run, postrun_reply):
+    from aiswarm.norms import critiques_of, proposals
+
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "bc"}
+    clients["a"] = proposing(postrun_reply, text="Cite entry ids.")
+    result = await cycle(store, conn, tmp_path, clients).run(run_id)
+    assert (result.status, result.failed) == ("done", 0)
+    [p] = proposals(conn, run_id)
+    assert p.status == "adopted"
+    assert [author for author, _ in critiques_of(conn, p.id)] == ["a", "b", "c"]
+    assert (store.root / "norms.md").read_text() == "1. Cite entry ids.\n"
+    vote = next(m[0]["content"] for _, m, _ in clients["b"].calls if m[0]["content"].startswith("# Post-run: norms_vote"))
+    assert f"Proposal {p.id} by Alpha (a): a new norm" in vote and "critique by Cyd (c): Consider edge cases." in vote
+    names = [e["event"] for e in read_events(tmp_path / "runs" / run_id / "events.jsonl")]
+    assert "norms_decided" in names
+
+
+async def test_a_proposal_nobody_else_critiques_is_rejected(tmp_path, community, make_run, postrun_reply):
+    from aiswarm.norms import proposals
+
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    no_critique = lambda request: json.dumps({"critiques": []})
+    clients = {a: FakeModel(responder(postrun_reply, norms_critique=no_critique)) for a in "bc"}
+    clients["a"] = FakeModel(responder(postrun_reply, norms_critique=no_critique,
+                                       update=update_reply(proposal={"kind": "norm", "text": "Unchallenged."})))
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    assert [p.status for p in proposals(conn, run_id)] == ["rejected"]
+    assert not (store.root / "norms.md").exists()
+
+
+async def test_no_proposals_means_no_deliberation_calls(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    asked = [m[0]["content"].split("\n")[0] for c in clients.values() for _, m, _ in c.calls]
+    assert not any("norms_" in line for line in asked)
+
+
+async def test_rerun_after_the_decision_does_not_vote_again(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "bc"}
+    clients["a"] = proposing(postrun_reply, text="Cite entry ids.")
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    again = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    await cycle(store, conn, tmp_path, again).run(run_id)
+    assert [len(again[a].calls) for a in "abc"] == [0, 0, 0]
+    assert (store.root / "norms.md").read_text() == "1. Cite entry ids.\n"
+    assert conn.execute("SELECT COUNT(*) FROM norms").fetchone()[0] == 1
+
+
+async def test_critiques_must_name_open_proposals_and_votes_cover_each(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    bad_critique = lambda request: json.dumps({"critiques": [{"proposal_id": 999, "points": "?"}]})
+    partial_vote = lambda request: json.dumps({"votes": []})
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "c"}
+    clients["b"] = FakeModel(responder(postrun_reply, norms_critique=bad_critique, norms_vote=partial_vote))
+    clients["a"] = proposing(postrun_reply, text="X.")
+    result = await cycle(store, conn, tmp_path, clients).run(run_id)
+    assert steps(conn)[("norms_critique", "b", "")] == "failed"
+    assert steps(conn)[("norms_vote", "b", "")] == "failed"
+    assert result.failed == 2

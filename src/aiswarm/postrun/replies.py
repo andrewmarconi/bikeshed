@@ -72,3 +72,22 @@ class UpdateReply(_Reply):
     peer_notes: str | None = None
     public_profile: PublicReply | None = None
     proposal: ProposalReply | None = None
+
+
+class NormCritique(_Reply):
+    proposal_id: int
+    points: Text
+
+
+class NormCritiquesReply(_Reply):
+    critiques: list[NormCritique]
+
+
+class NormVote(_Reply):
+    proposal_id: int
+    stance: Literal["support", "object"]
+    reason: Text
+
+
+class NormVotesReply(_Reply):
+    votes: list[NormVote]
