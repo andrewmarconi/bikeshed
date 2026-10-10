@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass
 
 from aiswarm.board import SYSTEM, Entry
 from aiswarm.db import now_iso
-from aiswarm.models.base import Embedder
+from aiswarm.models.base import Embedder, ModelError
 
 Who = Callable[[str], str]
 
@@ -94,14 +94,36 @@ def _method(row: sqlite3.Row) -> Method:
                   kind=row["kind"], goal=row["goal"], text=row["text"], reception=Reception(**json.loads(row["reception"])))
 
 
-async def embed_missing(conn: sqlite3.Connection, embedder: Embedder) -> int:
+async def _embed(embedder: Embedder, texts: list[str]) -> list[list[float]]:
+    vectors = await embedder.embed(texts)
+    if len(vectors) != len(texts):
+        raise ModelError(f"embeddings server returned {len(vectors)} vectors for {len(texts)} texts")
+    return vectors
+
+
+async def embed_missing(conn: sqlite3.Connection, embedder: Embedder, batch: int = 16) -> int:
+    """Embed methods that have no vector yet. A rejected batch is retried row by row so one bad row
+    cannot block the rest; it stays unembedded. Raises only if nothing could be embedded at all."""
     rows = conn.execute("SELECT id, text FROM methods WHERE embedding IS NULL ORDER BY id").fetchall()
-    if not rows:
-        return 0
-    vectors = await embedder.embed([row["text"] for row in rows])
-    for row, vector in zip(rows, vectors):
-        conn.execute("UPDATE methods SET embedding = ? WHERE id = ?", (_pack(vector), row["id"]))
-    return len(rows)
+    embedded = 0
+    last_error: ModelError | None = None
+    for start in range(0, len(rows), batch):
+        chunk = rows[start:start + batch]
+        try:
+            pairs = list(zip(chunk, await _embed(embedder, [row["text"] for row in chunk])))
+        except ModelError as exc:
+            last_error, pairs = exc, []
+            for row in chunk if len(chunk) > 1 else []:
+                try:
+                    pairs.append((row, (await _embed(embedder, [row["text"]]))[0]))
+                except ModelError as single:
+                    last_error = single
+        for row, vector in pairs:
+            conn.execute("UPDATE methods SET embedding = ? WHERE id = ?", (_pack(vector), row["id"]))
+        embedded += len(pairs)
+    if rows and not embedded and last_error is not None:
+        raise last_error
+    return embedded
 
 
 async def retrieve(
@@ -114,7 +136,7 @@ async def retrieve(
     ).fetchall()
     if not rows:
         return []
-    [query] = await embedder.embed([goal])
+    [query] = await _embed(embedder, [goal])
     scored = [(_method(row), _cosine(query, _unpack(row["embedding"]))) for row in rows]
     return sorted(scored, key=lambda pair: pair[1], reverse=True)[:top_k]
 

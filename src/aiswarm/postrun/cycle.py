@@ -32,6 +32,7 @@ from aiswarm.reviews import (
 )
 from aiswarm.view import Who, make_who
 
+_OPTIONAL = ("library", "narrative")  # their failure never pauses the cycle
 STEPS = ("journal", "review", "responses", "update", "norms_critique", "norms_vote", "library", "narrative")
 _NOTES = ("self.md", "lessons.md", "peer-notes.md")
 
@@ -100,7 +101,8 @@ class PostRun:
                 failed += sum(outcome != "done" for outcome in outcomes)
                 # Pause only for an outage: every call hit a model error and nothing in this step ever finished.
                 # A resumed step whose only pending calls belong to one dead backend must not stall everyone else.
-                if all(outcome == "model_error" for outcome in outcomes) and not self._step_started(run_id, step):
+                if (step not in _OPTIONAL and all(outcome == "model_error" for outcome in outcomes)
+                        and not self._step_started(run_id, step)):
                     ctx.events.emit("postrun_paused", step=step)
                     return PostRunResult(run_id, "paused", failed)
             if step == "norms_vote":
@@ -148,6 +150,11 @@ class PostRun:
             return not self._unanswered(run_id, call.agent_id)  # a review added on retry reopens the step
         return done
 
+    def _deliberation_started(self, run_id: str) -> bool:
+        return self.conn.execute(
+            "SELECT 1 FROM postrun_steps WHERE run_id = ? AND step IN ('norms_critique', 'norms_vote')", (run_id,)
+        ).fetchone() is not None
+
     def _step_started(self, run_id: str, step: str) -> bool:
         return self.conn.execute(
             "SELECT 1 FROM postrun_steps WHERE run_id = ? AND step = ? AND status = 'done'", (run_id, step)
@@ -180,7 +187,7 @@ class PostRun:
             self._mark(ctx.run_id, call, "done", "", reasoning)
             ctx.events.emit("postrun_step_finished", step=call.step, agent=call.agent_id, subject=call.subject, status="done")
             return "done"
-        self._mark(ctx.run_id, call, "failed", detail, None)
+        self._mark(ctx.run_id, call, "failed", f"{kind}: {detail}", None)
         self.conn.execute(
             "INSERT INTO failures (run_id, round, agent_id, kind, detail, created_at) VALUES (?, 0, ?, ?, ?, ?)",
             (ctx.run_id, call.agent_id, f"postrun:{call.step}:{kind}", detail, now_iso()),
@@ -216,7 +223,7 @@ class PostRun:
         client = self.clients[reviewer]
         own = reviewer == reviewee
         name = ctx.who(reviewee)
-        dims = dimensions(self.conn, exclude_run=ctx.run_id)
+        dims = dimensions(self.conn, before_run=ctx.run_id)
         dimension_block = "" if not dims else (
             f"\nAlso rate {'yourself' if own else 'them'} on each of the community's rating dimensions, "
             "as an integer from 1 to 5 with a reason:\n" + "\n".join(f'- "{d.name}": {d.question}' for d in dims) + "\n"
@@ -321,7 +328,9 @@ class PostRun:
                                       pronouns=profile.pronouns)
             except ProfileError as exc:
                 rejected.append(f"public profile: {exc}")
-        if reply.proposal is not None:
+        if reply.proposal is not None and self._deliberation_started(ctx.run_id):
+            rejected.append("proposal: Your proposal was not considered: this run's proposals had already been deliberated")
+        elif reply.proposal is not None:
             p = reply.proposal
             add_proposal(self.conn, run_id=ctx.run_id, author=agent_id, kind=p.kind, text=p.text.strip(),
                          target=p.target, name=p.name.strip(), question=p.question.strip())
@@ -374,6 +383,13 @@ class PostRun:
         return answer.reasoning
 
     def _decide(self, ctx: _Context) -> None:
+        if self.conn.execute(
+            "SELECT 1 FROM postrun_steps WHERE run_id = ? AND step = 'norms_vote' AND status = 'failed' "
+            "AND detail LIKE 'model_error:%'", (ctx.run_id,),
+        ).fetchone():
+            # A vote lost to an outage is retried on resume, not counted as non-support.
+            ctx.events.emit("norms_deferred", reason="votes pending after a model error")
+            return
         decided = decide(self.conn, ctx.run_id, ctx.agent_ids, self.quorum_slack)
         content = render_norms(self.conn)
         path = self.store.root / "norms.md"
@@ -385,8 +401,16 @@ class PostRun:
 
     async def _library(self, ctx: _Context) -> None:
         record_methods(self.conn, ctx.run_id, ctx.goal, ctx.entries)
-        if self.embedder is not None:
+        if self.embedder is None:
+            return
+        try:
             await embed_missing(self.conn, self.embedder)
+        except ModelError as exc:  # unembedded methods are retried by the next cycle's library step
+            self.conn.execute(
+                "INSERT INTO failures (run_id, round, agent_id, kind, detail, created_at) VALUES (?, 0, 'system', ?, ?, ?)",
+                (ctx.run_id, "postrun:library:embed_error", str(exc), now_iso()),
+            )
+            ctx.events.emit("library_embed_failed", detail=str(exc))
 
     async def _narrative(self, ctx: _Context) -> str | None:
         assert self.narrator is not None

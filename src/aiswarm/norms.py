@@ -84,8 +84,16 @@ def current_norms(conn: sqlite3.Connection) -> list[tuple[int, str]]:
     return [(row["number"], row["text"]) for row in conn.execute("SELECT number, text FROM norms ORDER BY number")]
 
 
-def dimensions(conn: sqlite3.Connection, exclude_run: str | None = None) -> list[Dimension]:
-    rows = conn.execute("SELECT * FROM dimensions WHERE adopted_run IS NOT ? ORDER BY id", (exclude_run,))
+def dimensions(
+    conn: sqlite3.Connection, exclude_run: str | None = None, before_run: str | None = None,
+) -> list[Dimension]:
+    """Adopted dimensions; `before_run` keeps only those adopted after runs created before that run."""
+    sql, params = "SELECT * FROM dimensions WHERE adopted_run IS NOT ?", [exclude_run]
+    if before_run is not None:
+        sql += (" AND adopted_run IN (SELECT a.id FROM runs a, runs r WHERE r.id = ? "
+                "AND (a.created_at, a.id) < (r.created_at, r.id))")
+        params.append(before_run)
+    rows = conn.execute(sql + " ORDER BY id", params)
     return [Dimension(row["id"], row["name"], row["question"], row["adopted_run"]) for row in rows]
 
 

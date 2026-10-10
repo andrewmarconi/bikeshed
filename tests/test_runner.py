@@ -243,3 +243,24 @@ async def test_a_run_proceeds_without_the_library_when_embeddings_fail(tmp_path,
     assert "# Methods from earlier runs" not in seen.calls[0][1][0]["content"]
     events = read_events(tmp_path / "runs" / run_id / "events.jsonl")
     assert any(e["event"] == "library_unavailable" for e in events)
+
+
+async def test_an_empty_embeddings_response_never_fails_the_run(tmp_path, community, runner_factory):
+    from aiswarm.events import read_events
+
+    class Empty:
+        async def embed(self, texts):
+            return []
+
+    store, conn = community
+    conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES ('old', 'g', 'closed', '[]', 't')")
+    conn.execute("INSERT INTO entries (run_id, round, author, type, payload, created_at) VALUES ('old', 1, 'b', 'propose', '{}', 't')")
+    conn.execute("INSERT INTO methods (run_id, entry_id, author, kind, goal, text, reception, embedding, created_at) "
+                 "VALUES ('old', 1, 'b', 'propose', 'g', 't', '{\"adopted_by\": [], \"critiques\": 0, \"refines\": 0, "
+                 "\"questions\": 0, \"in_winning\": false}', x'0000803f', 't')")
+    seen = FakeModel([json.dumps({"action": {"type": "propose", "answer_summary": "x", "method": "m"}})])
+    runner = runner_factory(store, conn, {"a": seen}, max_rounds=1)
+    runner.embedder = Empty()
+    run_id = runner.start("Pick a colour", ["a"])
+    assert (await runner.run(run_id)).status == "closed"
+    assert any(e["event"] == "library_unavailable" for e in read_events(tmp_path / "runs" / run_id / "events.jsonl"))

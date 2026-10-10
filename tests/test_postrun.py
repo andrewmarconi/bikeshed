@@ -294,19 +294,18 @@ async def test_methods_are_recorded_without_an_embedder(tmp_path, community, mak
     assert conn.execute("SELECT COUNT(*) FROM methods WHERE embedding IS NULL").fetchone()[0] == 3
 
 
-async def test_an_embeddings_outage_pauses_at_the_library_step(tmp_path, community, make_run, postrun_reply):
+async def test_an_embeddings_outage_is_recorded_without_pausing_the_cycle(tmp_path, community, make_run, postrun_reply):
     from aiswarm.models.fake import FakeEmbedder
 
     store, conn = community
     run_id = finished_run(conn, tmp_path, make_run)
     clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
     post = PostRun(conn=conn, store=store, runs_dir=tmp_path / "runs", clients=clients, embedder=FakeEmbedder(fail_times=9))
-    assert (await post.run(run_id)).status == "paused"
-    assert steps(conn)[("update", "a", "")] == "done"
+    assert (await post.run(run_id)).status == "done"
+    assert conn.execute("SELECT COUNT(*) FROM failures WHERE kind = 'postrun:library:embed_error'").fetchone()[0] == 1
     assert conn.execute("SELECT COUNT(*) FROM methods").fetchone()[0] == 3
-    later = PostRun(conn=conn, store=store, runs_dir=tmp_path / "runs", clients=clients, embedder=FakeEmbedder())
-    assert (await later.run(run_id)).status == "done"
-    assert conn.execute("SELECT COUNT(*) FROM methods WHERE embedding IS NULL").fetchone()[0] == 0
+    from aiswarm.library import embed_missing
+    assert await embed_missing(conn, FakeEmbedder()) == 3            # the next cycle's library step picks them up
 
 
 async def test_update_can_make_one_proposal_and_sees_current_norms(tmp_path, community, make_run, postrun_reply):
@@ -480,3 +479,58 @@ async def test_no_narrator_means_no_narrative(tmp_path, community, make_run, pos
     run_id = finished_run(conn, tmp_path, make_run)
     await cycle(store, conn, tmp_path, {a: FakeModel(responder(postrun_reply)) for a in "abc"}).run(run_id)
     assert not (tmp_path / "runs" / run_id / "report" / "narrative.md").exists()
+
+
+async def test_dimensions_adopted_after_this_run_are_never_rated_in_it(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)                       # created_at 't'
+    conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES ('later', 'g', 'closed', '[]', 'u')")
+    conn.execute("INSERT INTO norm_proposals (run_id, author, kind, name, question, status, created_at) "
+                 "VALUES ('later', 'a', 'dimension', 'Candour', 'Q?', 'adopted', 'u')")
+    conn.execute("INSERT INTO dimensions (name, question, proposal_id, adopted_run) VALUES ('Candour', 'Q?', 1, 'later')")
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    review = next(m[0]["content"] for _, m, _ in clients["a"].calls if m[0]["content"].startswith("# Post-run: review"))
+    assert "Candour" not in review
+
+
+async def test_a_proposal_made_after_deliberation_is_declined_and_noted(tmp_path, community, make_run, postrun_reply):
+    from aiswarm.norms import proposals
+
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    bad = lambda request: "not json"
+    first = {"a": proposing(postrun_reply, text="P1."), "c": FakeModel(responder(postrun_reply)),
+             "b": FakeModel(responder(postrun_reply, update=bad))}
+    await cycle(store, conn, tmp_path, first).run(run_id)
+    second = {a: FakeModel(responder(postrun_reply)) for a in "ac"}
+    second["b"] = proposing(postrun_reply, text="P2.")
+    await cycle(store, conn, tmp_path, second).run(run_id)
+    assert [p.text for p in proposals(conn, run_id)] == ["P1."]
+    assert "Your proposal was not considered" in journal_section(conn, "b", run_id, "after")
+
+
+async def test_votes_lost_to_a_model_error_defer_the_decision(tmp_path, community, make_run, postrun_reply):
+    from aiswarm.norms import proposals
+
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+
+    def outage(request):
+        raise ModelError("backend down")
+
+    first = {"a": proposing(postrun_reply, text="P1.")}
+    first.update({x: FakeModel(responder(postrun_reply, norms_vote=outage)) for x in "bc"})
+    await cycle(store, conn, tmp_path, first).run(run_id)
+    assert [p.status for p in proposals(conn, run_id)] == ["open"]
+    await cycle(store, conn, tmp_path, {x: FakeModel(responder(postrun_reply)) for x in "abc"}).run(run_id)
+    assert [p.status for p in proposals(conn, run_id)] == ["adopted"]
+
+
+async def test_a_dead_narrator_does_not_pause_the_cycle(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    post = PostRun(conn=conn, store=store, runs_dir=tmp_path / "runs", clients=clients, narrator=FakeModel(fail_times=99))
+    result = await post.run(run_id)
+    assert (result.status, result.failed) == ("done", 1)

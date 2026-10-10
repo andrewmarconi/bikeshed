@@ -75,3 +75,32 @@ async def test_render_methods(community, make_run):
     [line] = render_methods([method], WHO, max_chars=100)
     assert line.startswith(f"- #{method.entry_id} in run r1 by Alpha (a) (propose); goal: G\n  method: " + "m" * 100 + "…")
     assert "\n  reception: adopted by Cyd (c)" in line
+
+
+class _Picky(FakeEmbedder):
+    """Rejects any request containing a poisoned text, like a server refusing one over-long input."""
+
+    async def embed(self, texts):
+        if any("POISON" in t for t in texts):
+            self.calls.append(list(texts))
+            from aiswarm.models.base import ModelError
+            raise ModelError("400: input too long")
+        return await super().embed(texts)
+
+
+async def test_one_bad_row_does_not_block_the_rest(community, make_run):
+    store, conn = community
+    entries, *_ = board_run(conn, make_run, "r1", method_a="POISON method")
+    record_methods(conn, "r1", "G", entries)
+    assert await embed_missing(conn, _Picky()) == 2
+    assert conn.execute("SELECT COUNT(*) FROM methods WHERE embedding IS NULL").fetchone()[0] == 1
+
+
+async def test_a_total_outage_raises_so_it_can_be_recorded(community, make_run):
+    from aiswarm.models.base import ModelError
+
+    store, conn = community
+    entries, *_ = board_run(conn, make_run, "r1")
+    record_methods(conn, "r1", "G", entries)
+    with pytest.raises(ModelError):
+        await embed_missing(conn, FakeEmbedder(fail_times=99))
