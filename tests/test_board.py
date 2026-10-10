@@ -31,6 +31,6 @@ def test_event_log_appends_jsonl_and_calls_sink(tmp_path):
     log.emit("round_started", round=1)
     log.emit("action_posted", agent="a", type="propose")
     events = read_events(tmp_path / "run" / "events.jsonl")
-    assert [e["type"] for e in events] == ["round_started", "action_posted"]
-    assert events[1]["agent"] == "a" and "ts" in events[1]
+    assert [e["event"] for e in events] == ["round_started", "action_posted"]
+    assert events[1]["agent"] == "a" and events[1]["type"] == "propose" and "ts" in events[1]
     assert seen == events

@@ -14,8 +14,8 @@ class EventLog:
         self._sink = sink
         path.parent.mkdir(parents=True, exist_ok=True)
 
-    def emit(self, type: str, **data: Any) -> dict[str, Any]:
-        event = {"ts": now_iso(), "type": type, **data}
+    def emit(self, name: str, /, **data: Any) -> dict[str, Any]:
+        event = {"ts": now_iso(), "event": name, **data}
         with self.path.open("a") as handle:
             handle.write(json.dumps(event, ensure_ascii=False) + "\n")
         if self._sink:
