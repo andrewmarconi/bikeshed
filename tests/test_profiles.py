@@ -136,3 +136,60 @@ async def test_introduce_asks_for_pronouns(store):
     model = FakeModel([reply])
     assert (await introduce(store, "a", model)).pronouns == "it/its"
     assert "What pronouns would you like others to use for you?" in model.calls[0][1][0]["content"]
+
+
+@pytest.fixture
+def control_store(tmp_path):
+    s = ProfileStore(tmp_path / "community")
+    s.create("a", "local", "Curious and blunt.")
+    s.set_public("a", "Ash", "Ash headline", "I am Ash.")
+    s.create("e", "local", "Seed temperament.", control=True)
+    s.set_public("e", "Eve", "Eve headline", "I am Eve.")
+    s.save_seed_public("e")
+    return s
+
+
+def test_control_agents_keep_a_seed(control_store):
+    seed = control_store.root / "agents" / "e" / "seed"
+    assert (seed / "temperament.md").read_text() == "Seed temperament.\n"
+    assert 'name = "Eve"' in (seed / "public.toml").read_text()
+    assert control_store.has_seed_public("e") and not control_store.has_seed_public("a")
+    assert not (control_store.root / "agents" / "a" / "seed").exists()
+
+
+def test_reset_restores_the_seed_and_empties_notes(control_store):
+    control_store.write_private("e", "temperament.md", "Changed.")
+    control_store.write_private("e", "lessons.md", "Learned things.")
+    control_store.set_public("e", "Evelyn", "New headline", "New intro.")
+    assert control_store.reset_to_seed("e") is True
+    private = control_store.private("e")
+    assert private["temperament.md"] == "Seed temperament.\n"
+    assert private["self.md"] == private["lessons.md"] == private["peer-notes.md"] == ""
+    public = control_store.public("e")
+    assert (public.name, public.headline, public.former_names) == ("Eve", "Eve headline", [])
+    log = subprocess.run(["git", "log", "-1", "--format=%s"], cwd=control_store.root, capture_output=True, text=True)
+    assert log.stdout.strip() == "reset control agent e to seed"
+
+
+def test_reset_keeps_the_current_name_when_the_seed_name_is_taken(control_store):
+    control_store.set_public("e", "Evelyn", "Eve headline", "I am Eve.")
+    control_store.set_public("a", "Eve", "Ash headline", "I am Ash.")
+    assert control_store.reset_to_seed("e") is False
+    assert control_store.public("e").name == "Evelyn"
+
+
+def test_reset_without_a_seed_profile_fails(tmp_path):
+    s = ProfileStore(tmp_path / "community")
+    s.create("e", "local", "Seed.", control=True)
+    with pytest.raises(ProfileError, match="no seed profile"):
+        s.reset_to_seed("e")
+
+
+async def test_introduce_saves_the_seed_for_control_agents(tmp_path):
+    s = ProfileStore(tmp_path / "community")
+    s.create("e", "local", "Seed.", control=True)
+    s.create("f", "local", "Seed.")
+    reply = json.dumps({"name": "Eve", "headline": "H", "introduction": "Hi."})
+    await introduce(s, "e", FakeModel([reply]))
+    await introduce(s, "f", FakeModel([reply.replace("Eve", "Fay")]))
+    assert s.has_seed_public("e") and not s.has_seed_public("f")

@@ -29,7 +29,10 @@ async def introduce(store: ProfileStore, agent_id: str, client: ModelClient) -> 
         result = await client.chat(system, messages, INTRO_SCHEMA)
         try:
             reply = _IntroReply.model_validate(extract_json(result.text))
-            return store.set_public(agent_id, reply.name, reply.headline, reply.introduction, pronouns=reply.pronouns)
+            profile = store.set_public(agent_id, reply.name, reply.headline, reply.introduction, pronouns=reply.pronouns)
+            if store.record(agent_id).control:
+                store.save_seed_public(agent_id)
+            return profile
         except ValidationError as exc:
             problem = summarise_validation(exc)
         except (ProfileError, ActionError) as exc:

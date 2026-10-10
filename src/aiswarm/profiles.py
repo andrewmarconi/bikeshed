@@ -19,6 +19,7 @@ HEADLINE_MAX = 254
 INTRO_MAX = 600
 PRIVATE_FILES = ("temperament.md", "self.md", "lessons.md", "peer-notes.md")
 PRIVATE_MAX = 4000
+SEED_DIR = "seed"  # a control agent's seed state; never read into any View
 _GITIGNORE = "community.db\ncommunity.db-*\n"
 
 
@@ -124,11 +125,45 @@ class ProfileStore:
         (directory / "temperament.md").write_text(temperament.strip() + "\n")
         for filename in PRIVATE_FILES[1:]:
             (directory / filename).write_text("")
+        if control:
+            (directory / SEED_DIR).mkdir()
+            (directory / SEED_DIR / "temperament.md").write_text(temperament.strip() + "\n")
         self._repo.commit([f"agents/{agent_id}"], f"create agent {agent_id}", author="aiswarm")
         return record
 
     def record(self, agent_id: str) -> AgentRecord:
         return AgentRecord.model_validate(tomllib.loads((self._dir(agent_id) / "agent.toml").read_text()))
+
+    def save_seed_public(self, agent_id: str) -> None:
+        """Keep a control agent's first introduction as its seed profile."""
+        target = self._dir(agent_id) / SEED_DIR / "public.toml"
+        target.parent.mkdir(exist_ok=True)
+        target.write_text((self._dir(agent_id) / "public.toml").read_text())
+        self._repo.commit([f"agents/{agent_id}/{SEED_DIR}"], f"{agent_id} seed profile saved", author="aiswarm")
+
+    def has_seed_public(self, agent_id: str) -> bool:
+        return (self._dir(agent_id) / SEED_DIR / "public.toml").exists()
+
+    def reset_to_seed(self, agent_id: str) -> bool:
+        """Restore a control agent to its seed. Returns False if its seed name was taken and its current name kept."""
+        directory = self._dir(agent_id)
+        seed = directory / SEED_DIR
+        if not (seed / "public.toml").exists() or not (seed / "temperament.md").exists():
+            raise ProfileError(f"{agent_id} has no seed profile; run `aiswarm agents introduce {agent_id}`")
+        profile = PublicProfile.model_validate(tomllib.loads((seed / "public.toml").read_text()))
+        taken = any(
+            (other_profile := self.public(other)) and other_profile.name.casefold() == profile.name.casefold()
+            for other in self.ids() if other != agent_id
+        )
+        current = self.public(agent_id)
+        if taken and current:
+            profile = profile.model_copy(update={"name": current.name})
+        (directory / "public.toml").write_text(_toml(profile.model_dump()))
+        (directory / "temperament.md").write_text((seed / "temperament.md").read_text())
+        for filename in PRIVATE_FILES[1:]:
+            (directory / filename).write_text("")
+        self._repo.commit([f"agents/{agent_id}"], f"reset control agent {agent_id} to seed", author="aiswarm")
+        return not taken
 
     def private(self, agent_id: str) -> dict[str, str]:
         return {name: (self._dir(agent_id) / name).read_text() for name in PRIVATE_FILES}

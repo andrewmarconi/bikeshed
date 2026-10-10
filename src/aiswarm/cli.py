@@ -70,6 +70,7 @@ def agents_new(
     model: Annotated[str, typer.Option(help="Backend name from \\[models] in the config.")],
     temperament: Annotated[str | None, typer.Option(help="Seed temperament text.")] = None,
     temperament_file: Annotated[Path | None, typer.Option(help="File containing the seed temperament.")] = None,
+    control: Annotated[bool, typer.Option("--control", help="A control agent: reset to its seed before every run.")] = False,
     config: ConfigOpt = DEFAULT_PATH,
 ) -> None:
     """Create an agent from a temperament; the agent then writes its own public profile."""
@@ -81,7 +82,7 @@ def agents_new(
         _fail("give --temperament or --temperament-file")
     store = ProfileStore(cfg.community_dir)
     try:
-        store.create(agent_id, model, text)
+        store.create(agent_id, model, text, control=control)
     except ProfileError as exc:
         _fail(str(exc))
     _introduce(cfg, store, agent_id)
@@ -123,7 +124,8 @@ def agents_list(config: ConfigOpt = DEFAULT_PATH) -> None:
     for agent_id in store.ids():
         profile = store.public(agent_id)
         name, headline = (profile.name, profile.headline) if profile else ("(no profile)", "")
-        typer.echo(f"{agent_id}\t{name}\t{store.record(agent_id).model}\t{headline}")
+        marker = "\tcontrol" if store.record(agent_id).control else ""
+        typer.echo(f"{agent_id}\t{name}\t{store.record(agent_id).model}\t{headline}{marker}")
 
 
 @agents_app.command("show")

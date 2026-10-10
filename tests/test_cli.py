@@ -211,3 +211,12 @@ def test_runs_record_provenance_and_show_reports_changes(project):
     assert "Harness changed" not in invoke("show", first_id, "-c", config).output
     shown = invoke("show", second_id, "-c", config).output
     assert f"since run {first_id}: config run.max_rounds" in shown
+
+
+def test_agents_new_control_creates_a_seeded_control_agent(project):
+    tmp_path, config = project
+    result = invoke("agents", "new", "e", "--model", "local", "--temperament", "T.", "--control", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert "control = true" in (tmp_path / "community" / "agents" / "e" / "agent.toml").read_text()
+    assert (tmp_path / "community" / "agents" / "e" / "seed" / "public.toml").exists()
+    assert "control" in invoke("agents", "list", "-c", config).output
