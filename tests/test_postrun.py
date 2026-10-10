@@ -160,3 +160,68 @@ async def test_requests_never_carry_another_agents_private_notes(tmp_path, commu
         for system, messages, _ in clients[agent].calls:
             assert "LESSON-OF-B" not in system and all("LESSON-OF-B" not in m["content"] for m in messages)
     assert any("LESSON-OF-B" in system for system, _, _ in clients["b"].calls)
+
+
+def update_reply(**fields):
+    base = {"journal": "AFTER", "lessons": "NEW-LESSONS", "self_description": None, "temperament": None,
+            "peer_notes": None, "public_profile": None}
+    return lambda request: json.dumps({**base, **fields})
+
+
+async def test_update_writes_second_journal_lessons_and_rewrites(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "bc"}
+    clients["a"] = FakeModel(responder(postrun_reply, update=update_reply(
+        self_description="NEW-SELF", temperament="NEW-TEMPERAMENT", peer_notes="NEW-NOTES",
+        public_profile={"name": "Alder", "headline": "New headline", "introduction": "New intro."})))
+    result = await cycle(store, conn, tmp_path, clients).run(run_id)
+    assert (result.status, result.failed) == ("done", 0)
+    private = store.private("a")
+    assert private["lessons.md"] == "NEW-LESSONS" and private["self.md"] == "NEW-SELF"
+    assert private["temperament.md"] == "NEW-TEMPERAMENT" and private["peer-notes.md"] == "NEW-NOTES"
+    profile = store.public("a")
+    assert (profile.name, profile.former_names) == ("Alder", ["Alpha"])
+    assert journal_section(conn, "a", run_id, "after") == "AFTER"
+    assert store.private("b")["lessons.md"] == "Listen first."      # default responder
+    assert store.private("b")["temperament.md"].strip() == "Temperament of b."
+
+
+async def test_update_request_shows_reviews_with_private_notes_and_responses(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    update = next(m[0]["content"] for _, m, _ in clients["a"].calls if m[0]["content"].startswith("# Post-run: update"))
+    assert "by Bea (b)" in update and "private note: Between us." in update and "response: accept — Fair." in update
+    assert "## Your journal entry from before the reviews\n\nThoughts." in update
+    c_update = next(m[0]["content"] for _, m, _ in clients["c"].calls if m[0]["content"].startswith("# Post-run: update"))
+    assert "private note" not in c_update                       # nobody reviewed c
+
+
+async def test_rejected_rewrites_keep_previous_versions_and_are_noted(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "bc"}
+    clients["a"] = FakeModel(responder(postrun_reply, update=update_reply(
+        temperament="   ", self_description="KEPT-SELF",
+        public_profile={"name": "bea", "headline": "h", "introduction": "i"})))
+    result = await cycle(store, conn, tmp_path, clients).run(run_id)
+    assert result.failed == 0
+    assert store.private("a")["temperament.md"].strip() == "Temperament of a."
+    assert store.public("a").name == "Alpha"
+    assert store.private("a")["self.md"] == "KEPT-SELF" and store.private("a")["lessons.md"] == "NEW-LESSONS"
+    after = journal_section(conn, "a", run_id, "after")
+    assert after.startswith("AFTER\n\nRejected changes (previous versions kept):\n")
+    assert "- temperament.md: temperament must not be empty" in after
+    assert "- public profile: the name 'bea' is taken" in after
+
+
+async def test_lessons_over_the_cap_get_one_correction(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    replies = iter([update_reply(lessons="x" * 5000), update_reply(lessons="short")])
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "bc"}
+    clients["a"] = FakeModel(responder(postrun_reply, update=lambda request: next(replies)(request)))
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    assert store.private("a")["lessons.md"] == "short"

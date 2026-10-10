@@ -1,4 +1,4 @@
-"""The post-run cycle: plain code that asks each agent to reflect, review, and respond. It never steers."""
+"""The post-run cycle: plain code that asks each agent to reflect, review, respond, and update. It never steers."""
 
 import asyncio
 import json
@@ -11,17 +11,17 @@ from typing import Any
 from aiswarm.board import Board, Entry
 from aiswarm.db import now_iso, transaction
 from aiswarm.events import EventLog
-from aiswarm.journal import JOURNAL_MAX, write_journal
+from aiswarm.journal import JOURNAL_MAX, journal_section, write_journal
 from aiswarm.models.base import ModelClient, ModelError
 from aiswarm.postrun.ask import ReplyError, ask
 from aiswarm.postrun.feedback import feedback_packet, interactions, transcript
-from aiswarm.postrun.replies import JournalReply, ResponsesReply, ReviewReply
-from aiswarm.profiles import ProfileStore
+from aiswarm.postrun.replies import JournalReply, ResponsesReply, ReviewReply, UpdateReply
+from aiswarm.profiles import HEADLINE_MAX, INTRO_MAX, NAME_MAX, PRIVATE_MAX, ProfileError, ProfileStore
 from aiswarm.prompts import render
-from aiswarm.reviews import add_response, add_review, render_review, reviews_of
+from aiswarm.reviews import add_response, add_review, render_review, responses_for, reviews_of
 from aiswarm.view import Who, make_who
 
-STEPS = ("journal", "review", "responses")
+STEPS = ("journal", "review", "responses", "update")
 _NOTES = ("self.md", "lessons.md", "peer-notes.md")
 
 
@@ -108,6 +108,8 @@ class PostRun:
                 _Call(step, a, "", lambda a=a: self._responses(ctx, a))
                 for a in ctx.agent_ids if reviews_of(self.conn, a, run_id=ctx.run_id)
             ]
+        if step == "update":
+            return [_Call(step, a, "", lambda a=a: self._update(ctx, a)) for a in ctx.agent_ids]
         raise ValueError(f"unknown step {step!r}")
 
     def _done(self, run_id: str, call: _Call) -> bool:
@@ -217,4 +219,42 @@ class PostRun:
         with transaction(self.conn):
             for item in answer.reply.responses:
                 add_response(self.conn, item.review_id, item.stance, item.reason)
+        return answer.reasoning
+
+    async def _update(self, ctx: _Context, agent_id: str) -> str | None:
+        reviews = reviews_of(self.conn, agent_id, run_id=ctx.run_id)
+        responses = responses_for(self.conn, [r.id for r in reviews])
+        request = render(
+            "update_request.md",
+            packet=self._packet(ctx, agent_id),
+            first_journal=journal_section(self.conn, agent_id, ctx.run_id, "before") or "(none)",
+            reviews="\n\n".join(
+                render_review(r, ctx.who, private=True, response=responses.get(r.id)) for r in reviews
+            ) or "(no reviews)",
+            journal_max=JOURNAL_MAX, private_max=PRIVATE_MAX, name_max=NAME_MAX, headline_max=HEADLINE_MAX,
+            intro_max=INTRO_MAX,
+        )
+        answer = await ask(self.clients[agent_id], self._system(ctx, agent_id), request, UpdateReply)
+        reply = answer.reply
+        rejected: list[str] = []
+        for filename, content in (
+            ("lessons.md", reply.lessons), ("self.md", reply.self_description),
+            ("temperament.md", reply.temperament), ("peer-notes.md", reply.peer_notes),
+        ):
+            if content is None:
+                continue
+            try:
+                self.store.write_private(agent_id, filename, content)
+            except ProfileError as exc:
+                rejected.append(f"{filename}: {exc}")
+        if reply.public_profile is not None:
+            profile = reply.public_profile
+            try:
+                self.store.set_public(agent_id, profile.name, profile.headline, profile.introduction)
+            except ProfileError as exc:
+                rejected.append(f"public profile: {exc}")
+        journal = reply.journal
+        if rejected:
+            journal += "\n\nRejected changes (previous versions kept):\n" + "\n".join(f"- {r}" for r in rejected)
+        write_journal(self.conn, self.store, agent_id, ctx.run_id, "after", journal)
         return answer.reasoning
