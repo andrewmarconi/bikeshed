@@ -48,3 +48,14 @@ def test_default_config_is_valid(tmp_path):
     assert tomllib.loads(DEFAULT_CONFIG)
     cfg = load_config(write(tmp_path, DEFAULT_CONFIG))
     assert set(cfg.models) == {"local", "claude"}
+
+
+def test_postrun_settings_defaults(tmp_path):
+    cfg = load_config(write(tmp_path, '[models.l]\nkind = "openai"\nmodel = "m"\n'))
+    assert cfg.run.max_concurrent_calls == 4
+    assert cfg.run.reputation_half_life_runs == 5.0
+
+
+def test_max_concurrent_calls_must_be_positive(tmp_path):
+    with pytest.raises(ValidationError):
+        load_config(write(tmp_path, '[models.l]\nkind = "openai"\nmodel = "m"\n[run]\nmax_concurrent_calls = 0\n'))

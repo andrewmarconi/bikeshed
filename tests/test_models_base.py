@@ -1,8 +1,9 @@
+import asyncio
 import json
 
 import pytest
 
-from aiswarm.models.base import ModelError, RetryingClient
+from aiswarm.models.base import ChatResult, ModelError, RetryingClient, limit_clients
 from aiswarm.models.fake import FakeModel
 
 
@@ -48,3 +49,26 @@ async def test_retrying_client_gives_up():
     client = RetryingClient(FakeModel(fail_times=5), attempts=3, sleep=fake_sleep)
     with pytest.raises(ModelError):
         await client.chat("s", [])
+
+
+class _Slow:
+    context_window = 1000
+
+    def __init__(self, tracker):
+        self.tracker = tracker
+
+    async def chat(self, system, messages, json_schema=None):
+        self.tracker["now"] += 1
+        self.tracker["peak"] = max(self.tracker["peak"], self.tracker["now"])
+        await asyncio.sleep(0.01)
+        self.tracker["now"] -= 1
+        return ChatResult(text="ok")
+
+
+async def test_limit_clients_caps_simultaneous_calls_across_clients():
+    tracker = {"now": 0, "peak": 0}
+    clients = limit_clients({key: _Slow(tracker) for key in "abcdef"}, 2)
+    results = await asyncio.gather(*(c.chat("s", []) for c in clients.values() for _ in range(3)))
+    assert tracker["peak"] == 2
+    assert [r.text for r in results] == ["ok"] * 18
+    assert clients["a"].context_window == 1000
