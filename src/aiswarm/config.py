@@ -14,6 +14,7 @@ class OpenAIBackend(BaseModel):
     api_key: str = "omlx"
     context_window: int = Field(32768, gt=0)
     json_schema: bool = True
+    thinking: bool | None = None  # None leaves it to the server's per-model setting
     timeout_s: float = Field(300.0, gt=0)
 
 
@@ -69,6 +70,7 @@ kind = "openai"                       # oMLX (OpenAI-compatible)
 base_url = "http://localhost:8000/v1"
 model = "CHANGE-ME"                   # an id from: curl localhost:8000/v1/models
 context_window = 32768
+# thinking = false                    # skip reasoning (much faster); omit to use oMLX's model setting
 
 [models.claude]
 kind = "claude_cli"                   # headless `claude -p`, isolated

@@ -22,6 +22,8 @@ class OpenAICompatClient:
         kwargs: dict[str, Any] = {}
         if json_schema is not None and self.backend.json_schema:
             kwargs["response_format"] = {"type": "json_schema", "json_schema": {"name": "reply", "schema": json_schema}}
+        if self.backend.thinking is not None:
+            kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": self.backend.thinking}}
         try:
             response = await self._client.chat.completions.create(
                 model=self.backend.model,

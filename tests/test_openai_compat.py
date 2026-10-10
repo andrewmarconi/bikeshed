@@ -84,3 +84,14 @@ async def test_unreachable_server_raises_model_error():
     client = OpenAICompatClient(OpenAIBackend(kind="openai", model="m", base_url="http://127.0.0.1:9/v1", timeout_s=2))
     with pytest.raises(ModelError):
         await client.chat("S", [])
+
+
+async def test_thinking_left_to_server_by_default(server):
+    await OpenAICompatClient(backend(server)).chat("S", [])
+    assert "chat_template_kwargs" not in server.requests[0][1]
+
+
+@pytest.mark.parametrize("thinking", [False, True])
+async def test_thinking_sent_as_chat_template_kwarg(server, thinking):
+    await OpenAICompatClient(backend(server, thinking=thinking)).chat("S", [])
+    assert server.requests[0][1]["chat_template_kwargs"] == {"enable_thinking": thinking}
