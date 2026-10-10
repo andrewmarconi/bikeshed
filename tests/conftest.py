@@ -69,3 +69,27 @@ def runner_factory(tmp_path):
                       clients=clients, rng=rng or random.Random(0))
 
     return make
+
+
+def _postrun_reply(request):
+    """A valid default reply for a post-run request, or None if the request is not one."""
+    marker = re.match(r"# Post-run: (\w+)", request)
+    if not marker:
+        return None
+    step = marker.group(1)
+    if step == "journal":
+        return json.dumps({"journal": "Thoughts."})
+    if step == "review":
+        ids = [int(i) for i in re.findall(r"^#(\d+) \[r", request, re.M)]
+        return json.dumps({"more_of": "More.", "less_of": "Less.", "private_note": "Between us.",
+                           "evidence": ids[:1] or [1], "overall": 4, "overall_reason": "Solid."})
+    if step == "responses":
+        ids = [int(i) for i in re.findall(r"^Review (\d+) of", request, re.M)]
+        return json.dumps({"responses": [{"review_id": i, "stance": "accept", "reason": "Fair."} for i in ids]})
+    return json.dumps({"journal": "After reviews.", "lessons": "Listen first.", "self_description": None,
+                       "temperament": None, "peer_notes": None, "public_profile": None})
+
+
+@pytest.fixture
+def postrun_reply():
+    return _postrun_reply
