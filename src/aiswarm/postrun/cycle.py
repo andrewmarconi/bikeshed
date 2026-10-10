@@ -16,7 +16,7 @@ from aiswarm.models.base import ModelClient, ModelError
 from aiswarm.postrun.ask import ReplyError, ask
 from aiswarm.postrun.feedback import feedback_packet, interactions, transcript
 from aiswarm.postrun.replies import JournalReply, ResponsesReply, ReviewReply, UpdateReply
-from aiswarm.profiles import HEADLINE_MAX, INTRO_MAX, NAME_MAX, PRIVATE_MAX, ProfileError, ProfileStore
+from aiswarm.profiles import HEADLINE_MAX, INTRO_MAX, NAME_MAX, PRIVATE_MAX, PRONOUNS_MAX, ProfileError, ProfileStore
 from aiswarm.prompts import render
 from aiswarm.reviews import Review, add_response, add_review, render_review, responses_for, reviews_of
 from aiswarm.view import Who, make_who
@@ -246,8 +246,8 @@ class PostRun:
             reviews="\n\n".join(
                 render_review(r, ctx.who, private=True, response=responses.get(r.id)) for r in reviews
             ) or "(no reviews)",
-            journal_max=JOURNAL_MAX, private_max=PRIVATE_MAX, name_max=NAME_MAX, headline_max=HEADLINE_MAX,
-            intro_max=INTRO_MAX,
+            journal_max=JOURNAL_MAX, private_max=PRIVATE_MAX, name_max=NAME_MAX, pronouns_max=PRONOUNS_MAX,
+            headline_max=HEADLINE_MAX, intro_max=INTRO_MAX,
         )
         answer = await ask(self.clients[agent_id], self._system(ctx, agent_id), request, UpdateReply)
         reply = answer.reply
@@ -265,7 +265,8 @@ class PostRun:
         if reply.public_profile is not None:
             profile = reply.public_profile
             try:
-                self.store.set_public(agent_id, profile.name, profile.headline, profile.introduction)
+                self.store.set_public(agent_id, profile.name, profile.headline, profile.introduction,
+                                      pronouns=profile.pronouns)
             except ProfileError as exc:
                 rejected.append(f"public profile: {exc}")
         journal = reply.journal

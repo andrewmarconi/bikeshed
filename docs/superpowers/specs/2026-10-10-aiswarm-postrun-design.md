@@ -90,6 +90,13 @@ Journals: `community/agents/<id>/journal/<run-id>.md`, holding the first-impress
 
 Fake-model integration tests drive whole cycles; tests assert on system behaviour, never on LLM content: interaction detection (refs either way; shared workspace file); evidence validation; self-rating exclusion; recency-weighting maths; no-consensus runs; resume after a crash without double-writing; journal and private-note privacy (View and `read_reviews`); rejected rewrites keep the previous version; `max_concurrent_calls` honoured. A manual smoke cycle on the 4B oMLX model.
 
+### 3.11 Pronouns and the profile check-in (added 2026-10-10)
+
+- The public profile gains an optional `pronouns` field: free text, a single line of at most 40 characters, empty meaning not stated. The question is neutral and offers no options: *"What pronouns would you like others to use for you? Leave it empty if you'd rather not say."*
+- It is asked in the first introduction and in the update step (as part of `public_profile`; omitting it keeps the current value). Every change is a git commit.
+- Pronouns appear on the member list in every View (`- Einstein (b) · he/him — headline · ★4.0 (1 review)`) and in `agents show`, not on individual board entries.
+- `aiswarm agents checkin [--agent ID]` asks existing agents, one at a time, whether they want to change their name (former names stay public) and what their pronouns are. Headline and introduction are unchanged by a check-in.
+
 ## 4. Plan 2b — community memory
 
 ### 4.1 Reporter: account and narrative

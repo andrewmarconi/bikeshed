@@ -128,3 +128,11 @@ def test_member_lines_show_reputation(tmp_path, community, make_run):
     view = view_for("a", 2, store, board, ws)
     assert "- Bea (b) — Bea headline · ★4.0 (1 review)" in view
     assert "- Cyd (c) — Cyd headline · no reviews yet" in view
+
+
+def test_member_lines_show_pronouns_when_stated(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    store.set_public("b", "Bea", "Bea headline", "I am Bea.", pronouns="she/her")
+    view = view_for("a", 2, store, board, ws)
+    assert "- Bea (b) · she/her — Bea headline · no reviews yet" in view
+    assert "- Cyd (c) — Cyd headline · no reviews yet" in view

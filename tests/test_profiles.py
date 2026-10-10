@@ -115,3 +115,24 @@ async def test_introduce_gives_up_after_two_invalid_replies(store):
     with pytest.raises(ProfileError):
         await introduce(store, "a", FakeModel(["garbage", "more garbage"]))
     assert store.public("a") is None
+
+
+def test_pronouns_are_optional_and_kept_unless_given(store):
+    assert store.set_public("a", "Wren", "h", "i").pronouns == ""
+    assert store.set_public("a", "Wren", "h", "i", pronouns=" they/them ").pronouns == "they/them"
+    assert store.set_public("a", "Wren", "h2", "i").pronouns == "they/them"          # None keeps the current value
+    assert store.set_public("a", "Wren", "h2", "i", pronouns="").pronouns == ""      # empty clears it
+    assert store.public("a").pronouns == ""
+
+
+@pytest.mark.parametrize("pronouns", ["x" * 41, "she\nher"])
+def test_pronouns_are_validated(store, pronouns):
+    with pytest.raises(ProfileError):
+        store.set_public("a", "Wren", "h", "i", pronouns=pronouns)
+
+
+async def test_introduce_asks_for_pronouns(store):
+    reply = json.dumps({"name": "Wren", "pronouns": "it/its", "headline": "h", "introduction": "i"})
+    model = FakeModel([reply])
+    assert (await introduce(store, "a", model)).pronouns == "it/its"
+    assert "What pronouns would you like others to use for you?" in model.calls[0][1][0]["content"]

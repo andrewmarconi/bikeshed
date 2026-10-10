@@ -10,6 +10,7 @@ import typer
 
 from aiswarm.config import DEFAULT_CONFIG, ClaudeCliBackend, Config, load_config
 from aiswarm.db import connect
+from aiswarm.checkin import checkin
 from aiswarm.introduce import introduce
 from aiswarm.models.base import ModelError, limit_clients
 from aiswarm.models.claude_cli import ClaudeCliClient, leak_check
@@ -92,6 +93,28 @@ def agents_introduce(agent_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
     _introduce(cfg, ProfileStore(cfg.community_dir), agent_id)
 
 
+@agents_app.command("checkin")
+def agents_checkin(
+    agent: Annotated[list[str] | None, typer.Option("--agent", help="Agent ids to ask (default: all).")] = None,
+    config: ConfigOpt = DEFAULT_PATH,
+) -> None:
+    """Ask agents whether they want to change their name, and what pronouns others should use for them."""
+    cfg = _load(config)
+    store = ProfileStore(cfg.community_dir)
+    agent_ids = agent or store.ids()
+    clients = _clients(cfg, store, agent_ids)
+    for agent_id in agent_ids:  # one at a time, so two agents cannot claim the same new name at once
+        before = store.public(agent_id)
+        try:
+            profile = asyncio.run(checkin(store, agent_id, clients[agent_id]))
+        except (ProfileError, ModelError) as exc:
+            typer.echo(f"{agent_id}: no change ({exc})")
+            continue
+        pronouns = profile.pronouns or "pronouns not stated"
+        renamed = f" — formerly {before.name}" if before and before.name != profile.name else ""
+        typer.echo(f"{profile.name} ({agent_id}) · {pronouns}{renamed}")
+
+
 @agents_app.command("list")
 def agents_list(config: ConfigOpt = DEFAULT_PATH) -> None:
     """List agents with their public name, backend, and headline."""
@@ -112,7 +135,8 @@ def agents_show(agent_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
     conn = connect(cfg.db_path)
     profile = store.public(agent_id)
     if profile:
-        typer.echo(f"# {profile.name} ({agent_id})\n{profile.headline}\n\n{profile.introduction}")
+        pronouns = f" · {profile.pronouns}" if profile.pronouns else ""
+        typer.echo(f"# {profile.name} ({agent_id}){pronouns}\n{profile.headline}\n\n{profile.introduction}")
         if profile.former_names:
             typer.echo(f"\nformerly: {', '.join(profile.former_names)}")
     typer.echo(f"\nreputation: {reputation(conn, agent_id, cfg.run.reputation_half_life_runs).label()}")

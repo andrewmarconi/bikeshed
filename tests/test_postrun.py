@@ -256,3 +256,19 @@ async def test_resume_with_one_dead_backend_does_not_stall_everyone(tmp_path, co
     result = await cycle(store, conn, tmp_path, {**clients, "c": FakeModel(fail_times=1000)}).run(run_id)
     assert result.status == "done"
     assert result.failed == 3                     # c's journal, self-review, and update, retried and failed again
+
+
+async def test_update_can_set_pronouns_and_omitting_them_keeps_them(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    store.set_public("b", "Bea", "Bea headline", "I am Bea.", pronouns="she/her")
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {"c": FakeModel(responder(postrun_reply))}
+    clients["a"] = FakeModel(responder(postrun_reply, update=update_reply(
+        public_profile={"name": "Alpha", "pronouns": "they/them", "headline": "h", "introduction": "i"})))
+    clients["b"] = FakeModel(responder(postrun_reply, update=update_reply(
+        public_profile={"name": "Bea", "headline": "new", "introduction": "i"})))
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    assert store.public("a").pronouns == "they/them"
+    assert store.public("b").pronouns == "she/her" and store.public("b").headline == "new"
+    update = next(m[0]["content"] for _, m, _ in clients["a"].calls if m[0]["content"].startswith("# Post-run: update"))
+    assert '"pronouns"' in update

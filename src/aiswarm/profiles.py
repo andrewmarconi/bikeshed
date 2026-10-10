@@ -14,6 +14,7 @@ from aiswarm.gitrepo import GitRepo
 
 AGENT_ID = re.compile(r"^[a-z][a-z0-9-]{0,23}$")
 NAME_MAX = 40
+PRONOUNS_MAX = 40
 HEADLINE_MAX = 254
 INTRO_MAX = 600
 PRIVATE_FILES = ("temperament.md", "self.md", "lessons.md", "peer-notes.md")
@@ -27,6 +28,7 @@ class ProfileError(ValueError):
 
 class PublicProfile(BaseModel):
     name: str
+    pronouns: str = ""
     headline: str
     introduction: str
     former_names: list[str] = Field(default_factory=list)
@@ -37,6 +39,14 @@ class PublicProfile(BaseModel):
         value = value.strip()
         if not 1 <= len(value) <= NAME_MAX or not value.isprintable():
             raise ValueError(f"name must be 1-{NAME_MAX} printable characters")
+        return value
+
+    @field_validator("pronouns")
+    @classmethod
+    def _pronouns(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) > PRONOUNS_MAX or not value.isprintable():
+            raise ValueError(f"pronouns must be a single line of at most {PRONOUNS_MAX} characters")
         return value
 
     @field_validator("headline")
@@ -148,11 +158,17 @@ class ProfileStore:
             return None
         return PublicProfile.model_validate(tomllib.loads(path.read_text()))
 
-    def set_public(self, agent_id: str, name: str, headline: str, introduction: str) -> PublicProfile:
+    def set_public(
+        self, agent_id: str, name: str, headline: str, introduction: str, pronouns: str | None = None
+    ) -> PublicProfile:
+        """Validate and save a public profile. `pronouns=None` keeps the current pronouns."""
         current = self.public(agent_id)
         former = list(current.former_names) if current else []
+        if pronouns is None:
+            pronouns = current.pronouns if current else ""
         try:
-            candidate = PublicProfile(name=name, headline=headline, introduction=introduction, former_names=former)
+            candidate = PublicProfile(name=name, pronouns=pronouns, headline=headline, introduction=introduction,
+                                      former_names=former)
         except ValidationError as exc:
             raise ProfileError(summarise_validation(exc)) from exc
         for other in self.ids():

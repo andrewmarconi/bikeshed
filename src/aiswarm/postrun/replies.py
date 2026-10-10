@@ -40,6 +40,7 @@ class ResponsesReply(_Reply):
 
 class PublicReply(_Reply):
     name: str
+    pronouns: str | None = None
     headline: str
     introduction: str
 

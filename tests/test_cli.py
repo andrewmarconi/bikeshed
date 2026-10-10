@@ -157,3 +157,23 @@ def test_postrun_rejects_unknown_runs(project):
     tmp_path, config = project
     result = invoke("postrun", "nope", "-c", config)
     assert result.exit_code == 1 and "no run 'nope'" in result.output
+
+
+def test_agents_checkin_renames_and_records_pronouns(project, monkeypatch):
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    replies = {"a": {"name": "Alder", "pronouns": "they/them"}, "b": {"name": "Member 2", "pronouns": ""}}
+
+    def respond(system, messages):
+        agent_id = re.search(r"\((\w)\)", system).group(1)
+        return json.dumps(replies[agent_id])
+
+    monkeypatch.setattr(cli, "make_client", lambda backend, retries: FakeModel(respond))
+    result = invoke("agents", "checkin", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert "Alder (a) · they/them — formerly Member 1" in result.output
+    assert "Member 2 (b) · pronouns not stated" in result.output
+    only_a = invoke("agents", "checkin", "--agent", "a", "-c", config)
+    assert only_a.exit_code == 0 and "(b)" not in only_a.output
+    shown = invoke("agents", "show", "a", "-c", config)
+    assert "# Alder (a) · they/them" in shown.output

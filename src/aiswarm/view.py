@@ -143,7 +143,8 @@ def build_view(inputs: ViewInputs, budget_chars: int) -> str:
             continue
         rep = inputs.reputations.get(agent_id)
         suffix = f" · {rep.label()}" if rep else ""
-        block = f"- {profile.name} ({agent_id}) — {profile.headline}{suffix}\n  {profile.introduction}"
+        pronouns = f" · {profile.pronouns}" if profile.pronouns else ""
+        block = f"- {profile.name} ({agent_id}){pronouns} — {profile.headline}{suffix}\n  {profile.introduction}"
         if profile.former_names:
             block += f"\n  formerly: {', '.join(profile.former_names)}"
         members.append(block)
