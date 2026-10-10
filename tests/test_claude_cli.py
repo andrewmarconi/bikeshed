@@ -36,6 +36,7 @@ def test_build_argv_isolates_the_session():
     assert flag(argv, "--output-format") == "json"
     assert json.loads(flag(argv, "--json-schema")) == {"type": "object"}
     assert "--no-session-persistence" in argv
+    assert "--strict-mcp-config" in argv  # claude.ai connectors otherwise attach MCP tools nondeterministically
     assert "--bare" not in argv
 
 

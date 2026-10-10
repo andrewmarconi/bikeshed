@@ -18,6 +18,7 @@ def build_argv(backend: ClaudeCliBackend, system: str, json_schema: dict[str, An
         "--model", backend.model,
         "--tools", "",
         "--setting-sources", "",
+        "--strict-mcp-config",  # account-level MCP connectors would otherwise attach tools at random
         "--no-session-persistence",
         "--output-format", "json",
         "--system-prompt", system,
