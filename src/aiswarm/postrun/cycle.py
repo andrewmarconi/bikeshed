@@ -18,7 +18,7 @@ from aiswarm.postrun.feedback import feedback_packet, interactions, transcript
 from aiswarm.postrun.replies import JournalReply, ResponsesReply, ReviewReply, UpdateReply
 from aiswarm.profiles import HEADLINE_MAX, INTRO_MAX, NAME_MAX, PRIVATE_MAX, ProfileError, ProfileStore
 from aiswarm.prompts import render
-from aiswarm.reviews import add_response, add_review, render_review, responses_for, reviews_of
+from aiswarm.reviews import Review, add_response, add_review, render_review, responses_for, reviews_of
 from aiswarm.view import Who, make_who
 
 STEPS = ("journal", "review", "responses", "update")
@@ -84,7 +84,9 @@ class PostRun:
                 continue
             outcomes = await asyncio.gather(*(self._attempt(ctx, call) for call in pending))
             failed += sum(outcome != "done" for outcome in outcomes)
-            if all(outcome == "model_error" for outcome in outcomes):
+            # Pause only for an outage: every call hit a model error and nothing in this step ever finished.
+            # A resumed step whose only pending calls belong to one dead backend must not stall everyone else.
+            if all(outcome == "model_error" for outcome in outcomes) and not self._step_started(run_id, step):
                 ctx.events.emit("postrun_paused", step=step)
                 return PostRunResult(run_id, "paused", failed)
         ctx.events.emit("postrun_finished", failed=failed)
@@ -113,10 +115,23 @@ class PostRun:
         raise ValueError(f"unknown step {step!r}")
 
     def _done(self, run_id: str, call: _Call) -> bool:
-        return self.conn.execute(
+        done = self.conn.execute(
             "SELECT 1 FROM postrun_steps WHERE run_id = ? AND step = ? AND agent_id = ? AND subject = ? "
             "AND status = 'done'", (run_id, call.step, call.agent_id, call.subject),
         ).fetchone() is not None
+        if done and call.step == "responses":
+            return not self._unanswered(run_id, call.agent_id)  # a review added on retry reopens the step
+        return done
+
+    def _step_started(self, run_id: str, step: str) -> bool:
+        return self.conn.execute(
+            "SELECT 1 FROM postrun_steps WHERE run_id = ? AND step = ? AND status = 'done'", (run_id, step)
+        ).fetchone() is not None
+
+    def _unanswered(self, run_id: str, agent_id: str) -> list[Review]:
+        reviews = reviews_of(self.conn, agent_id, run_id=run_id)
+        answered = responses_for(self.conn, [r.id for r in reviews])
+        return [r for r in reviews if r.id not in answered]
 
     def _mark(self, run_id: str, call: _Call, status: str, detail: str, reasoning: str | None) -> None:
         self.conn.execute(
@@ -206,7 +221,7 @@ class PostRun:
         return answer.reasoning
 
     async def _responses(self, ctx: _Context, agent_id: str) -> str | None:
-        reviews = reviews_of(self.conn, agent_id, run_id=ctx.run_id)
+        reviews = self._unanswered(ctx.run_id, agent_id)
         text = "\n\n".join(render_review(r, ctx.who, private=True) for r in reviews)
         request = render("responses_request.md", run_id=ctx.run_id, reviews=text)
         expected = sorted(r.id for r in reviews)

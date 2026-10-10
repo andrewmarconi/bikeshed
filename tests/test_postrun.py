@@ -225,3 +225,34 @@ async def test_lessons_over_the_cap_get_one_correction(tmp_path, community, make
     clients["a"] = FakeModel(responder(postrun_reply, update=lambda request: next(replies)(request)))
     await cycle(store, conn, tmp_path, clients).run(run_id)
     assert store.private("a")["lessons.md"] == "short"
+
+
+async def test_a_review_added_on_retry_still_gets_a_response(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    Board(conn, run_id).append(2, "c", "question", {"target": 3, "text": "Why blue?"}, refs=[3])  # c and b interact
+    fabricated = json.dumps({"more_of": "m", "less_of": "l", "private_note": "p", "evidence": [999],
+                             "overall": 2, "overall_reason": "r"})
+    first = {a: FakeModel(responder(postrun_reply)) for a in "bc"}
+    first["a"] = FakeModel(responder(postrun_reply, review=lambda r: fabricated if "review of Bea" in r else postrun_reply(r)))
+    await cycle(store, conn, tmp_path, first).run(run_id)
+    assert len(reviews_of(conn, "b", run_id=run_id)) == 1                       # only c's review of b so far
+
+    second = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    await cycle(store, conn, tmp_path, second).run(run_id)
+    reviews = reviews_of(conn, "b", run_id=run_id)
+    assert len(reviews) == 2
+    assert set(responses_for(conn, [r.id for r in reviews])) == {r.id for r in reviews}
+    asked = [m[0]["content"] for _, m, _ in second["b"].calls if m[0]["content"].startswith("# Post-run: responses")]
+    assert len(asked) == 1 and "by Alpha (a)" in asked[0] and "by Cyd (c)" not in asked[0]   # only the new review
+
+
+async def test_resume_with_one_dead_backend_does_not_stall_everyone(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "ab"}
+    clients["c"] = FakeModel(fail_times=1000)
+    assert (await cycle(store, conn, tmp_path, clients).run(run_id)).status == "done"
+    result = await cycle(store, conn, tmp_path, {**clients, "c": FakeModel(fail_times=1000)}).run(run_id)
+    assert result.status == "done"
+    assert result.failed == 3                     # c's journal, self-review, and update, retried and failed again
