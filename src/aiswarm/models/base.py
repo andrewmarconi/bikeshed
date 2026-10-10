@@ -28,6 +28,10 @@ class ModelClient(Protocol):
     ) -> ChatResult: ...
 
 
+class Embedder(Protocol):
+    async def embed(self, texts: list[str]) -> list[list[float]]: ...
+
+
 class RetryingClient:
     """Retries ModelError with exponential backoff, then re-raises."""
 

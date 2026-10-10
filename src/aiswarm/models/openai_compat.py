@@ -52,6 +52,17 @@ class OpenAICompatClient:
             input_tokens=response.usage.prompt_tokens if response.usage else None,
         )
 
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        try:
+            response = await asyncio.wait_for(
+                self._client.embeddings.create(model=self.backend.model, input=texts), timeout=self.backend.timeout_s
+            )
+        except TimeoutError as exc:
+            raise ModelError(f"timed out after {self.backend.timeout_s}s") from exc
+        except APIError as exc:
+            raise ModelError(f"{type(exc).__name__}: {exc}") from exc
+        return [item.embedding for item in sorted(response.data, key=lambda item: item.index)]
+
     async def list_models(self) -> list[str]:
         try:
             page = await self._client.models.list()

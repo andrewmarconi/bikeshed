@@ -18,6 +18,10 @@ CHAT_REPLY = {
     "usage": {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
 }
 MODELS_REPLY = {"object": "list", "data": [{"id": "qwen-test", "object": "model", "created": 0, "owned_by": "omlx"}]}
+EMBED_REPLY = {"object": "list", "model": "e", "data": [
+    {"object": "embedding", "index": 1, "embedding": [0.0, 1.0]},
+    {"object": "embedding", "index": 0, "embedding": [1.0, 0.0]},
+], "usage": {"prompt_tokens": 2, "total_tokens": 2}}
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -32,7 +36,7 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         self.server.requests.append((self.path, body))
-        self._send(CHAT_REPLY)
+        self._send(EMBED_REPLY if self.path.endswith("/embeddings") else CHAT_REPLY)
 
     def do_GET(self):
         self._send(MODELS_REPLY)
@@ -154,3 +158,10 @@ async def test_timeout_is_a_total_deadline_despite_keepalive_bytes():
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+async def test_embed_returns_vectors_in_input_order(server):
+    vectors = await OpenAICompatClient(backend(server)).embed(["first", "second"])
+    path, body = server.requests[0]
+    assert path == "/v1/embeddings" and body["input"] == ["first", "second"] and body["model"] == "qwen-test"
+    assert vectors == [[1.0, 0.0], [0.0, 1.0]]

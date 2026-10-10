@@ -72,3 +72,14 @@ async def test_limit_clients_caps_simultaneous_calls_across_clients():
     assert tracker["peak"] == 2
     assert [r.text for r in results] == ["ok"] * 18
     assert clients["a"].context_window == 1000
+
+
+async def test_fake_embedder_is_deterministic_and_can_fail():
+    from aiswarm.models.fake import FakeEmbedder
+
+    embedder = FakeEmbedder(dims=16, fail_times=1)
+    with pytest.raises(ModelError):
+        await embedder.embed(["x"])
+    a, b, c = await embedder.embed(["burden score rotation", "burden score rotation", "unrelated words"])
+    assert a == b and a != c and len(a) == 16
+    assert embedder.calls[-1] == ["burden score rotation", "burden score rotation", "unrelated words"]

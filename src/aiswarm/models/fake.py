@@ -1,5 +1,7 @@
 """Scripted model client for tests and offline development."""
 
+import re
+import zlib
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -41,3 +43,25 @@ class FakeModel:
         else:
             text = _PASS
         return ChatResult(text=text, reasoning=self.reasoning, model=self.model)
+
+
+class FakeEmbedder:
+    """Deterministic bag-of-words vectors: texts sharing words are similar."""
+
+    def __init__(self, dims: int = 64, fail_times: int = 0):
+        self.dims = dims
+        self.fail_times = fail_times
+        self.calls: list[list[str]] = []
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(list(texts))
+        if self.fail_times > 0:
+            self.fail_times -= 1
+            raise ModelError("fake outage")
+        vectors = []
+        for text in texts:
+            vector = [0.0] * self.dims
+            for word in re.findall(r"[a-z]+", text.lower()):
+                vector[zlib.crc32(word.encode()) % self.dims] += 1.0
+            vectors.append(vector)
+        return vectors

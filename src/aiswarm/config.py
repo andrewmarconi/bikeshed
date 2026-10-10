@@ -4,7 +4,7 @@ import tomllib
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class OpenAIBackend(BaseModel):
@@ -42,11 +42,31 @@ class RunSettings(BaseModel):
     reputation_half_life_runs: float = Field(5.0, gt=0)
 
 
+class ReportSettings(BaseModel):
+    narrator: str | None = None  # a backend that writes report/narrative.md for the user
+
+
+class LibrarySettings(BaseModel):
+    embeddings: str | None = None  # an openai backend serving an embeddings model
+    top_k: int = Field(3, ge=0)
+
+
 class Config(BaseModel):
     community_dir: Path = Path("community")
     runs_dir: Path = Path("runs")
     models: dict[str, Backend]
     run: RunSettings = Field(default_factory=RunSettings)
+    report: ReportSettings = Field(default_factory=ReportSettings)
+    library: LibrarySettings = Field(default_factory=LibrarySettings)
+
+    @model_validator(mode="after")
+    def _known_backends(self) -> "Config":
+        for label, name in (("report.narrator", self.report.narrator), ("library.embeddings", self.library.embeddings)):
+            if name is not None and name not in self.models:
+                raise ValueError(f"{label} names unknown model backend {name!r}")
+        if self.library.embeddings and not isinstance(self.models[self.library.embeddings], OpenAIBackend):
+            raise ValueError("library.embeddings must name an openai backend")
+        return self
 
     @property
     def db_path(self) -> Path:
@@ -90,4 +110,15 @@ max_reads = 3
 model_retries = 3
 max_concurrent_calls = 4               # simultaneous model calls across all agents
 reputation_half_life_runs = 5          # a rating this many runs old counts half
+
+[report]
+# narrator = "claude"                  # a backend that writes report/narrative.md (for you; agents never see it)
+
+[library]
+# embeddings = "embed"                 # an openai backend serving an embeddings model, e.g.:
+#   [models.embed]
+#   kind = "openai"
+#   base_url = "http://localhost:8000/v1"
+#   model = "mlx-community--all-MiniLM-L6-v2-4bit"
+top_k = 3                              # methods from earlier runs shown in each View
 """

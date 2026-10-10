@@ -17,3 +17,7 @@ def make_client(backend: Backend, retries: int) -> RetryingClient:
         # An empty directory outside $HOME so no CLAUDE.md or project settings are discovered.
         inner = ClaudeCliClient(backend, workdir=Path(tempfile.mkdtemp(prefix="aiswarm-claude-")))
     return RetryingClient(inner, attempts=retries)
+
+
+def make_embedder(backend: OpenAIBackend) -> OpenAICompatClient:
+    return OpenAICompatClient(backend)

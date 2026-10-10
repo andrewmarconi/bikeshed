@@ -59,3 +59,32 @@ def test_postrun_settings_defaults(tmp_path):
 def test_max_concurrent_calls_must_be_positive(tmp_path):
     with pytest.raises(ValidationError):
         load_config(write(tmp_path, '[models.l]\nkind = "openai"\nmodel = "m"\n[run]\nmax_concurrent_calls = 0\n'))
+
+
+def test_report_and_library_settings(tmp_path):
+    cfg = load_config(write(tmp_path, '''
+[models.local]
+kind = "openai"
+model = "m"
+[models.embed]
+kind = "openai"
+model = "e"
+[report]
+narrator = "local"
+[library]
+embeddings = "embed"
+top_k = 5
+'''))
+    assert (cfg.report.narrator, cfg.library.embeddings, cfg.library.top_k) == ("local", "embed", 5)
+    bare = load_config(write(tmp_path, '[models.l]\nkind = "openai"\nmodel = "m"\n'))
+    assert (bare.report.narrator, bare.library.embeddings, bare.library.top_k) == (None, None, 3)
+
+
+@pytest.mark.parametrize("extra", [
+    '[report]\nnarrator = "nope"\n',
+    '[library]\nembeddings = "nope"\n',
+    '[models.c]\nkind = "claude_cli"\n[library]\nembeddings = "c"\n',
+])
+def test_report_and_library_must_name_suitable_backends(tmp_path, extra):
+    with pytest.raises(ValidationError):
+        load_config(write(tmp_path, '[models.l]\nkind = "openai"\nmodel = "m"\n' + extra))
