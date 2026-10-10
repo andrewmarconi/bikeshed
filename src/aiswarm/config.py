@@ -70,7 +70,9 @@ kind = "openai"                       # oMLX (OpenAI-compatible)
 base_url = "http://localhost:8000/v1"
 model = "CHANGE-ME"                   # an id from: curl localhost:8000/v1/models
 context_window = 32768
-# thinking = false                    # skip reasoning (much faster); omit to use oMLX's model setting
+# thinking = true                     # true: reason first (slower; JSON not schema-enforced, since oMLX
+#                                       # skips thinking under a schema). false: no reasoning. Omitted: schema
+#                                       # is enforced, which in practice means no thinking.
 
 [models.claude]
 kind = "claude_cli"                   # headless `claude -p`, isolated
