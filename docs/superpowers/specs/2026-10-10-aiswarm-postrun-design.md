@@ -1,7 +1,7 @@
 # AISwarm — Post-run Cycle Design (Plan 2 addendum)
 
 - **Date:** 2026-10-10
-- **Status:** Approved; Plan 2a implemented
+- **Status:** Approved; Plans 2a and 2b implemented
 - **Author:** Andrew Marconi (with Claude)
 - **Extends:** `2026-10-10-aiswarm-design.md` (the Phase 1 spec). Where this addendum is more specific than §5 of that spec, this addendum governs; everything else there still applies, including the principles (values-neutral prompts, observation never feeds back, privacy invariants).
 
