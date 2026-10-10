@@ -1,7 +1,7 @@
 """Builds what one agent sees in one step: privacy-filtered and trimmed to its context budget."""
 
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -50,6 +50,7 @@ class ViewInputs:
     journals: tuple[tuple[str, str], ...] = ()
     norms: str = ""
     reputations: Mapping[str, Reputation] = field(default_factory=dict)
+    library: tuple[str, ...] = ()
 
 
 def _norms(store: ProfileStore) -> str:
@@ -59,7 +60,7 @@ def _norms(store: ProfileStore) -> str:
 
 def collect_inputs(
     *, agent_id: str, goal: str, round: int, board: Board, store: ProfileStore,
-    workspace: Workspace, view_entries: int, half_life: float = 5.0,
+    workspace: Workspace, view_entries: int, half_life: float = 5.0, library: Sequence[str] = (),
 ) -> ViewInputs:
     entries = board.entries()
     if round == 1:
@@ -73,6 +74,7 @@ def collect_inputs(
         journals=tuple(store.journals(agent_id, 2)),
         norms=_norms(store),
         reputations={i: reputation(board.conn, i, half_life) for i in store.ids()},
+        library=tuple(library),
     )
 
 
@@ -153,6 +155,7 @@ def build_view(inputs: ViewInputs, budget_chars: int) -> str:
     for title, items in (
         ("# Entries that respond to you", [render_entry(e, who) for e in about_me]),
         ("# Recent board entries", [render_entry(e, who) for e in recent]),
+        ("# Methods from earlier runs", list(inputs.library)),
         ("# Workspace files", files),
         ("# Community members", members),
     ):

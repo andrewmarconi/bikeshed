@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from aiswarm.board import SYSTEM, Board
 from aiswarm.events import read_events
 from aiswarm.models.fake import FakeModel
 from aiswarm.runner import Runner
@@ -196,3 +197,49 @@ async def test_agents_can_read_peer_reviews_but_not_private_notes(tmp_path, comm
     read_result = reader.calls[2][1][-1]["content"]
     assert read_result.startswith("Read result:\nReview")
     assert "PUBLIC-MORE" in read_result and "SECRET-NOTE" not in read_result
+
+
+async def test_runs_show_relevant_methods_from_earlier_runs(tmp_path, community, runner_factory, make_run):
+    from aiswarm.events import read_events
+    from aiswarm.library import embed_missing, record_methods
+    from aiswarm.models.fake import FakeEmbedder
+
+    store, conn = community
+    make_run(conn, "old", ("a", "b"))
+    old = Board(conn, "old")
+    old.append(0, SYSTEM, "goal", {"goal": "Pick a colour"})
+    old.append(1, "b", "propose", {"answer_summary": "x", "method": "LIB-METHOD pick colour by vote"})
+    conn.execute("UPDATE runs SET status = 'closed' WHERE id = 'old'")
+    record_methods(conn, "old", "Pick a colour", old.entries())
+    embedder = FakeEmbedder()
+    await embed_missing(conn, embedder)
+    seen = FakeModel([json.dumps({"action": {"type": "propose", "answer_summary": "x", "method": "m"}})])
+    runner = runner_factory(store, conn, {"a": seen}, max_rounds=1)
+    runner.embedder = embedder
+    run_id = runner.start("Pick a colour", ["a"])
+    await runner.run(run_id)
+    assert "# Methods from earlier runs" in seen.calls[0][1][0]["content"]
+    assert "LIB-METHOD" in seen.calls[0][1][0]["content"]
+    events = read_events(tmp_path / "runs" / run_id / "events.jsonl")
+    assert any(e["event"] == "library_retrieved" for e in events)
+
+
+async def test_a_run_proceeds_without_the_library_when_embeddings_fail(tmp_path, community, runner_factory):
+    from aiswarm.events import read_events
+    from aiswarm.models.fake import FakeEmbedder
+
+    store, conn = community
+    conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES ('old', 'g', 'closed', '[]', 't')")
+    conn.execute("INSERT INTO entries (run_id, round, author, type, payload, created_at) VALUES ('old', 1, 'b', 'propose', '{}', 't')")
+    conn.execute("INSERT INTO methods (run_id, entry_id, author, kind, goal, text, reception, embedding, created_at) "
+                 "VALUES ('old', 1, 'b', 'propose', 'g', 't', '{\"adopted_by\": [], \"critiques\": 0, \"refines\": 0, "
+                 "\"questions\": 0, \"in_winning\": false}', x'0000803f', 't')")
+    seen = FakeModel([json.dumps({"action": {"type": "propose", "answer_summary": "x", "method": "m"}})])
+    runner = runner_factory(store, conn, {"a": seen}, max_rounds=1)
+    runner.embedder = FakeEmbedder(fail_times=5)
+    run_id = runner.start("Pick a colour", ["a"])
+    result = await runner.run(run_id)
+    assert result.status == "closed"
+    assert "# Methods from earlier runs" not in seen.calls[0][1][0]["content"]
+    events = read_events(tmp_path / "runs" / run_id / "events.jsonl")
+    assert any(e["event"] == "library_unavailable" for e in events)

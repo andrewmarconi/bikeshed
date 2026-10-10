@@ -18,7 +18,8 @@ from aiswarm.config import RunSettings
 from aiswarm.consensus import StopDecision, stop_decision
 from aiswarm.db import now_iso, transaction
 from aiswarm.events import EventLog
-from aiswarm.models.base import ModelClient
+from aiswarm.library import render_methods, retrieve
+from aiswarm.models.base import Embedder, ModelClient, ModelError
 from aiswarm.profiles import ProfileStore
 from aiswarm.report import write_report
 from aiswarm.reviews import render_public_reviews
@@ -43,7 +44,7 @@ class Runner:
     def __init__(
         self, *, settings: RunSettings, conn: sqlite3.Connection, store: ProfileStore, runs_dir: Path,
         clients: Mapping[str, ModelClient], sink: Callable[[dict[str, Any]], None] | None = None,
-        rng: Any = None,
+        rng: Any = None, embedder: Embedder | None = None, library_top_k: int = 3,
     ):
         self.settings = settings
         self.conn = conn
@@ -52,6 +53,8 @@ class Runner:
         self.clients = clients
         self.sink = sink
         self.rng = rng or random.Random()
+        self.embedder = embedder
+        self.library_top_k = library_top_k
 
     def _events(self, run_id: str) -> EventLog:
         return EventLog(self.runs_dir / run_id / "events.jsonl", sink=self.sink)
@@ -92,11 +95,12 @@ class Runner:
         ws.reset_to(last["workspace_commit"] if last else ws.initial_commit())
         completed = last["round"] if last else 0
         self.conn.execute("UPDATE runs SET status = 'running' WHERE id = ?", (run_id,))
+        library = await self._library(run_id, goal, events)
 
         for rnd in range(completed + 1, self.settings.max_rounds + 1):
             events.emit("round_started", round=rnd)
             outcomes = await asyncio.gather(
-                *(self._step(a, rnd, goal, agent_ids, board, ws, events) for a in agent_ids)
+                *(self._step(a, rnd, goal, agent_ids, board, ws, events, library) for a in agent_ids)
             )
             if all(o.failure == "model_error" for o in outcomes):
                 self.conn.execute("UPDATE runs SET status = 'paused' WHERE id = ?", (run_id,))
@@ -124,13 +128,13 @@ class Runner:
 
     async def _step(
         self, agent_id: str, rnd: int, goal: str, agent_ids: Sequence[str],
-        board: Board, ws: Workspace, events: EventLog,
+        board: Board, ws: Workspace, events: EventLog, library: Sequence[str],
     ) -> StepOutcome:
         events.emit("agent_step_started", round=rnd, agent=agent_id)
         try:
             inputs = collect_inputs(agent_id=agent_id, goal=goal, round=rnd, board=board, store=self.store,
                                     workspace=ws, view_entries=self.settings.view_entries,
-                                    half_life=self.settings.reputation_half_life_runs)
+                                    half_life=self.settings.reputation_half_life_runs, library=library)
             who = make_who(inputs.profiles)
             system = system_prompt(
                 who(agent_id), self.store.private(agent_id)["temperament.md"], self.settings.max_reads
@@ -148,6 +152,19 @@ class Runner:
             outcome = StepOutcome(Pass(type="pass"), "step_error", f"{type(exc).__name__}: {exc}")
         events.emit("agent_step_finished", round=rnd, agent=agent_id, action=outcome.action.type, failure=outcome.failure)
         return outcome
+
+    async def _library(self, run_id: str, goal: str, events: EventLog) -> list[str]:
+        """Methods from earlier runs most similar to the goal, rendered for the View. Never fails the run."""
+        if self.embedder is None:
+            return []
+        try:
+            found = await retrieve(self.conn, self.embedder, goal, self.library_top_k, exclude_run=run_id)
+        except ModelError as exc:
+            events.emit("library_unavailable", detail=str(exc))
+            return []
+        events.emit("library_retrieved", methods=[method.id for method, _ in found])
+        who = make_who({i: self.store.public(i) for i in self.store.ids()})
+        return render_methods([method for method, _ in found], who)
 
     def _fail(self, run_id: str, rnd: int, agent_id: str, kind: str, detail: str) -> None:
         self.conn.execute(

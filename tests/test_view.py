@@ -136,3 +136,13 @@ def test_member_lines_show_pronouns_when_stated(tmp_path, community, make_run):
     view = view_for("a", 2, store, board, ws)
     assert "- Bea (b) · she/her — Bea headline · no reviews yet" in view
     assert "- Cyd (c) — Cyd headline · no reviews yet" in view
+
+
+def test_view_shows_methods_from_earlier_runs(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    inputs = collect_inputs(agent_id="a", goal="Pick a colour", round=2, board=board, store=store, workspace=ws,
+                            view_entries=15, library=["- #9 in run old by Bea (b) (propose); goal: G\n  method: LIB-METHOD"])
+    view = build_view(inputs, budget_chars=50_000)
+    assert "# Methods from earlier runs\n- #9 in run old" in view
+    assert view.index("# Methods from earlier runs") < view.index("# Workspace files")
+    assert "# Methods from earlier runs" not in view_for("a", 2, store, board, ws)
