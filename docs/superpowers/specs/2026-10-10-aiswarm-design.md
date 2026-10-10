@@ -219,6 +219,8 @@ Goals come from a queue (`community/goals.toml`), each tagged with a category: `
 
 A designated **benchmark goal** is re-run every N runs (default 5), letting the Observer compare how the community answers the same question over time.
 
+**Update (2026-10-10, Plan 3a):** goals are deliberately frivolous and low-stakes (e.g. "Come to an agreement on the best fruit."); categories are kept. The benchmark is the trade-off goal "Pick one pizza topping combination the whole group will share." See `2026-10-10-aiswarm-experiment-harness-design.md`.
+
 ### 6.4 Credit
 
 `call_consensus` must include a `credits` list. Agents receive no guidance on whom to credit. Credits are published in `answer.md` and visible to all agents in later runs. The Observer compares credits given against actual contribution derived from the `refs` graph and workspace history (omissions, self-crediting, reciprocity).
