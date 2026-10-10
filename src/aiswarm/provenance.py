@@ -142,3 +142,55 @@ def _row(row: sqlite3.Row) -> Provenance:
 
 def provenance_rows(conn: sqlite3.Connection, run_id: str) -> list[Provenance]:
     return [_row(r) for r in conn.execute("SELECT * FROM run_provenance WHERE run_id = ? ORDER BY id", (run_id,))]
+
+
+def _flatten(data: Any, prefix: str = "") -> dict[str, Any]:
+    if not isinstance(data, dict):
+        return {prefix: data}
+    out: dict[str, Any] = {}
+    for key, value in data.items():
+        out.update(_flatten(value, f"{prefix}.{key}" if prefix else key))
+    return out
+
+
+def _diff(old: Provenance, new: Provenance) -> list[str]:
+    changes: list[str] = []
+    if old.code_commit != new.code_commit:
+        changes.append(f"code commit {(old.code_commit or 'none')[:8]} → {(new.code_commit or 'none')[:8]}")
+    if old.code_dirty != new.code_dirty:
+        changes.append("uncommitted code changes" if new.code_dirty else "code changes committed")
+    prompts = sorted(name for name in old.prompts.keys() | new.prompts.keys()
+                     if old.prompts.get(name, {}).get("sha256") != new.prompts.get(name, {}).get("sha256"))
+    if prompts:
+        changes.append("prompts " + ", ".join(prompts))
+    before = _flatten({k: v for k, v in old.config.items() if k not in _PATH_KEYS})
+    after = _flatten({k: v for k, v in new.config.items() if k not in _PATH_KEYS})
+    keys = sorted(k for k in before.keys() | after.keys() if before.get(k) != after.get(k))
+    if keys:
+        changes.append("config " + ", ".join(keys))
+    agents = sorted(a for a in old.models.keys() | new.models.keys() if old.models.get(a) != new.models.get(a))
+    if agents:
+        changes.append("models for " + ", ".join(agents))
+    return changes
+
+
+def provenance_changes(conn: sqlite3.Connection, run_id: str) -> list[str]:
+    """How this run's harness differs from the previous run's, and any change during the run itself."""
+    rows = provenance_rows(conn, run_id)
+    start = next((r for r in rows if r.phase == "start"), None)
+    if start is None:
+        return []
+    out: list[str] = []
+    earlier = conn.execute(
+        "SELECT id FROM runs WHERE rowid < (SELECT rowid FROM runs WHERE id = ?) ORDER BY rowid DESC", (run_id,)
+    ).fetchall()
+    for row in earlier:
+        previous = next((r for r in provenance_rows(conn, row["id"]) if r.phase == "start"), None)
+        if previous is not None:
+            if previous.fingerprint != start.fingerprint:
+                out += [f"since run {previous.run_id}: {c}" for c in _diff(previous, start)]
+            break
+    for later in rows:
+        if later.phase != "start" and later.fingerprint != start.fingerprint:
+            out += [f"at {later.phase} ({later.captured_at}): {c}" for c in _diff(start, later)]
+    return out

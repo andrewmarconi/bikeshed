@@ -30,6 +30,11 @@ def project(tmp_path, monkeypatch, postrun_reply):
 
     monkeypatch.setattr(cli, "make_client", lambda backend, retries: FakeModel(respond))
     monkeypatch.setattr(cli, "make_embedder", lambda backend: FakeEmbedder())
+
+    async def fake_probe(backend):
+        return {"models": [backend.model], "health": None, "error": None}
+
+    monkeypatch.setattr(cli, "probe_server", fake_probe)
     config = tmp_path / "aiswarm.toml"
     result = runner.invoke(cli.app, ["init", "-c", str(config)])
     assert result.exit_code == 0, result.output
@@ -189,3 +194,20 @@ def test_narrator_and_show(project):
     run_id = run_id_from(result.output)
     shown = invoke("show", run_id, "-c", config)
     assert "# Account" in shown.output and "# Narrative" in shown.output
+
+
+def test_runs_record_provenance_and_show_reports_changes(project):
+    tmp_path, config = project
+    for agent_id in ("a", "b"):
+        assert invoke("agents", "new", agent_id, "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    first = invoke("run", "Pick a colour", "--max-rounds", "4", "-c", config)
+    first_id = re.search(r"run (\S+) closed", first.output).group(1)
+    second = invoke("run", "Pick a colour", "--max-rounds", "3", "-c", config)
+    second_id = re.search(r"run (\S+) closed", second.output).group(1)
+    from aiswarm.db import connect
+    conn = connect(tmp_path / "community" / "community.db")
+    phases = [r["phase"] for r in conn.execute("SELECT phase FROM run_provenance WHERE run_id = ? ORDER BY id", (first_id,))]
+    assert phases == ["start", "postrun"]
+    assert "Harness changed" not in invoke("show", first_id, "-c", config).output
+    shown = invoke("show", second_id, "-c", config).output
+    assert f"since run {first_id}: config run.max_rounds" in shown

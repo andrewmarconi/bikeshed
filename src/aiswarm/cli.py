@@ -18,6 +18,7 @@ from aiswarm.models.factory import make_client, make_embedder
 from aiswarm.models.openai_compat import OpenAICompatClient
 from aiswarm.postrun import PostRun, PostRunResult
 from aiswarm.profiles import PRIVATE_FILES, ProfileError, ProfileStore
+from aiswarm.provenance import capture, probe_server, provenance_changes, provenance_rows
 from aiswarm.reviews import dimension_reputations, ratings_for, render_review, reputation, responses_for, reviews_of
 from aiswarm.runner import Runner
 from aiswarm.view import make_who
@@ -228,6 +229,7 @@ def run(
         if not agent_ids:
             _fail("no agents yet; create some with `aiswarm agents new`")
     clients = _clients(cfg, store, agent_ids)
+    backends = {a: store.record(a).model for a in agent_ids}
     narrator, embedder = _support(cfg)
 
     async def go() -> None:
@@ -236,6 +238,7 @@ def run(
         runner = Runner(settings=cfg.run, conn=conn, store=store, runs_dir=cfg.runs_dir, clients=limited,
                         sink=_print_event, embedder=embedder, library_top_k=cfg.library.top_k)
         run_id = resume or runner.start(goal or "", agent_ids)
+        await capture(conn, run_id, "resume" if resume else "start", cfg, backends, probe=probe_server)
         result = await runner.run(run_id)
         if result.status == "paused":
             typer.echo(f"run {run_id} paused; resume with `aiswarm run --resume {run_id}`")
@@ -243,6 +246,7 @@ def run(
         typer.echo(f"run {run_id} closed: {result.reason}")
         typer.echo(f"report: {cfg.runs_dir / run_id / 'report'}")
         if not no_postrun:
+            await capture(conn, run_id, "postrun", cfg, backends, probe=probe_server)
             post = await PostRun(conn=conn, store=store, runs_dir=cfg.runs_dir, clients=limited,
                                  narrator=narrator_client, embedder=embedder, quorum_slack=cfg.run.quorum_slack,
                                  sink=_print_event).run(run_id)
@@ -263,9 +267,11 @@ def postrun(run_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
     if row["status"] != "closed":
         _fail(f"run {run_id} is not closed; finish it with `aiswarm run --resume {run_id}`")
     clients = _clients(cfg, store, json.loads(row["agent_ids"]))
+    backends = {a: store.record(a).model for a in json.loads(row["agent_ids"])}
     narrator, embedder = _support(cfg)
 
     async def go() -> PostRunResult:
+        await capture(conn, run_id, "postrun", cfg, backends, probe=probe_server)
         limited = limit_clients({**clients, **({_NARRATOR: narrator} if narrator else {})}, cfg.run.max_concurrent_calls)
         narrator_client = limited.pop(_NARRATOR, None)
         return await PostRun(conn=conn, store=store, runs_dir=cfg.runs_dir, clients=limited,
@@ -277,10 +283,18 @@ def postrun(run_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
 
 @app.command()
 def show(run_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
-    """Print a run's answer and minority report."""
-    report = _load(config).runs_dir / run_id / "report"
+    """Print a run's answer and minority report, noting any harness change since the previous run."""
+    cfg = _load(config)
+    report = cfg.runs_dir / run_id / "report"
     if not report.exists():
         _fail(f"no report for run {run_id!r}")
+    conn = connect(cfg.db_path)
+    changes = provenance_changes(conn, run_id)
+    if changes:
+        typer.echo("Harness changed:\n" + "\n".join(f"- {c}" for c in changes) + "\n")
+    start = next((p for p in provenance_rows(conn, run_id) if p.phase == "start"), None)
+    if start and start.code_dirty:
+        typer.echo("Note: this run started from uncommitted AISwarm code.\n")
     for name in ("answer.md", "minority.md", "account.md", "narrative.md"):
         path = report / name
         if path.exists():

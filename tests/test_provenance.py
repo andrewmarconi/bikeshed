@@ -90,3 +90,39 @@ def test_code_state_in_a_checkout(tmp_path):
     assert code_state(repo.path) == (sha, False)
     (repo.path / "y.py").write_text("y = 1\n")
     assert code_state(repo.path) == (sha, True)
+
+
+from aiswarm.provenance import provenance_changes  # noqa: E402
+
+
+async def test_changes_name_what_differs_from_the_previous_run(community, make_run, monkeypatch):
+    store, conn = community
+    make_run(conn, "r1", ("a",))
+    make_run(conn, "r2", ("a",))
+    await capture(conn, "r1", "start", make_config(max_rounds=12), {"a": "local"}, probe=fake_probe)
+    assert provenance_changes(conn, "r1") == []
+    changed = prompt_snapshot()
+    changed["journal_request.md"] = {"sha256": "different", "text": "x"}
+    monkeypatch.setattr(provenance, "prompt_snapshot", lambda: changed)
+    await capture(conn, "r2", "start", make_config(max_rounds=4), {"a": "local", "b": "claude"}, probe=fake_probe)
+    changes = provenance_changes(conn, "r2")
+    assert "since run r1: prompts journal_request.md" in changes
+    assert "since run r1: config run.max_rounds" in changes
+    assert "since run r1: models for b" in changes
+
+
+async def test_changes_flag_a_harness_change_within_a_run(community, make_run):
+    store, conn = community
+    make_run(conn, "r1", ("a",))
+    await capture(conn, "r1", "start", make_config(max_rounds=12), {"a": "local"}, probe=fake_probe)
+    await capture(conn, "r1", "resume", make_config(max_rounds=12), {"a": "local"}, probe=fake_probe)
+    assert provenance_changes(conn, "r1") == []
+    await capture(conn, "r1", "postrun", make_config(max_rounds=3), {"a": "local"}, probe=fake_probe)
+    [line] = provenance_changes(conn, "r1")
+    assert line.startswith("at postrun (") and line.endswith("config run.max_rounds")
+
+
+def test_changes_for_a_run_without_provenance_are_empty(community, make_run):
+    store, conn = community
+    make_run(conn, "old", ("a",))
+    assert provenance_changes(conn, "old") == []
