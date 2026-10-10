@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -100,3 +101,56 @@ async def test_thinking_sent_as_chat_template_kwarg(server, thinking):
 async def test_thinking_drops_the_schema_because_oMLX_skips_thinking_under_one(server):
     await OpenAICompatClient(backend(server, thinking=True)).chat("S", [], json_schema={"type": "object"})
     assert "response_format" not in server.requests[0][1]
+
+
+class _AwkwardHandler(BaseHTTPRequestHandler):
+    """Mimics oMLX under memory pressure: keepalive bytes, or an error body after a 200."""
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers["Content-Length"]))
+        body = json.dumps({"error": {"message": "Request aborted: process memory limit exceeded"}}).encode()
+        trickle = self.server.trickle_s
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body) + int(trickle * 20)))
+        self.end_headers()
+        try:
+            for _ in range(int(trickle * 20)):
+                self.wfile.write(b" ")
+                self.wfile.flush()
+                time.sleep(0.05)
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def log_message(self, *args):
+        pass
+
+
+def awkward_server(trickle_s):
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), _AwkwardHandler)
+    srv.trickle_s = trickle_s
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+async def test_error_body_inside_a_200_is_a_model_error():
+    srv = awkward_server(0)
+    try:
+        with pytest.raises(ModelError, match="memory limit"):
+            await OpenAICompatClient(backend(srv)).chat("S", [])
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+async def test_timeout_is_a_total_deadline_despite_keepalive_bytes():
+    srv = awkward_server(3)
+    try:
+        started = time.monotonic()
+        with pytest.raises(ModelError, match="timed out"):
+            await OpenAICompatClient(backend(srv, timeout_s=0.5)).chat("S", [])
+        assert time.monotonic() - started < 2
+    finally:
+        srv.shutdown()
+        srv.server_close()

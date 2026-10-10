@@ -1,5 +1,6 @@
 """OpenAI-compatible backend, used for oMLX."""
 
+import asyncio
 from typing import Any
 
 from openai import APIError, AsyncOpenAI
@@ -26,13 +27,22 @@ class OpenAICompatClient:
         if self.backend.thinking is not None:
             kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": self.backend.thinking}}
         try:
-            response = await self._client.chat.completions.create(
-                model=self.backend.model,
-                messages=[{"role": "system", "content": system}, *messages],
-                **kwargs,
+            # A total deadline: oMLX sends keepalive bytes while a request waits, which resets httpx's read timeout.
+            response = await asyncio.wait_for(
+                self._client.chat.completions.create(
+                    model=self.backend.model,
+                    messages=[{"role": "system", "content": system}, *messages],
+                    **kwargs,
+                ),
+                timeout=self.backend.timeout_s,
             )
+        except TimeoutError as exc:
+            raise ModelError(f"timed out after {self.backend.timeout_s}s") from exc
         except APIError as exc:
             raise ModelError(f"{type(exc).__name__}: {exc}") from exc
+        if not response.choices:
+            # oMLX can abort after sending 200, leaving only an error body.
+            raise ModelError(f"no choices in response: {(response.model_extra or {}).get('error')}")
         message = response.choices[0].message
         extra = message.model_extra or {}
         return ChatResult(
