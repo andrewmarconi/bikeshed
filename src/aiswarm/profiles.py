@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from aiswarm.actions import summarise_validation
 from aiswarm.db import now_iso
-from aiswarm.gitrepo import GitRepo
+from aiswarm.gitrepo import Commit, GitRepo
 
 AGENT_ID = re.compile(r"^[a-z][a-z0-9-]{0,23}$")
 NAME_MAX = 40
@@ -164,6 +164,11 @@ class ProfileStore:
             (directory / filename).write_text("")
         self._repo.commit([f"agents/{agent_id}"], f"reset control agent {agent_id} to seed", author="aiswarm")
         return not taken
+
+    def history(self, agent_id: str) -> list[Commit]:
+        """Commits to an agent's profile files, oldest first (journals and seed excluded)."""
+        base = f"agents/{agent_id}"
+        return self._repo.log(base, exclude=[f"{base}/journal", f"{base}/{SEED_DIR}"])
 
     def private(self, agent_id: str) -> dict[str, str]:
         return {name: (self._dir(agent_id) / name).read_text() for name in PRIVATE_FILES}

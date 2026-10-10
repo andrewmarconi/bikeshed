@@ -261,3 +261,15 @@ def test_goals_list_reports_a_broken_file(project):
     (tmp_path / "community" / "goals.toml").write_text("[benchmark\n")
     result = invoke("goals", "list", "-c", config)
     assert result.exit_code != 0 and "goals.toml" in result.output and "Traceback" not in result.output
+
+
+def test_agents_timeline(project):
+    tmp_path, config = project
+    assert invoke("agents", "new", "a", "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    result = invoke("agents", "timeline", "member 1", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert result.output.startswith("# Timeline: Member 1 (a)")
+    missing = invoke("agents", "timeline", "nobody", "-c", config)
+    assert missing.exit_code != 0 and "no agent" in missing.output
+    bad_since = invoke("agents", "timeline", "a", "--since", "nope", "-c", config)
+    assert bad_since.exit_code != 0 and "no run" in bad_since.output

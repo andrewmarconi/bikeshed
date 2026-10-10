@@ -91,6 +91,10 @@ def reviews_of(
     return [_review(row) for row in conn.execute(sql + " ORDER BY id DESC", params)]
 
 
+def reviews_by(conn: sqlite3.Connection, agent_id: str) -> list[Review]:
+    return [_review(row) for row in conn.execute("SELECT * FROM reviews WHERE reviewer = ? ORDER BY id", (agent_id,))]
+
+
 def responses_for(conn: sqlite3.Connection, review_ids: Sequence[int]) -> dict[int, Response]:
     if not review_ids:
         return {}

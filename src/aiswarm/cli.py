@@ -22,6 +22,7 @@ from aiswarm.profiles import PRIVATE_FILES, ProfileError, ProfileStore
 from aiswarm.provenance import capture, probe_server, provenance_changes, provenance_rows
 from aiswarm.reviews import dimension_reputations, ratings_for, render_review, reputation, responses_for, reviews_of
 from aiswarm.runner import Runner
+from aiswarm.timeline import resolve_agent, timeline
 from aiswarm.view import make_who
 
 app = typer.Typer(no_args_is_help=True, help="A self-organising community of LLM agents.")
@@ -163,6 +164,24 @@ def agents_show(agent_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
     journals = store.journals(agent_id, 1)
     if journals:
         typer.echo(f"\n## Latest journal\n{journals[0][1].strip()}")
+
+
+@agents_app.command("timeline")
+def agents_timeline(
+    agent: Annotated[str, typer.Argument(help="Agent id, current name, or former name.")],
+    since: Annotated[str | None, typer.Option(help="Start at this run id.")] = None,
+    config: ConfigOpt = DEFAULT_PATH,
+) -> None:
+    """One agent's chronological history: profile diffs, journals, reviews, credits, votes, reasoning (observer view)."""
+    cfg = _load(config)
+    store = ProfileStore(cfg.community_dir)
+    agent_id = resolve_agent(store, agent)
+    if agent_id is None:
+        _fail(f"no agent with id or name {agent!r}")
+    try:
+        typer.echo(timeline(connect(cfg.db_path), store, agent_id, since), nl=False)
+    except KeyError:
+        _fail(f"no run {since!r}")
 
 
 def _clients(cfg: Config, store: ProfileStore, agent_ids: list[str]) -> dict[str, Any]:

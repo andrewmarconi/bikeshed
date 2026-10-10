@@ -134,7 +134,7 @@ For the lab (5 runs, none benchmark): run 6 is the pizza baseline, runs 7–10 t
 
 ## 6. Agent timeline
 
-`aiswarm agents timeline <id|name> [--since <run-id>]` resolves an agent by id, current name, or former name (case-insensitive) and prints one chronological markdown document, grouped under `## <run-id> — <goal>` headings (activity outside a run, such as creation and check-ins, goes under the run it precedes, or "Before any run").
+`aiswarm agents timeline <id|name> [--since <run-id>]` resolves an agent by id, current name, or former name (case-insensitive) and prints one chronological markdown document, grouped under `## <run-id> — <goal>` headings (activity outside a run, such as creation and check-ins, goes under the most recent run started before it, or under "Before any run").
 
 Sources:
 
