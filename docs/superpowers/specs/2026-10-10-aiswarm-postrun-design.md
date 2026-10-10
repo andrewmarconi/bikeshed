@@ -16,6 +16,7 @@ Plan 1 built the run engine: a run ends, and nothing carries forward. This adden
 | Process account | Both: `account.md` assembled by code from the board's `refs` graph and decision events (only agents' own words are quoted), plus `narrative.md` written by a neutral narrator model from the same facts. Both are user-only; no agent ever sees either. |
 | Reviews in later runs | On request: each View shows a reputation line per colleague; a new free read, `read_reviews <agent>`, returns that agent's named reviews and responses. It shares the existing budget of 3 reads per step and does not cost the agent its turn. |
 | Private note in reviews | The "what would you tell them privately?" part of a review goes only to the reviewee. Everything else in a review is public. |
+| Privacy wording (decided 2026-10-10) | Journal and self-review prompts deliberately tell the agent "Only you will ever read it" / "Only you will read this", although the user (researcher) reads them, to elicit candid entries. This is a research-design choice, not a defect; it is an experimental condition worth recording in run provenance (Plan 3). |
 | Sequencing | One addendum, two plans. **2a — personal loop** first; **2b — community memory** second. |
 | Lessons from live runs | The cycle must work when a run ends without consensus; post-run calls use the same JSON handling as run steps (schema not enforced for `thinking = true`); simultaneous model calls are capped (`max_concurrent_calls`) because 4 concurrent thinking agents exceeded oMLX's memory ceiling on 2026-10-10. |
 
