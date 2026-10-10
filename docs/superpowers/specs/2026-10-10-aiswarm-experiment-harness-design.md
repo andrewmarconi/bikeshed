@@ -1,7 +1,7 @@
 # AISwarm — Experiment Harness Design (Plan 3a addendum)
 
 - **Date:** 2026-10-10
-- **Status:** Approved in brainstorming; awaiting written-spec review
+- **Status:** Approved; Plan 3a implemented
 - **Author:** Andrew Marconi (with Claude)
 - **Extends:** `2026-10-10-aiswarm-design.md` §6 (experimental design). Where this addendum is more specific than that spec, this addendum governs; everything else there still applies, including the principles (values-neutral prompts, observation never feeds back, privacy invariants).
 
