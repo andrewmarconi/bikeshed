@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+/community/
+/runs/
+/aiswarm.toml
+.superpowers/

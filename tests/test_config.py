@@ -1,0 +1,50 @@
+import tomllib
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from aiswarm.config import DEFAULT_CONFIG, ClaudeCliBackend, OpenAIBackend, load_config
+
+
+def write(tmp_path: Path, text: str) -> Path:
+    path = tmp_path / "aiswarm.toml"
+    path.write_text(text)
+    return path
+
+
+def test_loads_backends_and_defaults(tmp_path):
+    cfg = load_config(write(tmp_path, '''
+[models.local]
+kind = "openai"
+model = "qwen3-8b"
+
+[models.claude]
+kind = "claude_cli"
+'''))
+    assert isinstance(cfg.models["local"], OpenAIBackend)
+    assert cfg.models["local"].base_url == "http://localhost:8000/v1"
+    assert isinstance(cfg.models["claude"], ClaudeCliBackend)
+    assert cfg.models["claude"].model == "haiku"
+    assert cfg.run.max_rounds == 12
+    assert cfg.run.quorum_slack == 1
+    assert cfg.run.stagnation_rounds == 2
+    assert cfg.community_dir == (tmp_path / "community").resolve()
+    assert cfg.runs_dir == (tmp_path / "runs").resolve()
+    assert cfg.db_path == cfg.community_dir / "community.db"
+
+
+def test_rejects_unknown_backend_kind(tmp_path):
+    with pytest.raises(ValidationError):
+        load_config(write(tmp_path, '[models.x]\nkind = "nope"\nmodel = "m"\n'))
+
+
+def test_run_settings_override(tmp_path):
+    cfg = load_config(write(tmp_path, '[models.l]\nkind = "openai"\nmodel = "m"\n[run]\nmax_rounds = 3\n'))
+    assert cfg.run.max_rounds == 3
+
+
+def test_default_config_is_valid(tmp_path):
+    assert tomllib.loads(DEFAULT_CONFIG)
+    cfg = load_config(write(tmp_path, DEFAULT_CONFIG))
+    assert set(cfg.models) == {"local", "claude"}
