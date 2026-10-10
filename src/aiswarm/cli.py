@@ -191,6 +191,12 @@ def doctor(config: ConfigOpt = DEFAULT_PATH) -> None:
                 client = ClaudeCliClient(backend, workdir=Path(tempfile.mkdtemp(prefix="aiswarm-claude-")))
                 ok, tokens = asyncio.run(leak_check(client))
                 detail = f"input tokens {tokens} (limit {backend.leak_threshold_tokens})"
+                if not backend.bare:
+                    detail += (
+                        "\n     warning: subscription mode is not fully isolated — Claude Code still injects an SDK"
+                        " preamble, environment details, and the account email. Set bare = true with"
+                        " ANTHROPIC_API_KEY for clean agents."
+                    )
             else:
                 models = asyncio.run(OpenAICompatClient(backend).list_models())
                 ok = backend.model in models

@@ -87,3 +87,19 @@ def test_missing_config_is_reported(tmp_path):
     result = invoke("agents", "list", "-c", tmp_path / "missing.toml")
     assert result.exit_code != 0
     assert "aiswarm init" in result.output
+
+
+def test_doctor_warns_that_subscription_mode_is_not_fully_isolated(tmp_path, monkeypatch):
+    config = tmp_path / "aiswarm.toml"
+    config.write_text('[models.claude]\nkind = "claude_cli"\n')
+
+    async def fake_leak_check(client):
+        return True, 650
+
+    monkeypatch.setattr(cli, "leak_check", fake_leak_check)
+    result = invoke("doctor", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert "ok   claude: input tokens 650" in result.output
+    assert "not fully isolated" in result.output
+    config.write_text('[models.claude]\nkind = "claude_cli"\nbare = true\n')
+    assert "not fully isolated" not in invoke("doctor", "-c", config).output
