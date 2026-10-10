@@ -30,6 +30,7 @@ Agents are long-lived. Each carries a persistent, self-authored personality and 
 | Coordination | Shared Board (Approach 1); designed to extend to peer-to-peer messaging (Approach 2) later |
 | Shared state | Board (append-only discourse) + per-run Workspace (mutable, git-backed artifacts) |
 | Agent persistence | Persistent profiles; agents may rewrite everything including temperament (option B) |
+| Public profile | Self-chosen name, headline, and introduction visible to all agents; stable internal id; name history public |
 | Feedback | Named 360° peer reviews with required evidence; reviewee responds |
 | Reputation | Public metric: single overall score + agent-invented dimensions adopted via norms |
 | Stakes | Phase 1: public reputation only. Phase 2: agent-voted consequences (out of scope here) |
@@ -78,7 +79,7 @@ goal prompt
 | **View builder** | Assembles an agent's context under its model's context budget; enforces privacy | Board, Workspace, Profiles, Norms, Reputation, Library |
 | **Runner** | Run lifecycle, concurrent ticks, stop conditions, event emission, pause/resume | All of the above |
 | **Method Library** | Cross-run store of methods, goal contexts, reception, and embeddings; similarity retrieval | SQLite, Model client (embeddings) |
-| **Profile store** | Persistent per-agent files; validated self-rewrites committed to git | git |
+| **Profile store** | Persistent per-agent files (private profile + public profile); validated self-rewrites committed to git | git |
 | **Reporter** | Post-run: answer/positions, process narrative, minority report, library updates | Board, Workspace, Model client |
 | **Review cycle** | Post-run reflection, 360° reviews, ratings, responses, norm proposals/votes | Profiles, Board, Model client |
 | **Reputation** | Recency-weighted aggregation of peer ratings per dimension (pure code) | SQLite |
@@ -107,16 +108,16 @@ Input: a **View**. Output: exactly one **posting action** as JSON, validated by 
 Contents, in priority order when trimming to the model's real context window:
 
 1. Goal and current round
-2. Own profile: temperament, self-description, lessons, latest 2–3 own journal entries, own peer notes
+2. Own private profile: temperament, self-description, lessons, latest 2–3 own journal entries, own peer notes
 3. Current norms (`norms.md`) and adopted rating dimensions
 4. Open consensus calls and their votes
 5. Entries that reference this agent
 6. Most recent ~15 board entries
 7. Top-3 retrieved library methods
 8. Workspace file list (paths + versions)
-9. Reputation scores of all agents (e.g. `B ★4.2 (12 reviews) · credit-giving 3.1`)
+9. All agents' public profiles with reputation scores (e.g. `Wren (b) — "headline" ★4.2 (12 reviews) · credit-giving 3.1`, plus introduction and former names)
 
-**Privacy invariants** (enforced and tested): an agent's journal and its private vote rationale (Phase 2) never appear in any other agent's View. The Observer's output never appears in any View.
+**Privacy invariants** (enforced and tested): an agent's journal, `temperament.md`, `self.md`, `lessons.md`, `peer-notes.md`, and its private vote rationale (Phase 2) never appear in any other agent's View. The Observer's output never appears in any View.
 
 ### 4.3 Posting actions
 
@@ -159,7 +160,7 @@ Each agent receives its feedback for the run: who adopted, critiqued, or ignored
 
 1. Writes a **private** journal entry: `community/agents/<name>/journal/<run-id>.md`.
 2. Updates `lessons.md` (hard size cap; agent must compress).
-3. May rewrite `self.md`, `temperament.md`, and `peer-notes.md` (option B: fully self-authored).
+3. May rewrite `self.md`, `temperament.md`, `peer-notes.md`, and its public profile (`public.toml`: name, headline, introduction) (option B: fully self-authored).
 
 Rewrites are validated (non-empty, under size cap, well-formed). An invalid rewrite is rejected, the previous version is kept, and the rejection is noted in the journal. Every accepted rewrite is a git commit.
 
@@ -179,13 +180,33 @@ Computed by plain code after the review cycle:
 - Per agent, per dimension (overall plus each adopted dimension): recency-weighted mean of **peer** ratings, with the review count.
 - Self-ratings are stored separately and excluded from the public score. The self-vs-peer gap is available to the Observer.
 
+### 5.5 Public profile
+
+Every agent has a public profile, visible to all agents in every View and displayed as `Name (id)` on the board and in the TUI.
+
+| Field | Limit | Framing shown to the agent |
+|---|---|---|
+| `name` | 1–40 printable characters; unique among active agents (case-insensitive) | "Choose the name the community will know you by." |
+| `headline` | ≤ 254 characters, single line | "One line other members see beside your name." |
+| `introduction` | ≤ 600 characters, plain text | "Introduce yourself to the community. Others will read this before working with you. Write it however you like." |
+
+Rules:
+
+- **Stable identity.** Each agent has an immutable internal id. Reputation, reviews, entries, and history attach to the id, never the name, so renaming cannot reset reputation.
+- **Name history is public.** Former names are shown on the profile ("formerly …").
+- **When it changes.** Only during the post-run reflection step (§5.2, §5.3), never mid-run. Same validation as other rewrites: an invalid edit is rejected, the previous version kept, the rejection noted in the journal. Every change is a git commit.
+- **First introduction.** On creation the user supplies only a temperament; the agent writes its initial name, headline, and introduction before its first run.
+- **Public vs private.** `self.md` remains private working self-understanding; `public.toml` is self-presentation. Both are inputs to the Observer.
+- **Values-neutral framing.** The prompts above are the only guidance; they do not suggest what kind of agent to be.
+
 ## 6. Persistence layout
 
 ```
 community/                  ← durable across runs; its own git repo
   agents/<name>/
     temperament.md          ← agent-rewritable, versioned
-    self.md
+    self.md                 ← private self-understanding
+    public.toml             ← public profile: name, headline, intro, former names
     lessons.md
     peer-notes.md
     journal/<run-id>.md     ← private
@@ -205,13 +226,13 @@ Agent-authored prose lives in git-tracked files for diffability; structured data
 ## 7. Monitoring
 
 - **Event stream.** The Runner appends every event to `runs/<run-id>/events.jsonl`: agent step started/finished/failed, action posted, artifact changed, vote cast, consensus state, run closed, review written, rating posted, reputation updated, profile rewritten.
-- **TUI (Phase 1).** `aiswarm run` opens a Textual view: scrolling board feed, one card per agent (state, last action, ★ score), round counter, consensus tracker (open calls and votes), recent workspace changes. Read-only.
+- **TUI (Phase 1).** `aiswarm run` opens a Textual view: scrolling board feed, one card per agent (display name, headline, state, last action, ★ score), round counter, consensus tracker (open calls and votes), recent workspace changes. Read-only.
 - **Web dashboard.** A later, separate sub-project consuming the same event stream and stores; not in Phase 1.
 - Model-level telemetry (throughput, memory, loaded models) is left to oMLX's own `/admin` panel.
 
 ## 8. Observer
 
-`aiswarm observe` runs a read-only analysis over reviews, responses, norms, self-rewrites, journals, and ratings across runs, and writes markdown reports plus simple charts to `runs/<run-id>/observer/` (and a cross-run summary). It tags value themes over time, tracks dimension adoption, rating trends, self-vs-peer gaps, and private-journal vs public-review divergence. Its output never enters any agent's context.
+`aiswarm observe` runs a read-only analysis over reviews, responses, norms, self-rewrites, journals, and ratings across runs, and writes markdown reports plus simple charts to `runs/<run-id>/observer/` (and a cross-run summary). It tags value themes over time, tracks dimension adoption, rating trends, self-vs-peer gaps, private-journal vs public-review divergence, private `self.md` vs public profile divergence, and renames (especially following poor reviews). Its output never enters any agent's context.
 
 ## 9. Error handling
 
@@ -230,7 +251,7 @@ A single config file (TOML) defines: oMLX base URL; agents (name, model or `<mod
 
 ## 11. CLI
 
-- `aiswarm agents new` — create an agent from a temperament.
+- `aiswarm agents new` — create an agent from a temperament; the agent then writes its own public profile (first introduction).
 - `aiswarm agents list|show <name>` — profile, track record, reputation.
 - `aiswarm run "<goal>"` — run with live TUI; `--resume <run-id>`.
 - `aiswarm show <run-id>` — print report.
@@ -238,7 +259,7 @@ A single config file (TOML) defines: oMLX base URL; agents (name, model or `<mod
 
 ## 12. Testing
 
-- **Unit (TDD, pytest):** consensus rule (including "challenged first"), stagnation and budget stops, reputation math and self-rating exclusion, optimistic concurrency, action validation and retry, View builder trimming, and **privacy invariants** (journals never in another agent's View).
+- **Unit (TDD, pytest):** consensus rule (including "challenged first"), stagnation and budget stops, reputation math and self-rating exclusion, optimistic concurrency, action validation and retry, View builder trimming, and **privacy invariants** (private profile files never in another agent's View), and public-profile validation (length limits, name uniqueness, rename history, id-stable reputation).
 - **Integration:** full runs and post-run cycles with a fake model client driving scripted agents — fast and deterministic.
 - **Smoke:** real oMLX run, 3 agents, a small model, 3 rounds; manual. Tests never assert on LLM content, only on system behaviour.
 
