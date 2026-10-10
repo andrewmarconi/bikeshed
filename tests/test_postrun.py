@@ -164,7 +164,7 @@ async def test_requests_never_carry_another_agents_private_notes(tmp_path, commu
 
 def update_reply(**fields):
     base = {"journal": "AFTER", "lessons": "NEW-LESSONS", "self_description": None, "temperament": None,
-            "peer_notes": None, "public_profile": None}
+            "peer_notes": None, "public_profile": None, "proposal": None}
     return lambda request: json.dumps({**base, **fields})
 
 
@@ -307,3 +307,47 @@ async def test_an_embeddings_outage_pauses_at_the_library_step(tmp_path, communi
     later = PostRun(conn=conn, store=store, runs_dir=tmp_path / "runs", clients=clients, embedder=FakeEmbedder())
     assert (await later.run(run_id)).status == "done"
     assert conn.execute("SELECT COUNT(*) FROM methods WHERE embedding IS NULL").fetchone()[0] == 0
+
+
+async def test_update_can_make_one_proposal_and_sees_current_norms(tmp_path, community, make_run, postrun_reply):
+    from aiswarm.norms import proposals
+
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "bc"}
+    clients["a"] = FakeModel(responder(postrun_reply, update=update_reply(proposal={"kind": "norm", "text": "Cite ids."})))
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    [p] = proposals(conn, run_id)
+    assert (p.author, p.kind, p.text) == ("a", "norm", "Cite ids.")
+    update = next(m[0]["content"] for _, m, _ in clients["b"].calls if m[0]["content"].startswith("# Post-run: update"))
+    assert "## Community norms\n\n(none adopted yet)" in update
+    assert '"proposal"' in update
+
+
+async def test_an_amendment_must_target_an_existing_norm(tmp_path, community, make_run, postrun_reply):
+    from aiswarm.norms import proposals
+
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "bc"}
+    clients["a"] = FakeModel(responder(postrun_reply, update=update_reply(
+        proposal={"kind": "amendment", "target": 7, "text": "x"})))
+    result = await cycle(store, conn, tmp_path, clients).run(run_id)
+    assert result.failed == 1 and proposals(conn, run_id) == []
+    assert steps(conn)[("update", "a", "")] == "failed"
+
+
+async def test_a_dimension_must_not_reuse_a_name(tmp_path, community, make_run, postrun_reply):
+    from aiswarm.norms import proposals
+
+    store, conn = community
+    conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES ('old', 'g', 'closed', '[]', 't')")
+    conn.execute("INSERT INTO norm_proposals (run_id, author, kind, name, question, status, created_at) "
+                 "VALUES ('old', 'a', 'dimension', 'Care', 'Q', 'adopted', 't')")
+    conn.execute("INSERT INTO dimensions (name, question, proposal_id, adopted_run) VALUES ('Care', 'Q', 1, 'old')")
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "bc"}
+    clients["a"] = FakeModel(responder(postrun_reply, update=update_reply(
+        proposal={"kind": "dimension", "name": "care", "question": "Again?"})))
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    assert proposals(conn, run_id) == []

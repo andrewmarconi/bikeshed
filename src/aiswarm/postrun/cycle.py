@@ -14,6 +14,7 @@ from aiswarm.events import EventLog
 from aiswarm.journal import JOURNAL_MAX, journal_section, write_journal
 from aiswarm.library import embed_missing, record_methods
 from aiswarm.models.base import Embedder, ModelClient, ModelError
+from aiswarm.norms import DIMENSION_NAME_MAX, NORM_MAX, add_proposal, current_norms, dimensions, render_norms
 from aiswarm.postrun.ask import ReplyError, ask
 from aiswarm.postrun.feedback import feedback_packet, interactions, transcript
 from aiswarm.postrun.replies import JournalReply, ResponsesReply, ReviewReply, UpdateReply
@@ -253,8 +254,20 @@ class PostRun:
             ) or "(no reviews)",
             journal_max=JOURNAL_MAX, private_max=PRIVATE_MAX, name_max=NAME_MAX, pronouns_max=PRONOUNS_MAX,
             headline_max=HEADLINE_MAX, intro_max=INTRO_MAX,
+            norms=render_norms(self.conn) or "(none adopted yet)", norm_max=NORM_MAX,
+            dimension_max=DIMENSION_NAME_MAX,
         )
-        answer = await ask(self.clients[agent_id], self._system(ctx, agent_id), request, UpdateReply)
+        numbers = {number for number, _ in current_norms(self.conn)}
+        taken = {d.name.casefold() for d in dimensions(self.conn)}
+
+        def check(reply: UpdateReply) -> None:
+            p = reply.proposal
+            if p and p.kind == "amendment" and p.target not in numbers:
+                raise ReplyError(f"there is no norm {p.target} to amend; current norms: {sorted(numbers) or 'none'}")
+            if p and p.kind == "dimension" and p.name.strip().casefold() in taken:
+                raise ReplyError(f"a dimension named {p.name.strip()!r} already exists")
+
+        answer = await ask(self.clients[agent_id], self._system(ctx, agent_id), request, UpdateReply, check)
         reply = answer.reply
         rejected: list[str] = []
         for filename, content in (
@@ -274,6 +287,10 @@ class PostRun:
                                       pronouns=profile.pronouns)
             except ProfileError as exc:
                 rejected.append(f"public profile: {exc}")
+        if reply.proposal is not None:
+            p = reply.proposal
+            add_proposal(self.conn, run_id=ctx.run_id, author=agent_id, kind=p.kind, text=p.text.strip(),
+                         target=p.target, name=p.name.strip(), question=p.question.strip())
         journal = reply.journal
         if rejected:
             journal += "\n\nRejected changes (previous versions kept):\n" + "\n".join(f"- {r}" for r in rejected)

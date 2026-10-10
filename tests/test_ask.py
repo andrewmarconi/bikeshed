@@ -59,7 +59,7 @@ def test_postrun_templates_render():
                   visibility="V").startswith("# Post-run: review")
     assert render("responses_request.md", run_id="r1", reviews="R").startswith("# Post-run: responses")
     assert render("update_request.md", packet="P", first_journal="J", reviews="R", journal_max=1, private_max=2,
-                  name_max=3, pronouns_max=6, headline_max=4, intro_max=5).startswith("# Post-run: update")
+                  name_max=3, pronouns_max=6, headline_max=4, intro_max=5, norms="N", norm_max=7, dimension_max=8).startswith("# Post-run: update")
 
 
 def test_postrun_reply_fixture_answers_each_step(postrun_reply):

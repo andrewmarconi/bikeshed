@@ -81,13 +81,28 @@ def _postrun_reply(request):
         return json.dumps({"journal": "Thoughts."})
     if step == "review":
         ids = [int(i) for i in re.findall(r"^#(\d+) \[r", request, re.M)]
-        return json.dumps({"more_of": "More.", "less_of": "Less.", "private_note": "Between us.",
-                           "evidence": ids[:1] or [1], "overall": 4, "overall_reason": "Solid."})
+        ratings = [{"dimension": name, "rating": 3, "reason": "Fine."}
+                   for name in re.findall(r'^- "(.+?)": ', request, re.M)]
+        reply = {"more_of": "More.", "less_of": "Less.", "private_note": "Between us.",
+                 "evidence": ids[:1] or [1], "overall": 4, "overall_reason": "Solid."}
+        if ratings:  # only when the request lists rating dimensions (Task 9)
+            reply["dimension_ratings"] = ratings
+        return json.dumps(reply)
     if step == "responses":
         ids = [int(i) for i in re.findall(r"^Review (\d+) of", request, re.M)]
         return json.dumps({"responses": [{"review_id": i, "stance": "accept", "reason": "Fair."} for i in ids]})
-    return json.dumps({"journal": "After reviews.", "lessons": "Listen first.", "self_description": None,
-                       "temperament": None, "peer_notes": None, "public_profile": None})
+    if step == "update":
+        return json.dumps({"journal": "After reviews.", "lessons": "Listen first.", "self_description": None,
+                           "temperament": None, "peer_notes": None, "public_profile": None, "proposal": None})
+    if step == "norms_critique":
+        ids = [int(i) for i in re.findall(r"^Proposal (\d+) by", request, re.M)]
+        return json.dumps({"critiques": [{"proposal_id": i, "points": "Consider edge cases."} for i in ids]})
+    if step == "norms_vote":
+        ids = [int(i) for i in re.findall(r"^Proposal (\d+) by", request, re.M)]
+        return json.dumps({"votes": [{"proposal_id": i, "stance": "support", "reason": "Agreed."} for i in ids]})
+    if step == "narrative":
+        return json.dumps({"narrative": "It went the way the account says."})
+    raise ValueError(f"no default reply for post-run step {step!r}")
 
 
 @pytest.fixture
