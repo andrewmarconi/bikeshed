@@ -140,3 +140,19 @@ def test_reader_truncates_large_files(tmp_path, make_run):
     ws.write("big.md", 0, "y" * 10_000, author="a", note="n")
     text = make_reader(ws, [], lambda a: a, max_chars=500)(ReadFile(type="read_file", path="big.md"))
     assert len(text) < 700 and "truncated" in text
+
+
+def test_reader_answers_read_reviews():
+    from aiswarm.actions import ReadReviews
+
+    read = make_reader(None, [], lambda a: a, reviews=lambda agent_id: f"REVIEWS-OF-{agent_id}")
+    assert read(ReadReviews(type="read_reviews", agent_id="b")) == "REVIEWS-OF-b"
+    assert make_reader(None, [], lambda a: a)(ReadReviews(type="read_reviews", agent_id="b")) == "Reviews are not available."
+
+
+def test_read_reviews_parses_and_is_in_the_schema():
+    from aiswarm.actions import READ_ACTIONS, ReadReviews, parse_action, step_schema
+
+    action = parse_action('{"action": {"type": "read_reviews", "agent_id": "b"}}')
+    assert isinstance(action, ReadReviews) and isinstance(action, READ_ACTIONS)
+    assert "read_reviews" in json.dumps(step_schema())

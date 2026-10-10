@@ -1,13 +1,14 @@
 """Builds what one agent sees in one step: privacy-filtered and trimmed to its context budget."""
 
 import json
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 from aiswarm.board import SYSTEM, Board, Entry
 from aiswarm.consensus import call_status
 from aiswarm.profiles import ProfileStore, PublicProfile
+from aiswarm.reviews import Reputation, reputation
 from aiswarm.workspace import Workspace
 
 Who = Callable[[str], str]
@@ -46,11 +47,19 @@ class ViewInputs:
     profiles: dict[str, PublicProfile | None]
     files: list[tuple[str, int]]
     view_entries: int
+    journals: tuple[tuple[str, str], ...] = ()
+    norms: str = ""
+    reputations: Mapping[str, Reputation] = field(default_factory=dict)
+
+
+def _norms(store: ProfileStore) -> str:
+    path = store.root / "norms.md"
+    return path.read_text() if path.exists() else ""
 
 
 def collect_inputs(
     *, agent_id: str, goal: str, round: int, board: Board, store: ProfileStore,
-    workspace: Workspace, view_entries: int,
+    workspace: Workspace, view_entries: int, half_life: float = 5.0,
 ) -> ViewInputs:
     entries = board.entries()
     if round == 1:
@@ -61,6 +70,9 @@ def collect_inputs(
         own_notes={name: private[name] for name in _OWN_NOTES},
         profiles={i: store.public(i) for i in store.ids()},
         files=workspace.list_files(), view_entries=view_entries,
+        journals=tuple(store.journals(agent_id, 2)),
+        norms=_norms(store),
+        reputations={i: reputation(board.conn, i, half_life) for i in store.ids()},
     )
 
 
@@ -88,8 +100,11 @@ def build_view(inputs: ViewInputs, budget_chars: int) -> str:
         )
     fixed = [header]
     notes = [f"## {name}\n{text.strip()}" for name, text in inputs.own_notes.items() if text.strip()]
+    notes += [f"## journal/{run_id}.md\n{text.strip()}" for run_id, text in inputs.journals if text.strip()]
     if notes:
         fixed.append("# Your private notes (only you can see these)\n" + "\n\n".join(notes))
+    if inputs.norms.strip():
+        fixed.append("# Community norms\n" + inputs.norms.strip())
     positions: list[str] = []
     adopted: set[int] = set()
     for entry in inputs.entries:
@@ -126,7 +141,9 @@ def build_view(inputs: ViewInputs, budget_chars: int) -> str:
         if profile is None:
             members.append(f"- {agent_id} ({agent_id}) — (no profile yet)")
             continue
-        block = f"- {profile.name} ({agent_id}) — {profile.headline}\n  {profile.introduction}"
+        rep = inputs.reputations.get(agent_id)
+        suffix = f" · {rep.label()}" if rep else ""
+        block = f"- {profile.name} ({agent_id}) — {profile.headline}{suffix}\n  {profile.introduction}"
         if profile.former_names:
             block += f"\n  formerly: {', '.join(profile.former_names)}"
         members.append(block)

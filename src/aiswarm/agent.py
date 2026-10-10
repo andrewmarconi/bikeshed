@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from aiswarm.actions import (
-    READ_ACTIONS, ActionError, CallConsensus, ListFiles, Pass, Propose, ReadFile, Vote, WriteFile,
+    READ_ACTIONS, ActionError, CallConsensus, ListFiles, Pass, Propose, ReadFile, ReadReviews, Vote, WriteFile,
     parse_action, step_schema,
 )
 from aiswarm.board import Entry
@@ -103,7 +103,10 @@ def make_validator(entries: Sequence[Entry], agent_ids: Sequence[str]) -> Valida
     return validate
 
 
-def make_reader(workspace: Workspace, entries: Sequence[Entry], who: Who, max_chars: int = 8_000) -> Reader:
+def make_reader(
+    workspace: Workspace, entries: Sequence[Entry], who: Who, max_chars: int = 8_000,
+    reviews: Callable[[str], str] | None = None,
+) -> Reader:
     by_id = {e.id: e for e in entries}
 
     def read(action: Any) -> str:
@@ -119,6 +122,8 @@ def make_reader(workspace: Workspace, entries: Sequence[Entry], who: Who, max_ch
             if len(content) > max_chars:
                 content = content[:max_chars] + f"\n[truncated: {len(content)} characters in total]"
             return f"{normalise_path(action.path)} (v{version}):\n{content}"
+        if isinstance(action, ReadReviews):
+            return reviews(action.agent_id) if reviews else "Reviews are not available."
         entry = by_id.get(action.id)
         return render_entry(entry, who) if entry else f"No entry #{action.id} is visible to you."
 

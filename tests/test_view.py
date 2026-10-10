@@ -97,3 +97,34 @@ def test_shows_what_i_have_proposed_and_adopted(tmp_path, community, make_run):
     view = view_for("a", 4, store, board, ws)
     assert f"# Your positions\n- You proposed #{mine.id} (r1)\n- You adopted #{theirs.id} (r2)\n" in view + "\n"
     assert "# Your positions" not in view_for("c", 4, store, board, ws)
+
+
+def test_view_shows_own_latest_journals_but_never_anyone_elses(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    for n, run_id in enumerate(("20260101-000000-aaaa", "20260102-000000-bbbb", "20260103-000000-cccc")):
+        store.write_journal_file("a", run_id, f"JOURNAL-A-{n}\n")
+    store.write_journal_file("b", "20260103-000000-cccc", "JOURNAL-B\n")
+    view = view_for("a", 2, store, board, ws)
+    assert "## journal/20260103-000000-cccc.md\nJOURNAL-A-2" in view and "JOURNAL-A-1" in view
+    assert "JOURNAL-A-0" not in view
+    assert "JOURNAL-B" not in view
+    assert "JOURNAL-A" not in view_for("b", 2, store, board, ws)
+
+
+def test_view_shows_norms_when_present(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    assert "# Community norms" not in view_for("a", 2, store, board, ws)
+    (store.root / "norms.md").write_text("1. Cite your sources.\n")
+    assert "# Community norms\n1. Cite your sources." in view_for("a", 2, store, board, ws)
+
+
+def test_member_lines_show_reputation(tmp_path, community, make_run):
+    from aiswarm.reviews import add_review
+
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    conn.execute("UPDATE runs SET status = 'closed' WHERE id = 'r1'")
+    add_review(conn, run_id="r1", reviewer="a", reviewee="b", more_of="m", less_of="l", private_note="p",
+               evidence=[1], overall=4, overall_reason="r")
+    view = view_for("a", 2, store, board, ws)
+    assert "- Bea (b) — Bea headline · ★4.0 (1 review)" in view
+    assert "- Cyd (c) — Cyd headline · no reviews yet" in view

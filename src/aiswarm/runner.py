@@ -21,6 +21,7 @@ from aiswarm.events import EventLog
 from aiswarm.models.base import ModelClient
 from aiswarm.profiles import ProfileStore
 from aiswarm.report import write_report
+from aiswarm.reviews import render_public_reviews
 from aiswarm.view import build_view, collect_inputs, make_who
 from aiswarm.gitrepo import GitError
 from aiswarm.workspace import InvalidPath, Workspace, WriteConflict
@@ -128,7 +129,8 @@ class Runner:
         events.emit("agent_step_started", round=rnd, agent=agent_id)
         try:
             inputs = collect_inputs(agent_id=agent_id, goal=goal, round=rnd, board=board, store=self.store,
-                                    workspace=ws, view_entries=self.settings.view_entries)
+                                    workspace=ws, view_entries=self.settings.view_entries,
+                                    half_life=self.settings.reputation_half_life_runs)
             who = make_who(inputs.profiles)
             system = system_prompt(
                 who(agent_id), self.store.private(agent_id)["temperament.md"], self.settings.max_reads
@@ -137,7 +139,9 @@ class Runner:
             budget = max(2_000, int(client.context_window * 3 * 0.75) - len(system))
             outcome = await take_step(
                 client=client, system=system, view=build_view(inputs, budget_chars=budget), round=rnd,
-                max_reads=self.settings.max_reads, reader=make_reader(ws, inputs.entries, who, budget // 4),
+                max_reads=self.settings.max_reads,
+                reader=make_reader(ws, inputs.entries, who, budget // 4,
+                                   reviews=lambda a: render_public_reviews(self.conn, a, who, budget // 4)),
                 validate=make_validator(inputs.entries, agent_ids),
             )
         except Exception as exc:  # one agent's bad step must never take down the run

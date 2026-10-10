@@ -37,6 +37,10 @@ class Board:
         self._conn = conn
         self.run_id = run_id
 
+    @property
+    def conn(self) -> sqlite3.Connection:
+        return self._conn
+
     def append(
         self, round: int, author: str, type: str, payload: dict[str, Any],
         refs: Sequence[int] = (), to: str = "all",

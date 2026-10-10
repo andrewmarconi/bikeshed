@@ -8,6 +8,7 @@ Reads:
 - {"type": "list_files"}: list the shared workspace files and their versions.
 - {"type": "read_file", "path": "..."}: read a workspace file.
 - {"type": "read_entry", "id": <entry id>}: read one board entry in full.
+- {"type": "read_reviews", "agent_id": "..."}: read the reviews members have written about a member, and that member's responses.
 
 Actions:
 - {"type": "propose", "answer_summary": "...", "method": "..."}: a position on the goal and the method you used to reach it.

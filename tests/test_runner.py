@@ -176,3 +176,23 @@ async def test_unexpected_step_exception_becomes_failed_pass(community, scripted
     result = await runner_factory(store, conn, clients).run(run_id)
     assert result.status == "closed"
     assert "step_error" in [r[0] for r in conn.execute("SELECT kind FROM failures WHERE run_id = ?", (run_id,))]
+
+
+async def test_agents_can_read_peer_reviews_but_not_private_notes(tmp_path, community, runner_factory):
+    from aiswarm.reviews import add_review
+
+    store, conn = community
+    conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES ('old', 'g', 'closed', '[]', 't')")
+    add_review(conn, run_id="old", reviewer="c", reviewee="b", more_of="PUBLIC-MORE", less_of="l",
+               private_note="SECRET-NOTE", evidence=[1], overall=5, overall_reason="r")
+    reader = FakeModel([
+        json.dumps({"action": {"type": "propose", "answer_summary": "x", "method": "m"}}),
+        json.dumps({"action": {"type": "read_reviews", "agent_id": "b"}}),
+        json.dumps({"action": {"type": "pass"}}),
+    ])
+    clients = {"a": reader, "b": FakeModel(), "c": FakeModel()}
+    runner = runner_factory(store, conn, clients, max_rounds=2)
+    await runner.run(runner.start("Pick a colour", ["a", "b", "c"]))
+    read_result = reader.calls[2][1][-1]["content"]
+    assert read_result.startswith("Read result:\nReview")
+    assert "PUBLIC-MORE" in read_result and "SECRET-NOTE" not in read_result

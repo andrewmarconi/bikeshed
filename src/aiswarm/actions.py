@@ -91,12 +91,17 @@ class ReadEntry(_Action):
     id: int
 
 
+class ReadReviews(_Action):
+    type: Literal["read_reviews"]
+    agent_id: Text
+
+
 PostingAction = Propose | Critique | Question | Adopt | Refine | WriteFile | CallConsensus | Vote | Pass
-READ_ACTIONS = (ReadFile, ListFiles, ReadEntry)
+READ_ACTIONS = (ReadFile, ListFiles, ReadEntry, ReadReviews)
 
 StepAction = Annotated[
     Propose | Critique | Question | Adopt | Refine | WriteFile | CallConsensus | Vote | Pass
-    | ReadFile | ListFiles | ReadEntry,
+    | ReadFile | ListFiles | ReadEntry | ReadReviews,
     Field(discriminator="type"),
 ]
 
