@@ -24,7 +24,7 @@ Agents are long-lived. Each carries a persistent, self-authored personality and 
 | Learning | Both within-run refinement and a persistent cross-run method library |
 | Goal type | Open-ended; no rubric; agents judge each other |
 | Outputs | Answer + concise process narrative + library updates |
-| Models | Local first via oMLX (OpenAI-compatible, `http://localhost:8000/v1`); per-agent model is config so cloud providers can be added later |
+| Models | Two backends: oMLX (OpenAI-compatible, `http://localhost:8000/v1`) and Claude via `claude -p` (headless Claude Code, isolated). Per-agent backend is config |
 | Language | Python |
 | Framework | No agent framework (CAMEL rejected: its multi-agent primitives are orchestrator-based). Thin OpenAI-SDK client + SQLite + git |
 | Coordination | Shared Board (Approach 1); designed to extend to peer-to-peer messaging (Approach 2) later |
@@ -74,7 +74,7 @@ goal prompt
 
 | Unit | Responsibility | Depends on |
 |---|---|---|
-| **Model client** | Thin wrapper over the OpenAI SDK; chat + embeddings; per-agent base URL/model/profile; retry with backoff | oMLX |
+| **Model client** | One interface, two backends: OpenAI-compatible (oMLX; chat + embeddings) and `claude -p` (chat only); structured JSON output; retry with backoff | oMLX, Claude Code CLI |
 | **Board** | Append-only typed entries with author, round, timestamp, `refs` (entry ids), `to` (always `all` in Phase 1) | SQLite |
 | **Workspace** | Per-run git repo; versioned file read/write with optimistic concurrency; each write auto-posts an `artifact_changed` entry | git, Board |
 | **Agent** | Config + one-step function: receive View → return one validated Action | Model client, View builder |
@@ -280,7 +280,9 @@ Agent-authored prose lives in git-tracked files for diffability; structured data
 
 ## 11. Configuration
 
-A single config file (TOML) defines: oMLX base URL; agents (name, model or `<model>:<profile>`, initial temperament, initial starting style); `max_rounds`; consensus quorum; stagnation window; view entry count; library top-k; size caps for lessons and profile files; reputation recency weighting; per-agent `control` flag; goal-queue path; benchmark goal and interval. Cloud providers are supported by config shape (per-agent `base_url`/`api_key`/`model`) but none are wired up in Phase 1.
+A single config file (TOML) defines: oMLX base URL; agents (name, model or `<model>:<profile>`, initial temperament, initial starting style); `max_rounds`; consensus quorum; stagnation window; view entry count; library top-k; size caps for lessons and profile files; reputation recency weighting; per-agent `control` flag; goal-queue path; benchmark goal and interval. Model backends are named in config and referenced per agent.
+
+**`claude_cli` backend.** Each call runs `claude -p` as an isolated, single-turn completion: `--system-prompt` (replaces Claude Code's default), `--tools ""`, `--setting-sources ""`, `--no-session-persistence`, `--output-format json`, `--json-schema <action schema>`, run from an empty working directory so no CLAUDE.md, hooks, memory, skills, or MCP servers leak into an agent. Optional `bare = true` adds `--bare` (requires `ANTHROPIC_API_KEY`; strongest isolation). A **leak check** (`aiswarm doctor`) fails if a minimal call's total input tokens exceed a threshold, proving no extra context is injected. The exact model id from `modelUsage` is recorded for provenance. Claude-backed agents provide cross-family diversity against local-model priors.
 
 ## 12. CLI
 
@@ -307,7 +309,7 @@ Python managed with `uv`. Runtime libraries: `openai` (client), `pydantic` (acti
 - **Phase 2 — Stakes (option C):** periodic agent-voted consequences (e.g. letting one colleague go; archived, never deleted, replaced by a fresh temperament) with private vote rationales.
 - **Peer-to-peer messaging (Approach 2):** enable `to` on entries to target individuals.
 - **Web dashboard** over the event stream and stores.
-- **Cloud providers / cross-family models**, needed to separate genuine emergence from trained-in model priors.
+- **Other cloud providers** (OpenAI, Gemini) for further cross-family comparison.
 - **User verdict:** an optional user rating of each run's answer, Observer-only, to test whether peer reputation tracks quality or popularity.
 - **Newcomers:** adding agents to an established community to observe onboarding and seniority dynamics.
 - **Forks:** branching community git state for counterfactual experiments.
