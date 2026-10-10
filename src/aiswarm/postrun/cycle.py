@@ -12,7 +12,8 @@ from aiswarm.board import Board, Entry
 from aiswarm.db import now_iso, transaction
 from aiswarm.events import EventLog
 from aiswarm.journal import JOURNAL_MAX, journal_section, write_journal
-from aiswarm.models.base import ModelClient, ModelError
+from aiswarm.library import embed_missing, record_methods
+from aiswarm.models.base import Embedder, ModelClient, ModelError
 from aiswarm.postrun.ask import ReplyError, ask
 from aiswarm.postrun.feedback import feedback_packet, interactions, transcript
 from aiswarm.postrun.replies import JournalReply, ResponsesReply, ReviewReply, UpdateReply
@@ -21,7 +22,7 @@ from aiswarm.prompts import render
 from aiswarm.reviews import Review, add_response, add_review, render_review, responses_for, reviews_of
 from aiswarm.view import Who, make_who
 
-STEPS = ("journal", "review", "responses", "update")
+STEPS = ("journal", "review", "responses", "update", "library")
 _NOTES = ("self.md", "lessons.md", "peer-notes.md")
 
 
@@ -55,12 +56,14 @@ class PostRun:
     def __init__(
         self, *, conn: sqlite3.Connection, store: ProfileStore, runs_dir: Path,
         clients: Mapping[str, ModelClient], sink: Callable[[dict[str, Any]], None] | None = None,
+        embedder: Embedder | None = None,
     ):
         self.conn = conn
         self.store = store
         self.runs_dir = runs_dir
         self.clients = clients
         self.sink = sink
+        self.embedder = embedder
 
     async def run(self, run_id: str) -> PostRunResult:
         row = self.conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
@@ -112,6 +115,8 @@ class PostRun:
             ]
         if step == "update":
             return [_Call(step, a, "", lambda a=a: self._update(ctx, a)) for a in ctx.agent_ids]
+        if step == "library":
+            return [_Call(step, "system", "", lambda: self._library(ctx))]
         raise ValueError(f"unknown step {step!r}")
 
     def _done(self, run_id: str, call: _Call) -> bool:
@@ -274,3 +279,8 @@ class PostRun:
             journal += "\n\nRejected changes (previous versions kept):\n" + "\n".join(f"- {r}" for r in rejected)
         write_journal(self.conn, self.store, agent_id, ctx.run_id, "after", journal)
         return answer.reasoning
+
+    async def _library(self, ctx: _Context) -> None:
+        record_methods(self.conn, ctx.run_id, ctx.goal, ctx.entries)
+        if self.embedder is not None:
+            await embed_missing(self.conn, self.embedder)

@@ -272,3 +272,38 @@ async def test_update_can_set_pronouns_and_omitting_them_keeps_them(tmp_path, co
     assert store.public("b").pronouns == "she/her" and store.public("b").headline == "new"
     update = next(m[0]["content"] for _, m, _ in clients["a"].calls if m[0]["content"].startswith("# Post-run: update"))
     assert '"pronouns"' in update
+
+
+async def test_cycle_records_and_embeds_methods(tmp_path, community, make_run, postrun_reply):
+    from aiswarm.models.fake import FakeEmbedder
+
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    post = PostRun(conn=conn, store=store, runs_dir=tmp_path / "runs", clients=clients, embedder=FakeEmbedder())
+    assert (await post.run(run_id)).status == "done"
+    rows = conn.execute("SELECT author, embedding FROM methods WHERE run_id = ?", (run_id,)).fetchall()
+    assert sorted(r["author"] for r in rows) == ["a", "b", "c"] and all(r["embedding"] for r in rows)
+    assert steps(conn)[("library", "system", "")] == "done"
+
+
+async def test_methods_are_recorded_without_an_embedder(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    await cycle(store, conn, tmp_path, {a: FakeModel(responder(postrun_reply)) for a in "abc"}).run(run_id)
+    assert conn.execute("SELECT COUNT(*) FROM methods WHERE embedding IS NULL").fetchone()[0] == 3
+
+
+async def test_an_embeddings_outage_pauses_at_the_library_step(tmp_path, community, make_run, postrun_reply):
+    from aiswarm.models.fake import FakeEmbedder
+
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    post = PostRun(conn=conn, store=store, runs_dir=tmp_path / "runs", clients=clients, embedder=FakeEmbedder(fail_times=9))
+    assert (await post.run(run_id)).status == "paused"
+    assert steps(conn)[("update", "a", "")] == "done"
+    assert conn.execute("SELECT COUNT(*) FROM methods").fetchone()[0] == 3
+    later = PostRun(conn=conn, store=store, runs_dir=tmp_path / "runs", clients=clients, embedder=FakeEmbedder())
+    assert (await later.run(run_id)).status == "done"
+    assert conn.execute("SELECT COUNT(*) FROM methods WHERE embedding IS NULL").fetchone()[0] == 0
