@@ -1,0 +1,52 @@
+"""Minimal git wrapper. Commits are isolated from the user's signing and hook config."""
+
+import subprocess
+from pathlib import Path
+
+_ISOLATION = ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"]
+
+
+class GitError(RuntimeError):
+    pass
+
+
+class GitRepo:
+    def __init__(self, path: Path):
+        self.path = path
+
+    @classmethod
+    def init(cls, path: Path) -> "GitRepo":
+        path.mkdir(parents=True, exist_ok=True)
+        repo = cls(path)
+        if not (path / ".git").exists():
+            repo._git("init", "-q", "-b", "main")
+        return repo
+
+    def _git(self, *args: str) -> str:
+        result = subprocess.run(["git", *_ISOLATION, *args], cwd=self.path, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise GitError(f"git {' '.join(args)}: {result.stderr.strip()}")
+        return result.stdout.strip()
+
+    def commit(self, paths: list[str], message: str, author: str) -> str:
+        email = f"{author}@aiswarm.local"
+        if paths:
+            self._git("add", "-A", "--", *paths)
+        self._git(
+            "-c", f"user.name={author}", "-c", f"user.email={email}",
+            "commit", "-q", "--allow-empty", "-m", message, "--author", f"{author} <{email}>",
+        )
+        return self._git("rev-parse", "HEAD")
+
+    def head(self) -> str | None:
+        try:
+            return self._git("rev-parse", "--verify", "-q", "HEAD")
+        except GitError:
+            return None
+
+    def root_commit(self) -> str:
+        return self._git("rev-list", "--max-parents=0", "HEAD").splitlines()[0]
+
+    def reset_hard(self, commit: str) -> None:
+        self._git("reset", "-q", "--hard", commit)
+        self._git("clean", "-q", "-f", "-d")
