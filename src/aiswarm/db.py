@@ -102,7 +102,8 @@ MIGRATIONS: list[str] = [
         updated_at TEXT NOT NULL,
         PRIMARY KEY (run_id, step, agent_id, subject)
     );
-    """,]
+    """,
+]
 
 
 def now_iso() -> str:
