@@ -52,7 +52,7 @@ class Runner:
         self.runs_dir = runs_dir
         self.clients = clients
         self.sink = sink
-        self.rng = rng or random.Random()
+        self.rng = rng  # tests inject one; otherwise each round is shuffled from the run's recorded seed
         self.embedder = embedder
         self.library_top_k = library_top_k
 
@@ -69,11 +69,12 @@ class Runner:
         if unknown:
             raise ValueError(f"unknown agents: {unknown}")
         run_id = new_run_id()
+        seed = secrets.randbits(32)
         (self.runs_dir / run_id).mkdir(parents=True)
         with transaction(self.conn):
             self.conn.execute(
-                "INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES (?, ?, 'running', ?, ?)",
-                (run_id, goal, json.dumps(list(agent_ids)), now_iso()),
+                "INSERT INTO runs (id, goal, status, agent_ids, created_at, seed) VALUES (?, ?, 'running', ?, ?, ?)",
+                (run_id, goal, json.dumps(list(agent_ids)), now_iso(), seed),
             )
             Board(self.conn, run_id).append(0, SYSTEM, "goal", {"goal": goal})
         self._workspace(run_id)
@@ -87,6 +88,7 @@ class Runner:
         if row["status"] == "closed":
             return RunResult(run_id, "closed", row["ended_reason"])
         goal, agent_ids = row["goal"], json.loads(row["agent_ids"])
+        seed = row["seed"]
         board, ws, events = Board(self.conn, run_id), self._workspace(run_id), self._events(run_id)
 
         last = self.conn.execute(
@@ -107,7 +109,8 @@ class Runner:
                 events.emit("run_paused", round=rnd, detail=outcomes[0].detail)
                 return RunResult(run_id, "paused")
             order = list(zip(agent_ids, outcomes))
-            self.rng.shuffle(order)
+            rng = self.rng or random.Random(f"{seed}-{rnd}")  # per round, so a resumed run replays the same order
+            rng.shuffle(order)
             posted: list[dict[str, Any]] = []
             with transaction(self.conn):
                 for agent_id, outcome in order:

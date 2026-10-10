@@ -264,3 +264,22 @@ async def test_an_empty_embeddings_response_never_fails_the_run(tmp_path, commun
     run_id = runner.start("Pick a colour", ["a"])
     assert (await runner.run(run_id)).status == "closed"
     assert any(e["event"] == "library_unavailable" for e in read_events(tmp_path / "runs" / run_id / "events.jsonl"))
+
+
+from aiswarm.config import RunSettings  # noqa: E402
+
+
+async def test_seed_is_recorded_and_fixes_post_order(tmp_path, community, scripted):
+    store, conn = community
+
+    async def order(seed):
+        runner = Runner(settings=RunSettings(max_rounds=1), conn=conn, store=store, runs_dir=tmp_path / "runs",
+                        clients={a: scripted({1: propose}) for a in AGENTS})
+        run_id = runner.start("G", AGENTS)
+        assert conn.execute("SELECT seed FROM runs WHERE id = ?", (run_id,)).fetchone()[0] is not None
+        conn.execute("UPDATE runs SET seed = ? WHERE id = ?", (seed, run_id))
+        await runner.run(run_id)
+        rows = conn.execute("SELECT author FROM entries WHERE run_id = ? AND type = 'propose' ORDER BY id", (run_id,))
+        return [r["author"] for r in rows]
+
+    assert await order(7) == await order(7)
