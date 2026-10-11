@@ -14,10 +14,11 @@ def test_themes_inputs(community):
     add_journal(conn, "r1", "a", "before", "Feeling unsure.")
     add_journal(conn, "r1", "a", "after", "Bea was right.")
     add_review(conn, "r1", "a", "b", 4, more_of="ideas", reason="good")
-    add_review(conn, "r1", "a", "a", 5)
+    add_review(conn, "r1", "a", "a", 5, more_of="patience")
     got = themes_inputs(conn, store, closed_runs(conn)[0], "a")
     assert "Feeling unsure." in got["journal"] and "Bea was right." in got["journal"]
-    assert "ideas" in got["reviews written"] and got["reviews written"].count("overall") == 1
+    assert "ideas" in got["reviews written"] and got["reviews written"].count("overall") == 2
+    assert "### self-review" in got["reviews written"] and "patience" in got["reviews written"]
     assert got["self.md"] == "I am careful."
     assert got["temperament.md"] == "Temperament of a."
 

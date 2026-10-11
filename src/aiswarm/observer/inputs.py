@@ -20,13 +20,15 @@ def _journal(conn: sqlite3.Connection, run_id: str, agent_id: str) -> str:
     return "\n\n".join(f"### {r['section']} reviews\n{r['text'].strip()}" for r in rows) or NONE
 
 
-def _reviews_by(conn: sqlite3.Connection, run_id: str, agent_id: str, who: Who | None) -> str:
-    rows = conn.execute("SELECT * FROM reviews WHERE run_id = ? AND reviewer = ? AND is_self = 0 ORDER BY id",
+def _reviews_by(conn: sqlite3.Connection, run_id: str, agent_id: str, who: Who | None, *, include_self: bool) -> str:
+    rows = conn.execute("SELECT * FROM reviews WHERE run_id = ? AND reviewer = ? ORDER BY id",
                         (run_id, agent_id)).fetchall()
     parts = []
     for r in rows:
-        about = who(r["reviewee"]) if who else r["reviewee"]
-        parts.append(f"### about {about}\nmore of: {r['more_of']}\nless of: {r['less_of']}\n"
+        if r["is_self"] and not include_self:
+            continue
+        heading = "self-review" if r["is_self"] else f"about {who(r['reviewee']) if who else r['reviewee']}"
+        parts.append(f"### {heading}\nmore of: {r['more_of']}\nless of: {r['less_of']}\n"
                      f"private note: {r['private_note']}\noverall: {r['overall']} — {r['overall_reason']}")
     return "\n\n".join(parts) or NONE
 
@@ -34,12 +36,12 @@ def _reviews_by(conn: sqlite3.Connection, run_id: str, agent_id: str, who: Who |
 def themes_inputs(conn: sqlite3.Connection, store: ProfileStore, run: RunInfo, agent_id: str) -> dict[str, str]:
     at = _after(run)
     files = {name: store.file_at(agent_id, name, at) or NONE for name in ("self.md", "lessons.md", "temperament.md")}
-    return {"journal": _journal(conn, run.id, agent_id), "reviews written": _reviews_by(conn, run.id, agent_id, None),
+    return {"journal": _journal(conn, run.id, agent_id), "reviews written": _reviews_by(conn, run.id, agent_id, None, include_self=True),
             **files}
 
 
 def private_public_inputs(conn: sqlite3.Connection, run: RunInfo, agent_id: str, who: Who) -> dict[str, str] | None:
-    reviews = _reviews_by(conn, run.id, agent_id, who)
+    reviews = _reviews_by(conn, run.id, agent_id, who, include_self=False)  # colleagues only
     if reviews == NONE:
         return None
     return {"journal": _journal(conn, run.id, agent_id), "reviews given": reviews}
