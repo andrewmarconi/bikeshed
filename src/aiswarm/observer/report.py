@@ -1,7 +1,7 @@
 """Markdown for the Observer's reports. User-only; never shown to any agent."""
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from aiswarm.observer.metrics import (
     ACTIONS, BenchmarkAnswer, CategoryStats, Credits, IdentityEvent, Influence, NormEvent, RunInfo,
@@ -128,6 +128,29 @@ class SummarySection:
     reciprocity: list[tuple[str, str, str]]
     in_progress: list[str]
     judge_note: str | None
+    # control id -> rows of (run label, agent id, mean peer score, action counts) for the control and its twins
+    twin_rows: dict[str, list[tuple[str, str, float | None, Counter]]] = field(default_factory=dict)
+
+
+TWIN_ACTIONS = ("propose", "critique", "adopt", "vote", "call_consensus", "failed")
+
+
+def _control_vs_twin(s: SummarySection) -> list[str]:
+    out = ["## Control vs twin", ""]
+    if not s.twins:
+        return out + ["_No control agent._", ""]
+    for control, found in s.twins.items():
+        twins = ", ".join(s.who(t) for t in found) if found else "no twin found"
+        out += [f"### {s.who(control)} vs {twins}", ""]
+        rows = s.twin_rows.get(control, [])
+        if not rows:
+            out += ["_No closed runs with these agents yet._", ""]
+            continue
+        out += ["| Run | Agent | peer | " + " | ".join(TWIN_ACTIONS) + " |", "|---" * (len(TWIN_ACTIONS) + 3) + "|"]
+        out += [f"| {label} | {s.who(agent)} | {_fmt(peer)} | " + " | ".join(str(mix.get(a, 0)) for a in TWIN_ACTIONS)
+                + " |" for label, agent, peer, mix in rows]
+        out.append("")
+    return out
 
 
 def _identity_line(e: IdentityEvent, who: Who) -> str:
@@ -146,9 +169,8 @@ def render_summary(s: SummarySection) -> str:
         out += ["_Trend charts need at least 2 closed runs._", ""]
     for title, path in s.charts.items():
         out += [f"### {title}", "", f"![{title}]({path})", ""]
-    out += ["## Control vs twin", ""]
-    out += [f"- {control}: " + (", ".join(found) if found else "no twin found") for control, found in s.twins.items()]
-    out += ["", "## By goal category", "", "| Category | Runs | Endings | Top actions |", "|---|---|---|---|"]
+    out += _control_vs_twin(s)
+    out += ["## By goal category", "", "| Category | Runs | Endings | Top actions |", "|---|---|---|---|"]
     for name, c in sorted(s.categories.items()):
         endings = ", ".join(f"{k} {v}" for k, v in c.endings.most_common())
         top = ", ".join(f"{k} {v}" for k, v in c.actions.most_common(4))

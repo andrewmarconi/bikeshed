@@ -139,11 +139,26 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
     found = m.twins(store)
     if twin is not None:
         found = {control: [twin] for control in found}
+    twin_rows: dict[str, list] = {}
+    for control, twins in found.items():
+        group = [control, *twins]
+        rows = []
+        for run in runs:
+            peer, mix = m.peer_scores(conn, run.id), m.action_mix(conn, run)
+            rows += [(run.label, agent, peer.get(agent), mix[agent]) for agent in group if agent in run.agent_ids]
+        twin_rows[control] = rows
+        compared = [r for r in runs if any(a in r.agent_ids for a in group)]
+        if len(compared) >= 2:
+            peers = {r.id: m.peer_scores(conn, r.id) for r in compared}
+            series = {who(a): [peers[r.id].get(a) if a in r.agent_ids else None for r in compared] for a in group}
+            charts[f"Control vs twin: {who(control)}"] = trend_chart(
+                out_dir / "charts" / f"control_{control}.png", f"Peer score: {who(control)} (control) vs twin",
+                [r.label for r in compared], series, m.harness_changes(conn, compared), "mean peer rating")
     summary = SummarySection(
         runs=runs, who=who, charts={title: f"charts/{path.name}" for title, path in charts.items()},
         identity=m.identity_events(conn, store, runs), norms=m.norm_events(conn), codebook=ostore.codes(),
         twins=found, categories=m.by_category(conn, runs), failed=ostore.failed(), benchmark=answers,
-        reciprocity=m.credit_pairs(conn, runs), in_progress=in_progress, judge_note=judge_note,
+        reciprocity=m.credit_pairs(conn, runs), in_progress=in_progress, judge_note=judge_note, twin_rows=twin_rows,
     )
     path = out_dir / "summary.md"
     path.parent.mkdir(parents=True, exist_ok=True)

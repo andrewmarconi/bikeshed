@@ -9,7 +9,7 @@ RUN = RunInfo("r1", "Pick a fruit.", "best-fruit", "contested", False, "budget",
 
 
 def who(agent_id):
-    return {"a": "Alpha (a)", "b": "Bea (b)"}[agent_id]
+    return {"a": "Alpha (a)", "b": "Bea (b)"}.get(agent_id, agent_id)
 
 
 def themes(agent):
@@ -73,5 +73,5 @@ def test_summary_sections(tmp_path):
     text = render_summary(s)
     assert "![Peer score](charts/peer.png)" in text
     assert "honesty" in text and "Pepperoni" in text
-    assert "e: no twin found" in text
+    assert "e vs no twin found" in text
     assert "r9" in text

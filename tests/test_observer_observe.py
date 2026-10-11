@@ -77,6 +77,21 @@ async def test_changing_the_judge_model_re_judges(lab):
     assert len(client.calls) > calls
 
 
+async def test_summary_compares_the_control_with_its_twin(lab, community):
+    store, conn = community
+    store.create("e", "fake", "Temperament of b.", control=True)
+    add_run(conn, "r4", agents=("b", "e"), created=FUTURE, goal_id="dishwasher")
+    add_review(conn, "r4", "b", "e", 2)
+    add_entry(conn, "r4", "e", "vote", {"target": 1, "stance": "support", "reason": "r"})
+    await observe(lab, judge_note="--no-judge")
+    summary = (lab.observer.dir / "summary.md").read_text()
+    section = summary.split("\n## Control vs twin\n")[1].split("\n## ")[0]
+    assert "Bea (b)" in section
+    assert "| best-fruit | Bea (b) | 4.0 |" in section
+    assert "| dishwasher | e (e) | 2.0 |" in section
+    assert (lab.observer.dir / "charts" / "control_e.png").exists()
+
+
 async def test_observe_one_run_without_a_judge(lab):
     result = await observe(lab, run_id="r1", judge_note="--no-judge")
     assert [p.name for p in result.written] == ["r1.md"]
