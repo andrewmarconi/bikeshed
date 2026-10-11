@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 .superpowers/
 /lab/
+.DS_Store
