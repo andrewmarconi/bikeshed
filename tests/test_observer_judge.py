@@ -32,6 +32,16 @@ async def test_changed_input_is_a_cache_miss(tmp_path):
     assert len(client.calls) == 2
 
 
+async def test_identical_inputs_in_another_run_or_agent_are_judged_for_that_unit(tmp_path):
+    judge, client = make_judge(tmp_path, [GOOD, GOOD, GOOD])
+    await judge.run(ANALYSES["themes"], run_id="r1", agent_id="a", inputs=INPUTS)
+    await judge.run(ANALYSES["themes"], run_id="r2", agent_id="a", inputs=INPUTS)
+    await judge.run(ANALYSES["themes"], run_id="r1", agent_id="b", inputs=INPUTS)
+    assert len(client.calls) == 3
+    assert [j.agent_id for j in judge.store.judgments("r2")] == ["a"]
+    assert sorted(j.agent_id for j in judge.store.judgments("r1")) == ["a", "b"]
+
+
 async def test_invented_quote_gets_one_correction(tmp_path):
     judge, client = make_judge(tmp_path, [INVENTED, GOOD])
     got = await judge.run(ANALYSES["themes"], run_id="r1", agent_id="a", inputs=INPUTS)

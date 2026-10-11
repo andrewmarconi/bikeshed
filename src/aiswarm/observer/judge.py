@@ -123,7 +123,8 @@ class Judge:
     async def run(self, analysis: Analysis, *, run_id: str, agent_id: str | None, inputs: dict[str, str]) -> Judgment:
         system = render(analysis.prompt_name)
         prompt_sha = _sha(system)
-        key = _sha(json.dumps([analysis.name, prompt_sha, self.model_alias, inputs], sort_keys=True, ensure_ascii=False))
+        key = _sha(json.dumps([analysis.name, run_id, agent_id, prompt_sha, self.model_alias, inputs],
+                              sort_keys=True, ensure_ascii=False))
         if (hit := self.store.cached(key)) is not None:
             return hit
 

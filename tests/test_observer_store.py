@@ -11,7 +11,7 @@ def judgment(status="ok", **kw):
 def test_cache_returns_only_ok_judgments(tmp_path):
     store = ObserverStore(tmp_path / "observer" / "observer.db")
     store.save("k1", judgment(), "sonnet")
-    store.save("k2", judgment("failed"), "sonnet")
+    store.save("k2", judgment("failed", agent_id="b"), "sonnet")
     assert store.cached("k1") == judgment()
     assert store.cached("k2") is None
     assert [j.status for j in store.failed()] == ["failed"]
@@ -46,3 +46,16 @@ def test_reopening_keeps_data(tmp_path):
     path = tmp_path / "o.db"
     ObserverStore(path).assign("x", "x", "d")
     assert ObserverStore(path).code_for("x") == "x"
+
+
+def test_a_new_judgment_replaces_the_old_one_for_the_same_unit(tmp_path):
+    store = ObserverStore(tmp_path / "o.db")
+    store.save("old", judgment("failed"), "sonnet")
+    store.save("new", judgment(result={"themes": ["fresh"]}), "sonnet")
+    assert [j.result for j in store.judgments("r1")] == [{"themes": ["fresh"]}]
+    assert store.failed() == []
+    store.save("other-agent", judgment(agent_id="b"), "sonnet")
+    store.save("codebook", judgment(analysis="codebook", agent_id=None), "sonnet")
+    store.save("codebook2", judgment(analysis="codebook", agent_id=None), "sonnet")
+    assert sorted((j.analysis, j.agent_id) for j in store.judgments("r1")) == [
+        ("codebook", None), ("themes", "a"), ("themes", "b")]

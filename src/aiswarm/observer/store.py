@@ -69,6 +69,11 @@ class ObserverStore:
         return _judgment(row) if row else None
 
     def save(self, key: str, judgment: Judgment, model_alias: str) -> None:
+        """Store a judgment as the only one for its unit (analysis, run, agent); older inputs or prompts are dropped."""
+        self.conn.execute(
+            "DELETE FROM judgments WHERE analysis = ? AND run_id = ? AND agent_id IS ? AND key != ?",
+            (judgment.analysis, judgment.run_id, judgment.agent_id, key),
+        )
         self.conn.execute(
             "INSERT OR REPLACE INTO judgments (key, analysis, run_id, agent_id, prompt_sha256, model_alias, "
             "model_reported, status, result, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
