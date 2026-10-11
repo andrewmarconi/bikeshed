@@ -54,10 +54,14 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
     store = ProfileStore(cfg.community_dir)
     out_dir = cfg.observer.dir
     ostore = ObserverStore(out_dir / "observer.db")
-    runs = m.closed_runs(conn)
+    unfinished = [r.id for r in m.closed_runs(conn) if m.postrun_unfinished(conn, cfg.runs_dir, r.id)]
+    runs = [r for r in m.closed_runs(conn) if r.id not in unfinished]
+    if run_id in unfinished:
+        raise ValueError(f"run {run_id!r} is still in its post-run; observe it when the post-run has finished")
     targets = runs if run_id is None else [r for r in runs if r.id == run_id]
     if run_id is not None and not targets:
         raise ValueError(f"no closed run {run_id!r}")
+    in_progress = m.open_runs(conn) + [f"{r} (post-run)" for r in unfinished]
     who = make_who({i: store.public(i) for i in store.ids()})
     answers = m.benchmark_answers(conn, runs, who)
     judge = None
@@ -83,10 +87,10 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
         path.write_text(render_run(section))
         written.append(path)
     if run_id is None:
-        written += _write_summary(conn, store, ostore, runs, who, answers, out_dir, twin, note)
+        written += _write_summary(conn, store, ostore, runs, who, answers, out_dir, twin, note, in_progress)
     all_judgments = [j for r in targets for j in ostore.judgments(r.id)]
     return ObserveResult(written, sum(j.status == "ok" for j in all_judgments),
-                         sum(j.status == "failed" for j in all_judgments), m.open_runs(conn))
+                         sum(j.status == "failed" for j in all_judgments), in_progress)
 
 
 def _series(runs: list[m.RunInfo], value) -> dict[str, list[float | None]]:
@@ -126,7 +130,7 @@ def _charts(conn: sqlite3.Connection, ostore: ObserverStore, runs: list[m.RunInf
 
 def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: ObserverStore, runs: list[m.RunInfo],
                    who: Who, answers: list[m.BenchmarkAnswer], out_dir: Path, twin: str | None,
-                   judge_note: str | None) -> list[Path]:
+                   judge_note: str | None, in_progress: list[str]) -> list[Path]:
     charts = _charts(conn, ostore, runs, out_dir) if len(runs) >= 2 else {}
     found = m.twins(store)
     if twin is not None:
@@ -135,7 +139,7 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
         runs=runs, who=who, charts={title: f"charts/{path.name}" for title, path in charts.items()},
         identity=m.identity_events(conn, store, runs), norms=m.norm_events(conn), codebook=ostore.codes(),
         twins=found, categories=m.by_category(conn, runs), failed=ostore.failed(), benchmark=answers,
-        reciprocity=m.credit_pairs(conn, runs), in_progress=m.open_runs(conn), judge_note=judge_note,
+        reciprocity=m.credit_pairs(conn, runs), in_progress=in_progress, judge_note=judge_note,
     )
     path = out_dir / "summary.md"
     path.parent.mkdir(parents=True, exist_ok=True)

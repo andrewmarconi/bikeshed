@@ -77,3 +77,20 @@ async def test_observe_one_run_without_a_judge(lab):
 async def test_observe_unknown_run(lab):
     with pytest.raises(ValueError, match="no closed run"):
         await observe(lab, run_id="nope")
+
+
+async def test_a_run_whose_post_run_has_not_finished_is_skipped(lab, community):
+    store, conn = community
+    conn.execute("INSERT INTO postrun_steps (run_id, step, agent_id, subject, status, detail, updated_at) "
+                 "VALUES ('r1', 'journal', 'a', '', 'done', '', ?)", (FUTURE,))
+    events = lab.runs_dir / "r1" / "events.jsonl"
+    events.parent.mkdir(parents=True)
+    events.write_text('{"event": "postrun_started", "run_id": "r1"}\n')
+    result = await observe(lab, judge_note="--no-judge")
+    assert "r1 (post-run)" in result.in_progress
+    assert not (lab.observer.dir / "runs" / "r1.md").exists()
+    with pytest.raises(ValueError, match="post-run"):
+        await observe(lab, run_id="r1", judge_note="--no-judge")
+    events.write_text(events.read_text() + '{"event": "postrun_finished", "failed": 0}\n')
+    await observe(lab, judge_note="--no-judge")
+    assert (lab.observer.dir / "runs" / "r1.md").exists()
