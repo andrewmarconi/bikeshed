@@ -85,6 +85,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
             gap=m.self_peer_gap(conn, run.id), judgments=judgments,
             codes={label: ostore.code_for(label) or label for label in labels},
             benchmark=next((a for a in answers if a.run_id == run.id), None), judge_note=note,
+            dimensions=m.dimension_scores(conn, run.id),
         )
         path = out_dir / "runs" / f"{run.id}.md"
         path.parent.mkdir(parents=True, exist_ok=True)

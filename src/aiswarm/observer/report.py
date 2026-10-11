@@ -24,6 +24,18 @@ class RunSection:
     codes: dict[str, str]  # theme label -> code
     benchmark: BenchmarkAnswer | None
     judge_note: str | None  # why nothing was judged (no judge configured / --no-judge), else None
+    dimensions: dict[str, dict[str, float]] = field(default_factory=dict)  # agent -> adopted dimension -> peer mean
+
+
+def _dimensions(s: RunSection) -> list[str]:
+    names = sorted({name for scores in s.dimensions.values() for name in scores})
+    if not names:
+        return []
+    out = ["## Dimensions", "", "| Agent | " + " | ".join(names) + " |", "|---" * (len(names) + 1) + "|"]
+    for agent in s.run.agent_ids:
+        scores = s.dimensions.get(agent, {})
+        out.append(f"| {s.who(agent)} | " + " | ".join(_fmt(scores.get(n)) for n in names) + " |")
+    return out + [""]
 
 
 def _find(judgments: list[Judgment], analysis: str, agent_id: str | None) -> Judgment | None:
@@ -88,7 +100,7 @@ def render_run(s: RunSection) -> str:
            f"- **Ended:** {r.ended_reason or 'unknown'}"]
     if s.changes:
         out += ["", "> **Harness changed:** " + "; ".join(s.changes)]
-    out += [""] + _metrics(s) + [""] + _credits(s) + [""]
+    out += [""] + _metrics(s) + [""] + _dimensions(s) + _credits(s) + [""]
     out += _per_agent(s, "Themes", "themes", lambda res: [
         f"- **{s.codes.get(t['label'], t['label'])}** ({t['polarity']}; “{t['label']}”): "
         f"“{t['evidence']}” — _{t['source']}_" for t in res["themes"]])

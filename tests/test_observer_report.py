@@ -58,6 +58,12 @@ def test_run_report_without_a_judge():
     assert "_not judged (no judge configured)_" in text
 
 
+def test_run_report_shows_dimension_scores():
+    text = render_run(section(dimensions={"a": {"clarity": 2.5}}))
+    assert "## Dimensions" in text and "| Alpha (a) | 2.5 |" in text
+    assert "## Dimensions" not in render_run(section())
+
+
 def test_run_report_credits():
     text = render_run(section(credits=Credits("a", {"a": "me", "b": "idea"})))
     assert "self-credit" in text and "idea" in text
