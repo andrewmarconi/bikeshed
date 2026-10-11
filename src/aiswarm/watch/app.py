@@ -1,7 +1,7 @@
 """The Textual view. Thin: every tick it polls the Watcher and renders RunState through render.py."""
 
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, VerticalScroll
 from textual.timer import Timer
 from textual.widgets import Log, Static
 
@@ -32,7 +32,7 @@ class WatchApp(App):
         yield Static(id="header", markup=False)
         with Horizontal(id="body"):
             yield Log(id="feed", auto_scroll=True)
-            with Vertical(id="side"):
+            with VerticalScroll(id="side"):  # many agents in a small terminal must not hide the lower panels
                 yield Static(id="cards", markup=False)
                 yield Static(id="calls", markup=False)
                 yield Static(id="files", markup=False)

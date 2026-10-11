@@ -41,6 +41,24 @@ async def test_renders_a_run_and_follows_new_entries(tmp_path, community):
         assert app.query_one("#calls", Static).display and not app.query_one("#postrun", Static).display
 
 
+async def test_the_workspace_panel_stays_reachable_in_a_small_terminal(tmp_path, community):
+    from textual.containers import VerticalScroll
+
+    conn, events, watcher = setup(tmp_path, community)
+    for n in range(30):
+        add_entry(conn, "r1", "b", "call_consensus", {"synthesis": f"call {n}", "credits": []})
+    add_entry(conn, "r1", "a", "write_file", {"path": "rules.md", "version": 1, "note": "n"})
+    app = WatchApp(watcher, interval=3600)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        side = app.query_one("#side", VerticalScroll)
+        files = app.query_one("#files", Static)
+        side.scroll_to_widget(files, animate=False)
+        await pilot.pause()
+        assert side.region.contains_region(files.region) or files.region.y < side.region.bottom
+        assert "rules.md v1" in text(app, "files")
+
+
 async def test_follow_toggle_and_quit(tmp_path, community):
     conn, events, watcher = setup(tmp_path, community)
     app = WatchApp(watcher, interval=3600)

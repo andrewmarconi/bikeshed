@@ -30,6 +30,13 @@ def test_calls_and_files():
     assert render.files(state()) == "Workspace\n(no files yet)"
 
 
+def test_calls_show_only_the_newest_few():
+    many = [CallLine(i, "Bea (b)", 1, 0) for i in range(50, 30, -1)]  # newest first
+    text = render.calls(state(calls=many))
+    assert text.count(" by Bea (b)") == render.CALLS_SHOWN and "#50" in text and "#30" not in text
+    assert text.endswith(f"+{20 - render.CALLS_SHOWN} older")
+
+
 def test_postrun_grid():
     rows = [PostRunRow("journal", 5, 0, []), PostRunRow("review", 3, 2, ["b", "d"])]
     text = render.postrun(state(postrun=rows, postrun_seen=True, current_step="review"))

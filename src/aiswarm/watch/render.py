@@ -16,8 +16,14 @@ def cards(s: RunState) -> str:
     return "\n".join(lines) or "(no agents yet)"
 
 
+CALLS_SHOWN = 8  # newest first; a long run can have dozens
+
+
 def calls(s: RunState) -> str:
-    lines = [f"#{c.entry_id} by {c.caller}: {c.supporters} for, {c.objectors} against" for c in s.calls]
+    lines = [f"#{c.entry_id} by {c.caller}: {c.supporters} for, {c.objectors} against"
+             for c in s.calls[:CALLS_SHOWN]]
+    if len(s.calls) > CALLS_SHOWN:
+        lines.append(f"+{len(s.calls) - CALLS_SHOWN} older")
     return "\n".join(["Calls for consensus", *(lines or ["(none yet)"])])
 
 
