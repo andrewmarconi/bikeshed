@@ -1,7 +1,7 @@
 # AISwarm — Observer Design (Plan 3b)
 
 - **Date:** 2026-10-10
-- **Status:** Draft, awaiting review
+- **Status:** Approved; Plan 3b implemented
 - **Author:** Andrew Marconi (with Claude)
 - **Extends:** `2026-10-10-aiswarm-design.md` §9 (Observer) and `2026-10-10-aiswarm-experiment-harness-design.md` (Plan 3a). Where this document is more specific, it governs; the principles there still apply, above all **observation never feeds back** (§2 principle 2).
 
