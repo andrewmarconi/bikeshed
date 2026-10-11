@@ -26,6 +26,8 @@ from aiswarm.reviews import dimension_reputations, ratings_for, render_review, r
 from aiswarm.runner import Runner
 from aiswarm.timeline import resolve_agent, timeline
 from aiswarm.view import make_who
+from aiswarm.watch.app import WatchApp
+from aiswarm.watch.source import open_watcher
 
 app = typer.Typer(no_args_is_help=True, help="A self-organising community of LLM agents.")
 agents_app = typer.Typer(no_args_is_help=True, help="Create and inspect agents.")
@@ -440,6 +442,20 @@ def observe(
     typer.echo(f"judgments: {result.judged} ok, {result.failed} failed")
     if result.in_progress:
         typer.echo(f"skipped (in progress): {', '.join(result.in_progress)}")
+
+
+@app.command()
+def watch(
+    run_id: Annotated[str | None, typer.Argument(help="Run to watch (default: the latest).")] = None,
+    config: ConfigOpt = DEFAULT_PATH,
+) -> None:
+    """Live, read-only view of a run in this terminal (q to quit, f to toggle following)."""
+    cfg = _load(config)
+    try:
+        watcher = open_watcher(cfg, run_id)
+    except (ValueError, sqlite3.OperationalError) as exc:
+        _fail(str(exc))
+    WatchApp(watcher).run()
 
 
 @app.command()

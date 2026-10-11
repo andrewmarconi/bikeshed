@@ -330,3 +330,22 @@ def test_observe_unknown_run_fails_cleanly(project):
     tmp_path, config = project
     result = invoke("observe", "--run", "nope", "--no-judge", "-c", config)
     assert result.exit_code != 0 and "no closed run" in result.output
+
+
+def test_watch_errors_cleanly(project):
+    tmp_path, config = project
+    result = invoke("watch", "-c", config)
+    assert result.exit_code != 0 and "no runs yet" in result.output
+    unknown = invoke("watch", "nope", "-c", config)
+    assert unknown.exit_code != 0 and "no run 'nope'" in unknown.output
+
+
+def test_watch_opens_the_latest_run(project, monkeypatch):
+    tmp_path, config = project
+    make_agents(config, "a")
+    assert invoke("run", "Pick a colour", "--max-rounds", "1", "--no-postrun", "-c", config).exit_code == 0
+    opened = []
+    monkeypatch.setattr(cli.WatchApp, "run", lambda self: opened.append(self.watcher.state.run_id))
+    result = invoke("watch", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert len(opened) == 1
