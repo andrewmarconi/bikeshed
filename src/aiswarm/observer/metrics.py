@@ -4,6 +4,12 @@ import json
 import sqlite3
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime
+
+from aiswarm.profiles import SEED_DIR, ProfileStore
+from aiswarm.provenance import provenance_changes
+from aiswarm.timeline import _rename
+from aiswarm.view import Who
 
 ACTIONS = ("propose", "critique", "adopt", "refine", "vote", "call_consensus", "write_file", "pass", "failed")
 
@@ -127,3 +133,156 @@ def credit_pairs(conn: sqlite3.Connection, runs: list[RunInfo]) -> list[tuple[st
         if got:
             pairs += [(run.id, got.caller, receiver) for receiver in sorted(got.credited)]
     return pairs
+
+
+def peer_scores(conn: sqlite3.Connection, run_id: str) -> dict[str, float]:
+    rows = conn.execute("SELECT reviewee, AVG(overall) AS score FROM reviews WHERE run_id = ? AND is_self = 0 "
+                        "GROUP BY reviewee", (run_id,))
+    return {r["reviewee"]: float(r["score"]) for r in rows}
+
+
+def self_scores(conn: sqlite3.Connection, run_id: str) -> dict[str, int]:
+    rows = conn.execute("SELECT reviewee, overall FROM reviews WHERE run_id = ? AND is_self = 1", (run_id,))
+    return {r["reviewee"]: r["overall"] for r in rows}
+
+
+def self_peer_gap(conn: sqlite3.Connection, run_id: str) -> dict[str, float]:
+    """Self-rating minus mean peer rating; positive means the agent rates itself higher than peers do."""
+    peers, own = peer_scores(conn, run_id), self_scores(conn, run_id)
+    return {agent: own[agent] - peers[agent] for agent in own if agent in peers}
+
+
+def dimension_scores(conn: sqlite3.Connection, run_id: str) -> dict[str, dict[str, float]]:
+    out: dict[str, dict[str, float]] = {}
+    rows = conn.execute(
+        "SELECT v.reviewee, d.name, AVG(r.rating) AS score FROM review_ratings r JOIN reviews v ON v.id = r.review_id "
+        "JOIN dimensions d ON d.id = r.dimension_id WHERE v.run_id = ? AND v.is_self = 0 GROUP BY v.reviewee, d.name",
+        (run_id,))
+    for r in rows:
+        out.setdefault(r["reviewee"], {})[r["name"]] = float(r["score"])
+    return out
+
+
+@dataclass(frozen=True)
+class IdentityEvent:
+    at: datetime
+    agent_id: str
+    kind: str  # rename | public profile | temperament.md | self.md | control reset
+    detail: str
+    prior_peer: float | None  # mean peer score in the latest run started at or before the event
+
+
+_IDENTITY_FILES = ("temperament.md", "self.md")
+
+
+def _kind(agent_id: str, subject: str, patch: str) -> tuple[str, str] | None:
+    if subject.startswith("reset control agent"):
+        return "control reset", ""
+    if renamed := _rename(patch):
+        return "rename", f"{renamed[0]} → {renamed[1]}"
+    if subject == f"{agent_id} updated public profile":
+        return "public profile", ""
+    for filename in _IDENTITY_FILES:
+        if subject == f"{agent_id} updated {filename}":
+            return filename, ""
+    return None
+
+
+def identity_events(conn: sqlite3.Connection, store: ProfileStore, runs: list[RunInfo]) -> list[IdentityEvent]:
+    starts = [(datetime.fromisoformat(r.created_at), r.id) for r in runs]
+    events = []
+    for agent_id in store.ids():
+        for commit in store.history(agent_id):
+            kind = _kind(agent_id, commit.subject, commit.patch)
+            if kind is None:
+                continue
+            prior = [run_id for started, run_id in starts if started <= commit.at]
+            score = peer_scores(conn, prior[-1]).get(agent_id) if prior else None
+            events.append(IdentityEvent(commit.at, agent_id, kind[0], kind[1], score))
+    return sorted(events, key=lambda e: e.at)
+
+
+def _norm(text: str | None) -> str:
+    return " ".join((text or "").split())
+
+
+def twins(store: ProfileStore) -> dict[str, list[str]]:
+    """Each control agent's twins: non-control agents whose first temperament equals the control's seed."""
+    out: dict[str, list[str]] = {}
+    for agent_id in store.ids():
+        if not store.record(agent_id).control:
+            continue
+        seed = store.root / "agents" / agent_id / SEED_DIR / "temperament.md"
+        target = _norm(seed.read_text()) if seed.exists() else None
+        out[agent_id] = sorted(
+            other for other in store.ids()
+            if other != agent_id and not store.record(other).control
+            and target and _norm(store.first_version(other, "temperament.md")) == target
+        )
+    return out
+
+
+@dataclass
+class CategoryStats:
+    runs: int = 0
+    endings: Counter = field(default_factory=Counter)
+    actions: Counter = field(default_factory=Counter)
+
+
+def by_category(conn: sqlite3.Connection, runs: list[RunInfo]) -> dict[str, CategoryStats]:
+    stats: dict[str, CategoryStats] = {}
+    for run in runs:
+        s = stats.setdefault(run.category, CategoryStats())
+        s.runs += 1
+        s.endings[run.ended_reason or "unknown"] += 1
+        for counts in action_mix(conn, run).values():
+            s.actions.update({k: v for k, v in counts.items() if v})
+    return stats
+
+
+@dataclass(frozen=True)
+class BenchmarkAnswer:
+    run_id: str
+    consensus: bool
+    text: str
+
+
+def benchmark_answers(conn: sqlite3.Connection, runs: list[RunInfo], who: Who) -> list[BenchmarkAnswer]:
+    out = []
+    for run in runs:
+        if not run.is_benchmark:
+            continue
+        closed = conn.execute("SELECT payload FROM entries WHERE run_id = ? AND type = 'run_closed'",
+                              (run.id,)).fetchone()
+        call_id = json.loads(closed["payload"]).get("call_id") if closed else None
+        if call_id:
+            call = conn.execute("SELECT payload FROM entries WHERE id = ?", (call_id,)).fetchone()
+            out.append(BenchmarkAnswer(run.id, True, json.loads(call["payload"])["synthesis"]))
+            continue
+        latest: dict[str, str] = {}
+        for row in _entries(conn, run.id):
+            if row["type"] == "propose":
+                latest[row["author"]] = json.loads(row["payload"])["answer_summary"]
+        text = "\n".join(f"- {who(a)}: {t}" for a, t in latest.items()) or "(no proposals)"
+        out.append(BenchmarkAnswer(run.id, False, text))
+    return out
+
+
+@dataclass(frozen=True)
+class NormEvent:
+    run_id: str
+    author: str
+    kind: str
+    text: str
+    status: str
+
+
+def norm_events(conn: sqlite3.Connection) -> list[NormEvent]:
+    rows = conn.execute("SELECT * FROM norm_proposals ORDER BY id")
+    return [NormEvent(r["run_id"], r["author"], r["kind"], r["text"] or f"{r['name']}: {r['question']}", r["status"])
+            for r in rows]
+
+
+def harness_changes(conn: sqlite3.Connection, runs: list[RunInfo]) -> list[int]:
+    """Indices of runs whose provenance shows a harness change (since the previous run, or within the run)."""
+    return [i for i, run in enumerate(runs) if provenance_changes(conn, run.id)]
