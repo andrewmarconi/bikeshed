@@ -12,7 +12,7 @@ from aiswarm.profiles import ProfileStore
 from aiswarm.reviews import reputation
 from aiswarm.view import Who, make_who
 
-FEED_MAX = 200
+FEED_MAX = 2000  # the feed wraps, so only a runaway entry (e.g. raw JSON) is cut
 _SUMMARY = {"propose": "answer_summary", "critique": "points", "adopt": "reason", "refine": "change",
             "call_consensus": "synthesis"}
 

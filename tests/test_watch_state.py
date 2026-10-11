@@ -64,10 +64,14 @@ def test_feed_text_per_type():
         "#10 r2 Ash (a) write_file: rules.md v3: tidy"
 
 
-def test_feed_text_is_one_line_and_truncated():
-    text = feed_text(entry(5, "propose", {"answer_summary": "line one\nline [two] " + "x" * 300, "method": "m"}), who)
-    assert "\n" not in text and len(text) == FEED_MAX and text.endswith("…")
-    assert "[two]" in text
+def test_feed_text_is_one_line_and_keeps_a_long_summary_whole():
+    text = feed_text(entry(5, "propose", {"answer_summary": "line one\nline [two] " + "x" * 300 + " end", "method": "m"}), who)
+    assert "\n" not in text and "[two]" in text and text.endswith(" end")
+
+
+def test_feed_text_truncates_only_runaway_entries():
+    text = feed_text(entry(5, "propose", {"answer_summary": "x" * 5000, "method": "m"}), who)
+    assert len(text) == FEED_MAX and text.endswith("…")
 
 
 from observer_helpers import add_entry, add_review, add_run  # noqa: E402

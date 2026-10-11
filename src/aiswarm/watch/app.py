@@ -2,11 +2,35 @@
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, VerticalScroll
+from textual.events import Resize
 from textual.timer import Timer
-from textual.widgets import Log, Static
+from textual.widgets import RichLog, Static
 
 from aiswarm.watch import render
 from aiswarm.watch.source import Watcher
+
+
+class Feed(RichLog):
+    """A wrapping board feed. RichLog wraps at the width a line was written at, so it keeps the text and rewraps."""
+
+    def __init__(self, **kwargs):
+        super().__init__(wrap=True, min_width=20, **kwargs)  # markup stays off: entries are literal text
+        self.texts: list[str] = []
+        self.wrapped_at = 0
+
+    def add(self, text: str, scroll_end: bool) -> None:
+        self.texts.append(text)
+        self.write(text, scroll_end=scroll_end)
+
+    def on_resize(self, event: Resize) -> None:
+        width = self.scrollable_content_region.width
+        if self._size_known and width != self.wrapped_at and self.texts:
+            at_end = self.is_vertical_scroll_end
+            self.clear()
+            for text in self.texts:
+                self.write(text, scroll_end=at_end)
+        self.wrapped_at = width
+        super().on_resize(event)
 
 
 class WatchApp(App):
@@ -31,7 +55,7 @@ class WatchApp(App):
     def compose(self) -> ComposeResult:
         yield Static(id="header", markup=False)
         with Horizontal(id="body"):
-            yield Log(id="feed", auto_scroll=True)
+            yield Feed(id="feed")
             with VerticalScroll(id="side"):  # many agents in a small terminal must not hide the lower panels
                 yield Static(id="cards", markup=False)
                 yield Static(id="calls", markup=False)
@@ -46,11 +70,12 @@ class WatchApp(App):
     def tick(self) -> None:
         self.watcher.poll()
         s = self.watcher.state
-        log = self.query_one("#feed", Log)
+        log = self.query_one("#feed", Feed)
         new = s.feed[self.written:]
         if new:
             at_end = self.written == 0 or log.is_vertical_scroll_end  # scrolled up: don't drag the reader down
-            log.write_lines([line.text for line in new], scroll_end=self.following and at_end)
+            for line in new:
+                log.add(line.text, scroll_end=self.following and at_end)
             self.written = len(s.feed)
         self.query_one("#header", Static).update(render.header(s))
         self.query_one("#cards", Static).update(render.cards(s))
@@ -72,5 +97,5 @@ class WatchApp(App):
     def action_toggle_follow(self) -> None:
         self.following = not self.following
         if self.following:
-            self.query_one("#feed", Log).scroll_end(animate=False)
+            self.query_one("#feed", RichLog).scroll_end(animate=False)
         self._footer()

@@ -1,7 +1,7 @@
 import json
 
 from observer_helpers import add_entry, add_run
-from textual.widgets import Log, Static
+from textual.widgets import RichLog, Static
 
 from aiswarm.config import Config
 from aiswarm.watch.app import WatchApp
@@ -25,6 +25,11 @@ def text(app, widget_id):
     return str(app.query_one(f"#{widget_id}", Static).content)
 
 
+def feed(app):
+    """The feed's visible text, with wrapped lines joined back up."""
+    return " ".join(strip.text.strip() for strip in app.query_one("#feed", RichLog).lines)
+
+
 async def test_renders_a_run_and_follows_new_entries(tmp_path, community):
     conn, events, watcher = setup(tmp_path, community)
     app = WatchApp(watcher, interval=3600)
@@ -32,13 +37,29 @@ async def test_renders_a_run_and_follows_new_entries(tmp_path, community):
         await pilot.pause()
         assert "best-fruit (contested) · run r1 · round 1/12 · rounds" in text(app, "header")
         assert "Alpha (a)" in text(app, "cards")
-        log = app.query_one("#feed", Log)
-        assert any("Mango [ripe]" in line for line in log.lines)
+        assert "Mango [ripe]" in feed(app)
         add_entry(conn, "r1", "b", "critique", {"target": 1, "about": "answer", "points": "Too sweet."})
         app.tick()
         await pilot.pause()
-        assert any("Too sweet." in line for line in log.lines)
+        assert "Too sweet." in feed(app)
         assert app.query_one("#calls", Static).display and not app.query_one("#postrun", Static).display
+
+
+async def test_long_feed_lines_wrap_to_the_panel_and_rewrap_on_resize(tmp_path, community):
+    conn, events, watcher = setup(tmp_path, community)
+    points = " ".join(f"word{n}" for n in range(30))
+    add_entry(conn, "r1", "b", "critique", {"target": 1, "about": "answer", "points": points})
+    app = WatchApp(watcher, interval=3600)
+    async with app.run_test(size=(60, 30)) as pilot:
+        await pilot.pause()
+        log = app.query_one("#feed", RichLog)
+        width = log.scrollable_content_region.width
+        assert all(strip.cell_length <= width for strip in log.lines)
+        assert "word0" in feed(app) and "word29" in feed(app)
+        narrow = len(log.lines)
+        await pilot.resize_terminal(160, 30)
+        await pilot.pause()
+        assert len(log.lines) < narrow and "word29" in feed(app)
 
 
 async def test_the_workspace_panel_stays_reachable_in_a_small_terminal(tmp_path, community):

@@ -47,7 +47,7 @@ Keys: `q` quit; `f` toggle following (auto-scroll to new entries). Scrolling the
  q quit · f follow on/off · <n unreadable event lines, if any>
 ```
 
-- Feed lines: `#<id> r<round> <Name (id)> <type>[ → #<target>]: <summary>`, truncated to about 200 characters. The summary is the type's main text field (answer summary, points, reason, change, synthesis, note), or the failure for a failed pass.
+- Feed lines: `#<id> r<round> <Name (id)> <type>[ → #<target>]: <summary>`, wrapped to the panel width and cut only past 2,000 characters. The summary is the type's main text field (answer summary, points, reason, change, synthesis, note), or the failure for a failed pass.
 - Agent cards: display name, `[control]` if control, ★ reputation (the existing `reputation()` overall, "–" with no reviews), state (`thinking…` between `agent_step_started` and `agent_step_finished`, otherwise `idle`; `failed: <kind>` when the last step failed), and the last action with its entry id.
 - Calls: each `call_consensus` of the run with supporters and objectors (from `call_status`), newest first.
 - Workspace: latest version of each file in the run (`files` table), with author and round.
