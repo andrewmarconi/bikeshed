@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from aiswarm.actions import summarise_validation
 from aiswarm.profiles import ProfileStore
@@ -35,6 +35,8 @@ def _text(value: str) -> str:
 
 
 class Benchmark(BaseModel):
+    model_config = ConfigDict(extra="forbid")  # a typo in goals.toml is an error, not ignored
+
     text: str
     category: Category
     every: int = Field(5, ge=1)
@@ -46,6 +48,8 @@ class Benchmark(BaseModel):
 
 
 class Goal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     text: str
     category: Category
@@ -66,6 +70,8 @@ class Goal(BaseModel):
 
 
 class GoalFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     benchmark: Benchmark
     goals: list[Goal] = Field(default_factory=list)
 
@@ -118,7 +124,13 @@ def load_goals(path: Path) -> GoalFile:
     if not path.exists():
         raise GoalError(f"{path} not found; run `aiswarm init`")
     try:
-        return GoalFile.model_validate(tomllib.loads(path.read_text()))
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise GoalError(f"{path}: not valid UTF-8 ({exc.reason} at byte {exc.start})") from exc
+    except OSError as exc:
+        raise GoalError(f"{path}: {exc.strerror or exc}") from exc
+    try:
+        return GoalFile.model_validate(tomllib.loads(text))
     except tomllib.TOMLDecodeError as exc:
         raise GoalError(f"{path}: {exc}") from exc
     except ValidationError as exc:

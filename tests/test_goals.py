@@ -141,3 +141,38 @@ def test_add_goal_rejects_control_characters_and_leaves_the_file_loadable(store)
             add_goal(store, text, "neutral")
     assert (store.root / GOALS_FILE).read_text() == before
     assert load_goals(store.root / GOALS_FILE) == DEFAULT_GOALS
+
+
+@pytest.mark.parametrize("content, key", [
+    ('[benchmark]\ntext = "x"\ncategory = "neutral"\nevry = 3\n', "evry"),
+    ('[benchmark]\ntext = "x"\ncategory = "neutral"\n[[goals]]\nid = "a"\ntext = "y"\ncatgory = "neutral"\n',
+     "catgory"),
+    ('[benchmark]\ntext = "x"\ncategory = "neutral"\n[[goal]]\nid = "a"\ntext = "y"\ncategory = "neutral"\n', "goal"),
+])
+def test_load_goals_rejects_unknown_keys(tmp_path, content, key):
+    path = tmp_path / GOALS_FILE
+    path.write_text(content)
+    with pytest.raises(GoalError, match=key):
+        load_goals(path)
+
+
+def test_load_goals_duplicate_message_has_no_empty_location(tmp_path):
+    path = tmp_path / GOALS_FILE
+    path.write_text('[benchmark]\ntext = "x"\ncategory = "neutral"\n[[goals]]\nid = "a"\ntext = "y"\n'
+                    'category = "neutral"\n[[goals]]\nid = "a"\ntext = "z"\ncategory = "neutral"\n')
+    with pytest.raises(GoalError) as info:
+        load_goals(path)
+    assert ": :" not in str(info.value)
+
+
+def test_load_goals_reports_an_unreadable_file(tmp_path):
+    path = tmp_path / GOALS_FILE
+    path.write_bytes(b'[benchmark]\ntext = "\xff\xfe"\n')
+    with pytest.raises(GoalError, match="UTF-8"):
+        load_goals(path)
+
+
+def test_load_goals_reports_a_directory(tmp_path):
+    (tmp_path / GOALS_FILE).mkdir()
+    with pytest.raises(GoalError, match=GOALS_FILE):
+        load_goals(tmp_path / GOALS_FILE)
