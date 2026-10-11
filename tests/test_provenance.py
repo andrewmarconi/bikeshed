@@ -107,7 +107,8 @@ async def test_changes_name_what_differs_from_the_previous_run(community, make_r
     await capture(conn, "r2", "start", make_config(max_rounds=4), {"a": "local", "b": "claude"}, probe=fake_probe)
     changes = provenance_changes(conn, "r2")
     assert "since run r1: prompts journal_request.md" in changes
-    assert "since run r1: config run.max_rounds" in changes
+    config_line = next(c for c in changes if c.startswith("since run r1: config "))
+    assert "run.max_rounds" in config_line and "models.claude.model" in config_line  # r2 starts using claude
     assert "since run r1: models for b" in changes
 
 
@@ -145,4 +146,16 @@ async def test_observer_settings_are_not_part_of_provenance(run_row):
     cfg.observer.judge = "claude"
     with_judge = await capture(conn, run_id, "resume", cfg, {"a": "local"}, probe=fake_probe)
     assert "observer" not in plain.config
+    assert plain.fingerprint == with_judge.fingerprint
+
+
+async def test_backends_no_agent_uses_are_not_part_of_provenance(run_row):
+    from aiswarm.config import ClaudeCliBackend
+
+    conn, run_id = run_row
+    plain = await capture(conn, run_id, "start", make_config(), {"a": "local"}, probe=fake_probe)
+    cfg = make_config()
+    cfg.models["claude-judge"] = ClaudeCliBackend(kind="claude_cli", model="opus")
+    with_judge = await capture(conn, run_id, "resume", cfg, {"a": "local"}, probe=fake_probe)
+    assert set(plain.config["models"]) == {"local"}
     assert plain.fingerprint == with_judge.fingerprint
