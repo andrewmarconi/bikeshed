@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import sqlite3
 import tempfile
 from pathlib import Path
 from typing import Annotated, Any
@@ -17,6 +18,7 @@ from aiswarm.models.base import ModelError, limit_clients
 from aiswarm.models.claude_cli import ClaudeCliClient, leak_check
 from aiswarm.models.factory import make_client, make_embedder
 from aiswarm.models.openai_compat import OpenAICompatClient
+from aiswarm.observer.observe import observe as run_observer
 from aiswarm.postrun import PostRun, PostRunResult
 from aiswarm.profiles import PRIVATE_FILES, ProfileError, ProfileStore
 from aiswarm.provenance import capture, probe_server, provenance_changes, provenance_rows
@@ -410,6 +412,34 @@ def show(run_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
         path = report / name
         if path.exists():
             typer.echo(path.read_text())
+
+
+@app.command()
+def observe(
+    run: Annotated[str | None, typer.Option("--run", help="Report on one closed run only.")] = None,
+    no_judge: Annotated[bool, typer.Option("--no-judge", help="Metrics only; no LLM calls.")] = False,
+    twin: Annotated[str | None, typer.Option(help="Agent to compare with the control agent.")] = None,
+    config: ConfigOpt = DEFAULT_PATH,
+) -> None:
+    """User-only analysis of the community: reports and charts under the observer directory."""
+    cfg = _load(config)
+    client, note = None, None
+    if no_judge:
+        note = "--no-judge"
+    elif cfg.observer.judge is None:
+        note = "no judge configured"
+        typer.echo("no [observer] judge configured; metrics only", err=True)
+    else:
+        client = make_client(cfg.models[cfg.observer.judge], cfg.run.model_retries)
+    try:
+        result = asyncio.run(run_observer(cfg, run_id=run, judge_client=client, twin=twin, judge_note=note))
+    except (ValueError, sqlite3.OperationalError) as exc:
+        _fail(str(exc))
+    for path in result.written:
+        typer.echo(f"wrote {path}")
+    typer.echo(f"judgments: {result.judged} ok, {result.failed} failed")
+    if result.in_progress:
+        typer.echo(f"skipped (in progress): {', '.join(result.in_progress)}")
 
 
 @app.command()

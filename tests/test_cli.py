@@ -313,3 +313,20 @@ def test_run_resume_rejects_a_goal_or_next(project, extra):
     result = invoke("run", "--resume", "r1", *extra, "-c", config)
     assert result.exit_code != 0
     assert "--resume" in result.output and "not both" in result.output
+
+
+def test_observe_without_a_judge(project):
+    tmp_path, config = project
+    for agent_id in ("a", "b"):
+        assert invoke("agents", "new", agent_id, "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    assert invoke("run", "Pick a colour", "--max-rounds", "2", "--no-postrun", "-c", config).exit_code == 0
+    result = invoke("observe", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert "metrics only" in result.output
+    assert (tmp_path / "observer" / "summary.md").exists()
+
+
+def test_observe_unknown_run_fails_cleanly(project):
+    tmp_path, config = project
+    result = invoke("observe", "--run", "nope", "--no-judge", "-c", config)
+    assert result.exit_code != 0 and "no closed run" in result.output
