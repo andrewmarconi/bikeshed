@@ -68,3 +68,87 @@ def test_feed_text_is_one_line_and_truncated():
     text = feed_text(entry(5, "propose", {"answer_summary": "line one\nline [two] " + "x" * 300, "method": "m"}), who)
     assert "\n" not in text and len(text) == FEED_MAX and text.endswith("…")
     assert "[two]" in text
+
+
+from observer_helpers import add_entry, add_review, add_run  # noqa: E402
+
+
+def refreshed(community):
+    store, conn = community
+    s = RunState("r1", "g", "r1", "ad hoc", 12)
+    s.refresh(conn, store, 5.0)
+    return s
+
+
+def test_refresh_builds_feed_calls_files_and_cards(community):
+    store, conn = community
+    add_run(conn, "r1", agents=("a", "b"))
+    p = add_entry(conn, "r1", "a", "propose", {"answer_summary": "Mango", "method": "m"})
+    call = add_entry(conn, "r1", "b", "call_consensus", {"synthesis": "Mango it is", "credits": []}, refs=[p])
+    add_entry(conn, "r1", "a", "vote", {"target": call, "stance": "support", "reason": "yes"})
+    add_entry(conn, "r1", "a", "write_file", {"path": "rules.md", "version": 1, "note": "n"}, round=2)
+    add_entry(conn, "r1", "b", "write_file", {"path": "rules.md", "version": 2, "note": "n"}, round=3)
+    s = refreshed(community)
+    assert [f.entry_id for f in s.feed] == [p, call, call + 1, call + 2, call + 3]
+    assert s.feed[0].text == f"#{p} r1 Alpha (a) propose: Mango"
+    assert s.calls == [type(s.calls[0])(call, "Bea (b)", 2, 0)]
+    assert [(f.path, f.version, f.author, f.round) for f in s.files] == [("rules.md", 2, "b", 3)]
+    assert s.cards["a"].name == "Alpha" and s.cards["a"].headline == "Alpha headline"
+    assert s.cards["a"].reputation is None and not s.profiles_stale
+
+
+def test_refresh_adds_only_new_entries(community):
+    store, conn = community
+    add_run(conn, "r1", agents=("a",))
+    add_entry(conn, "r1", "a", "pass", {})
+    s = refreshed(community)
+    add_entry(conn, "r1", "a", "pass", {})
+    s.refresh(conn, store, 5.0)
+    assert len(s.feed) == 2
+
+
+def test_reputation_and_names_reload_only_when_stale(community):
+    store, conn = community
+    add_run(conn, "r0", agents=("a", "b"))
+    add_review(conn, "r0", "b", "a", 4)
+    add_run(conn, "r1", agents=("a", "b"))
+    s = refreshed(community)
+    assert s.cards["a"].reputation == 4.0
+    store.set_public("a", "Ashley", "h", "i")
+    s.refresh(conn, store, 5.0)
+    assert s.cards["a"].name == "Alpha"
+    s.apply({"event": "postrun_step_finished", "step": "update", "agent": "a", "status": "done"})
+    s.refresh(conn, store, 5.0)
+    assert s.cards["a"].name == "Ashley"
+
+
+def test_post_run_grid_counts_done_and_failed(community):
+    store, conn = community
+    add_run(conn, "r1", agents=("a", "b"))
+    for agent, status in (("a", "done"), ("b", "failed")):
+        conn.execute("INSERT INTO postrun_steps (run_id, step, agent_id, subject, status, detail, updated_at) "
+                     "VALUES ('r1', 'journal', ?, '', ?, '', 't')", (agent, status))
+    s = refreshed(community)
+    journal = next(r for r in s.postrun if r.step == "journal")
+    assert (journal.done, journal.failed, journal.failed_agents) == (1, 1, ["b"])
+    assert [r.step for r in s.postrun][0] == "journal" and len(s.postrun) == 8
+
+
+def test_a_failed_refresh_keeps_the_previous_state(community):
+    import sqlite3
+
+    store, conn = community
+    add_run(conn, "r1", agents=("a",))
+    add_entry(conn, "r1", "a", "pass", {})
+    s = refreshed(community)
+    before = (list(s.feed), list(s.calls), dict(s.cards))
+
+    class Broken:
+        def execute(self, *a, **k):
+            raise sqlite3.OperationalError("database is locked")
+
+    try:
+        s.refresh(Broken(), store, 5.0)
+    except sqlite3.OperationalError:
+        pass
+    assert (s.feed, s.calls, s.cards) == before
