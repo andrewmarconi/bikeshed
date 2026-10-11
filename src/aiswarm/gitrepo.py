@@ -72,6 +72,14 @@ class GitRepo:
         self._git("reset", "-q", "--hard", commit)
         self._git("clean", "-q", "-ffdx")
 
+    def tracks(self, path: str) -> bool:
+        """Whether `path` (relative to this directory) is tracked by the enclosing repository."""
+        try:
+            self._git("ls-files", "--error-unmatch", "--", path)
+            return True
+        except GitError:
+            return False
+
     def is_dirty(self) -> bool:
         return bool(self._git("status", "--porcelain"))
 

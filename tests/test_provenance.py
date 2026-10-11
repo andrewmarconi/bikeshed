@@ -85,8 +85,8 @@ def test_code_state_outside_git(tmp_path):
 
 def test_code_state_in_a_checkout(tmp_path):
     repo = GitRepo.init(tmp_path / "code")
-    (repo.path / "x.py").write_text("x = 1\n")
-    sha = repo.commit(["x.py"], "m", author="dev")
+    (repo.path / "__init__.py").write_text("x = 1\n")
+    sha = repo.commit(["__init__.py"], "m", author="dev")
     assert code_state(repo.path) == (sha, False)
     (repo.path / "y.py").write_text("y = 1\n")
     assert code_state(repo.path) == (sha, True)
@@ -126,3 +126,13 @@ def test_changes_for_a_run_without_provenance_are_empty(community, make_run):
     store, conn = community
     make_run(conn, "old", ("a",))
     assert provenance_changes(conn, "old") == []
+
+
+def test_code_state_ignores_an_enclosing_repo_that_does_not_track_the_package(tmp_path):
+    host = GitRepo.init(tmp_path / "project")
+    (host.path / ".gitignore").write_text(".venv/\n")
+    host.commit([".gitignore"], "host", author="dev")
+    package = host.path / ".venv" / "site-packages" / "aiswarm"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    assert code_state(package) == (None, None)

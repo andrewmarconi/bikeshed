@@ -131,3 +131,13 @@ def test_next_goal_fails_when_the_queue_is_used_up(conn):
     add_run(conn, "r1", "only")
     with pytest.raises(GoalError, match="goals add"):
         next_goal(conn, gf)
+
+
+def test_add_goal_rejects_control_characters_and_leaves_the_file_loadable(store):
+    seed_goals(store)
+    before = (store.root / GOALS_FILE).read_text()
+    for text in ("del\x7fchar", "carriage\rreturn", "bell\x07"):
+        with pytest.raises(GoalError, match="control characters"):
+            add_goal(store, text, "neutral")
+    assert (store.root / GOALS_FILE).read_text() == before
+    assert load_goals(store.root / GOALS_FILE) == DEFAULT_GOALS

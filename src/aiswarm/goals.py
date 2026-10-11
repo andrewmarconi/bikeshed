@@ -4,6 +4,7 @@ import json
 import re
 import sqlite3
 import tomllib
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -28,6 +29,8 @@ def _text(value: str) -> str:
     value = value.strip()
     if not 1 <= len(value) <= TEXT_MAX or "\n" in value:
         raise ValueError(f"goal text must be a single line of 1-{TEXT_MAX} characters")
+    if any(unicodedata.category(c) == "Cc" for c in value):
+        raise ValueError("goal text must not contain control characters")
     return value
 
 
@@ -147,7 +150,12 @@ def add_goal(store: ProfileStore, text: str, category: str, goal_id: str | None 
         updated = GoalFile(benchmark=gf.benchmark, goals=[*gf.goals, goal])
     except ValidationError as exc:
         raise GoalError(summarise_validation(exc)) from exc
-    store.write_community_file(GOALS_FILE, render_goals(updated), f"add goal {goal.id}", author="aiswarm")
+    text = render_goals(updated)
+    try:  # never commit a file the queue could not read back
+        GoalFile.model_validate(tomllib.loads(text))
+    except (tomllib.TOMLDecodeError, ValidationError) as exc:
+        raise GoalError(f"goal could not be saved: {exc}") from exc
+    store.write_community_file(GOALS_FILE, text, f"add goal {goal.id}", author="aiswarm")
     return goal
 
 

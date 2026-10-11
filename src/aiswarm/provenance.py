@@ -49,7 +49,9 @@ def code_state(code_dir: Path | None = None) -> tuple[str | None, bool | None]:
     repo = GitRepo(code_dir or Path(aiswarm.__file__).parent)
     try:
         commit = repo.head()
-        return (commit, repo.is_dirty()) if commit else (None, None)
+        if commit is None or not repo.tracks("__init__.py"):
+            return None, None  # e.g. installed into a venv inside some other project's repo
+        return commit, repo.is_dirty()
     except (GitError, OSError):
         return None, None
 

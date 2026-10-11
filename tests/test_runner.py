@@ -326,3 +326,18 @@ async def test_start_records_goal_metadata_and_never_shows_it_to_agents(communit
     assert tuple(row) == ("benchmark", "trade-off", 1)
     sent = json.dumps([call[:2] for client in clients.values() for call in client.calls])
     assert "trade-off" not in sent and "benchmark" not in sent.lower()
+
+
+def test_a_failed_control_reset_leaves_no_run_behind(community, runner_factory, monkeypatch):
+    from aiswarm.gitrepo import GitError
+    store, conn = community
+    add_control(store)
+
+    def broken(agent_id):
+        raise GitError("disk trouble")
+
+    monkeypatch.setattr(store, "reset_to_seed", broken)
+    runner = runner_factory(store, conn, {})
+    with pytest.raises(GitError):
+        runner.start("G", [*AGENTS, "d"], goal_id="best-fruit")
+    assert conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0

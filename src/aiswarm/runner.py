@@ -75,6 +75,8 @@ class Runner:
         for agent_id in controls:
             if not self.store.has_seed_public(agent_id):
                 raise ValueError(f"control agent {agent_id} has no seed profile; run `aiswarm agents introduce {agent_id}`")
+        # Reset before the run exists: a failed reset must not leave a run whose control agent kept its memory.
+        name_restored = {agent_id: self.store.reset_to_seed(agent_id) for agent_id in controls}
         run_id = new_run_id()
         seed = secrets.randbits(32)
         (self.runs_dir / run_id).mkdir(parents=True)
@@ -89,9 +91,8 @@ class Runner:
         events = self._events(run_id)
         events.emit("run_started", run_id=run_id, goal=goal, agents=list(agent_ids))
         for agent_id in controls:  # control agents carry no experience between runs
-            name_restored = self.store.reset_to_seed(agent_id)
             events.emit("control_reset", agent=agent_id)
-            if not name_restored:
+            if not name_restored[agent_id]:
                 events.emit("control_reset_name_kept", agent=agent_id)
         return run_id
 

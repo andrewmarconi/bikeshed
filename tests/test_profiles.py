@@ -193,3 +193,11 @@ async def test_introduce_saves_the_seed_for_control_agents(tmp_path):
     await introduce(s, "e", FakeModel([reply]))
     await introduce(s, "f", FakeModel([reply.replace("Eve", "Fay")]))
     assert s.has_seed_public("e") and not s.has_seed_public("f")
+
+
+async def test_reintroducing_a_control_agent_keeps_its_first_seed(tmp_path):
+    s = ProfileStore(tmp_path / "community")
+    s.create("e", "local", "Seed.", control=True)
+    await introduce(s, "e", FakeModel([json.dumps({"name": "Eve", "headline": "H", "introduction": "Hi."})]))
+    await introduce(s, "e", FakeModel([json.dumps({"name": "Eden", "headline": "H2", "introduction": "Hello."})]))
+    assert 'name = "Eve"' in (s.root / "agents" / "e" / "seed" / "public.toml").read_text()

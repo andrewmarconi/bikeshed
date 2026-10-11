@@ -30,8 +30,8 @@ async def introduce(store: ProfileStore, agent_id: str, client: ModelClient) -> 
         try:
             reply = _IntroReply.model_validate(extract_json(result.text))
             profile = store.set_public(agent_id, reply.name, reply.headline, reply.introduction, pronouns=reply.pronouns)
-            if store.record(agent_id).control:
-                store.save_seed_public(agent_id)
+            if store.record(agent_id).control and not store.has_seed_public(agent_id):
+                store.save_seed_public(agent_id)  # the seed is the first introduction only
             return profile
         except ValidationError as exc:
             problem = summarise_validation(exc)
