@@ -67,7 +67,8 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
     judge = None
     if judge_client is not None:
         limited = limit_clients({"judge": judge_client}, JUDGE_CONCURRENCY)["judge"]
-        judge = Judge(limited, ostore, cfg.observer.judge or "judge")
+        backend = cfg.models.get(cfg.observer.judge or "")
+        judge = Judge(limited, ostore, backend.model if backend else "judge")  # a new model means new judgments
     note = judge_note if judge is None else None
     written: list[Path] = []
     for run in targets:

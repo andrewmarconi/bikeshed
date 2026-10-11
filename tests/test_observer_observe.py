@@ -68,6 +68,15 @@ async def test_second_observe_uses_the_cache(lab):
     assert len(client.calls) == calls
 
 
+async def test_changing_the_judge_model_re_judges(lab):
+    client = FakeModel(judge_reply)
+    await observe(lab, judge_client=client)
+    calls = len(client.calls)
+    lab.models["claude"].model = "opus"
+    await observe(lab, judge_client=client)
+    assert len(client.calls) > calls
+
+
 async def test_observe_one_run_without_a_judge(lab):
     result = await observe(lab, run_id="r1", judge_note="--no-judge")
     assert [p.name for p in result.written] == ["r1.md"]
