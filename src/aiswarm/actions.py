@@ -158,9 +158,21 @@ def parse_action(text: str) -> Any:
 
 
 def summarise_validation(exc: ValidationError) -> str:
-    return "; ".join(
-        f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}" for error in exc.errors()[:5]
-    )
+    return "; ".join(_summarise_error(error) for error in exc.errors()[:5])
+
+
+def _summarise_error(error: Any) -> str:
+    where = ".".join(str(part) for part in error["loc"])
+    text = f"{where}: {error['msg']}" if where else error["msg"]
+    value = error.get("input")
+    if isinstance(value, str) and "character" in error["msg"]:  # say how far over a length limit it was
+        text += f" (yours was {len(value):,} characters)"
+    return text
+
+
+def correction_request(problem: str) -> str:
+    """The follow-up asking a model to fix a rejected reply."""
+    return f"That could not be accepted: {problem.rstrip('.')}. Reply again with JSON only."
 
 
 def target_refs(action: Any) -> list[int]:

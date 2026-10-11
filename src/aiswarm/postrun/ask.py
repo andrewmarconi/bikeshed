@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, ValidationError
 
-from aiswarm.actions import ActionError, extract_json, simplify_schema, summarise_validation
+from aiswarm.actions import ActionError, correction_request, extract_json, simplify_schema, summarise_validation
 from aiswarm.models.base import Message, ModelClient
 
 
@@ -41,6 +41,6 @@ async def ask[T: BaseModel](
             problem = str(exc)
         messages += [
             {"role": "assistant", "content": result.text},
-            {"role": "user", "content": f"That could not be accepted: {problem}. Reply again with JSON only."},
+            {"role": "user", "content": correction_request(problem)},
         ]
     raise ReplyError(problem)

@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from aiswarm.actions import ActionError, extract_json, simplify_schema, summarise_validation
+from aiswarm.actions import ActionError, correction_request, extract_json, simplify_schema, summarise_validation
 from aiswarm.models.base import Message, ModelClient
 from aiswarm.profiles import NAME_MAX, PRONOUNS_MAX, ProfileError, ProfileStore, PublicProfile
 from aiswarm.prompts import render
@@ -39,6 +39,6 @@ async def checkin(store: ProfileStore, agent_id: str, client: ModelClient) -> Pu
             problem = str(exc)
         messages += [
             {"role": "assistant", "content": result.text},
-            {"role": "user", "content": f"That could not be accepted: {problem}. Reply again with JSON only."},
+            {"role": "user", "content": correction_request(problem)},
         ]
     raise ProfileError(f"{agent_id} did not produce a valid check-in")
