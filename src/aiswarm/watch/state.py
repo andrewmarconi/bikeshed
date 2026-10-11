@@ -107,6 +107,8 @@ class RunState:
 
     def apply(self, event: dict[str, Any]) -> None:
         name = event.get("event")
+        if name in ("agent_step_started", "agent_step_finished", "action_posted") and not event.get("agent"):
+            return  # malformed; the runner always names the agent
         if name == "run_started":
             self.phase = "rounds"
             for agent_id in event.get("agents", []):

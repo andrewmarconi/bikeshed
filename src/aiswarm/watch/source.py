@@ -61,8 +61,10 @@ class Watcher:
         self.state.bad_lines = self.tail.bad
         try:
             self.state.refresh(self.conn, self.store, self.half_life)
-        except sqlite3.Error:
-            pass  # e.g. the writer holds a lock; keep what we have and try again next tick
+        except (sqlite3.Error, ValueError, OSError):
+            # A locked database, or a profile file caught mid-write (TOML/pydantic errors are ValueErrors):
+            # keep what we have and try again next tick.
+            pass
 
 
 def _max_rounds(conn: sqlite3.Connection, run_id: str, default: int) -> int:

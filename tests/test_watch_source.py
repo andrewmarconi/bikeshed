@@ -78,3 +78,27 @@ def test_max_rounds_comes_from_the_runs_start_provenance(tmp_path, community):
                  "captured_at) VALUES ('r1', 'start', ?, '{}', '{}', '{}', 'f', 't')",
                  (json.dumps({"run": {"max_rounds": 6}}),))
     assert open_watcher(cfg, "r1").state.max_rounds == 6
+
+
+def test_a_half_written_profile_or_odd_event_never_crashes_the_watcher(tmp_path, community):
+    cfg = cfg_for(tmp_path)
+    store, conn = community
+    add_run(conn, "r1", agents=("a", "b"))
+    add_entry(conn, "r1", "a", "propose", {"answer_summary": "Mango", "method": "m"})
+    watcher = open_watcher(cfg, "r1")
+    watcher.poll()
+    assert len(watcher.state.feed) == 1
+    profile = cfg.community_dir / "agents" / "a" / "public.toml"
+    good = profile.read_text()
+    events = cfg.runs_dir / "r1" / "events.jsonl"
+    events.parent.mkdir(parents=True)
+    events.write_text('{"event": "agent_step_started"}\n{"event": "action_posted", "type": "pass"}\n')
+    add_entry(conn, "r1", "b", "pass", {})
+    for broken in ('name = "Al', ""):  # mid-write, then truncated
+        profile.write_text(broken)
+        watcher.state.profiles_stale = True
+        watcher.poll()
+        assert len(watcher.state.feed) == 1  # previous state kept
+    profile.write_text(good)
+    watcher.poll()
+    assert len(watcher.state.feed) == 2
