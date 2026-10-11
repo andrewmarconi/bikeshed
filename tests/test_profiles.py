@@ -212,3 +212,17 @@ def test_set_model_updates_the_record_and_commits(store):
 def test_set_model_rejects_an_unknown_agent(store):
     with pytest.raises(ProfileError, match="no agent"):
         store.set_model("ghost", "small")
+
+
+def test_file_at_and_first_version(store):
+    import time
+    from datetime import UTC, datetime, timedelta
+
+    before_edit = datetime.now(UTC) + timedelta(seconds=1)
+    time.sleep(2)
+    store.write_private("a", "self.md", "Later self.")
+    assert store.file_at("a", "self.md", before_edit) == ""
+    assert store.file_at("a", "self.md", None) == "Later self."
+    assert store.first_version("a", "temperament.md") == "Curious and blunt."
+    assert store.file_at("a", "nope.md", None) is None
+    assert store.first_version("a", "nope.md") is None

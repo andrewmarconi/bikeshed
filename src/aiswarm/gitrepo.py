@@ -83,6 +83,32 @@ class GitRepo:
     def is_dirty(self) -> bool:
         return bool(self._git("status", "--porcelain"))
 
+    def show_at(self, path: str, before: datetime | None = None) -> str | None:
+        """The file's content at the last commit touching it (at or before `before`); None if it did not exist."""
+        if self.head() is None:
+            return None
+        args = ["log", "-1", "--format=%H"]
+        if before is not None:
+            args.append(f"--before={before.isoformat()}")
+        commit = self._git(*args, "--", path)
+        if not commit:
+            return None
+        try:
+            return self._git("show", f"{commit}:{path}")
+        except GitError:
+            return None  # deleted in that commit
+
+    def first_version(self, path: str) -> str | None:
+        if self.head() is None:
+            return None
+        commits = self._git("log", "--reverse", "--format=%H", "--", path).split()
+        if not commits:
+            return None
+        try:
+            return self._git("show", f"{commits[0]}:{path}")
+        except GitError:
+            return None
+
     def log(self, path: str, exclude: Sequence[str] = ()) -> list[Commit]:
         """Commits touching `path` (minus `exclude`), oldest first, each with its patch."""
         if self.head() is None:

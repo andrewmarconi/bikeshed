@@ -130,3 +130,25 @@ def test_is_dirty(tmp_path):
     assert repo.is_dirty() is False
     (repo.path / "b").write_text("2")
     assert repo.is_dirty() is True
+
+
+def test_connect_readonly_reads_but_cannot_write(tmp_path):
+    import sqlite3
+
+    from aiswarm.db import connect_readonly
+
+    path = tmp_path / "c.db"
+    connect(path).execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES ('r', 'g', 'closed', '[]', 't')")
+    ro = connect_readonly(path)
+    assert ro.execute("SELECT id FROM runs").fetchone()["id"] == "r"
+    with pytest.raises(sqlite3.OperationalError):
+        ro.execute("DELETE FROM runs")
+
+
+def test_connect_readonly_reports_a_missing_database(tmp_path):
+    import sqlite3
+
+    from aiswarm.db import connect_readonly
+
+    with pytest.raises(sqlite3.OperationalError):
+        connect_readonly(tmp_path / "missing.db")

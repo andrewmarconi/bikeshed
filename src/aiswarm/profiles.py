@@ -3,6 +3,7 @@
 import json
 import re
 import tomllib
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -178,6 +179,13 @@ class ProfileStore:
         """Commits to an agent's profile files, oldest first (journals and seed excluded)."""
         base = f"agents/{agent_id}"
         return self._repo.log(base, exclude=[f"{base}/journal", f"{base}/{SEED_DIR}"])
+
+    def file_at(self, agent_id: str, filename: str, before: datetime | None) -> str | None:
+        """An agent file as committed at or before `before` (latest if None). Observer use only."""
+        return self._repo.show_at(f"agents/{agent_id}/{filename}", before)
+
+    def first_version(self, agent_id: str, filename: str) -> str | None:
+        return self._repo.first_version(f"agents/{agent_id}/{filename}")
 
     def private(self, agent_id: str) -> dict[str, str]:
         return {name: (self._dir(agent_id) / name).read_text() for name in PRIVATE_FILES}

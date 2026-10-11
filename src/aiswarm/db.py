@@ -204,6 +204,15 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
+def connect_readonly(path: Path) -> sqlite3.Connection:
+    """A connection that cannot write: for observers of the community, never for the runner."""
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")  # fail now, not later, if the file is missing
+    return conn
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     current = conn.execute("PRAGMA user_version").fetchone()[0]
     for number, sql in enumerate(MIGRATIONS[current:], start=current + 1):
