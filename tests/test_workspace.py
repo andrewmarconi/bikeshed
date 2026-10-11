@@ -39,6 +39,14 @@ def test_stale_base_version_conflicts(ws):
     assert ws.read("draft.md") == ("v1", 1)
 
 
+def test_any_base_version_creates_a_file_that_does_not_exist_yet(ws):
+    assert ws.write("goals.json", 5, "new", author="a", note="n") == 1
+    assert ws.read("goals.json") == ("new", 1)
+    with pytest.raises(WriteConflict) as info:  # once it exists, a wrong base still conflicts
+        ws.write("goals.json", 5, "mine", author="b", note="n")
+    assert info.value.current_version == 1
+
+
 def test_read_missing_file(ws):
     with pytest.raises(FileNotFoundError):
         ws.read("nope.md")

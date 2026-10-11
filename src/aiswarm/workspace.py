@@ -82,7 +82,7 @@ class Workspace:
     def write(self, path: str, base_version: int, content: str, author: str, note: str) -> int:
         rel = self._canonical(normalise_path(path))
         current = self.current_version(rel)
-        if base_version != current:
+        if current and base_version != current:  # a new file has nothing to overwrite, so any base creates it
             raise WriteConflict(rel, current)
         target = self.root / rel
         target.parent.mkdir(parents=True, exist_ok=True)

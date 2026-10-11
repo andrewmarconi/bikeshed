@@ -141,7 +141,7 @@ System-authored entry types: `goal`, `artifact_changed`, `run_closed`.
 
 - Path: `runs/<run-id>/workspace/`, its own git repo. The Runner performs every write and commits with the agent as author, so writes are serialised and fully attributed.
 - Each agent has `workspace/agents/<name>/` for its own working; all folders are readable by all agents.
-- `write_file` must state `base_version`. If the file changed since then, the write is rejected and the agent receives the current version and content in its next View.
+- `write_file` must state `base_version`. A file that does not exist yet is created whatever base is given (small models rarely say 0). If an existing file changed since then, the write is rejected and the agent receives the current version and content in its next View.
 - Scope is per run. Cross-run knowledge lives in the Method Library and Norms; reusable artifacts may be attached to a method record by the Reporter.
 
 ## 5. Post-run cycle
