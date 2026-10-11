@@ -51,6 +51,11 @@ class LibrarySettings(BaseModel):
     top_k: int = Field(3, ge=0)
 
 
+class ObserverSettings(BaseModel):
+    judge: str | None = None  # a backend that judges text for `aiswarm observe`; agents never see its output
+    dir: Path = Path("observer")
+
+
 class Config(BaseModel):
     community_dir: Path = Path("community")
     runs_dir: Path = Path("runs")
@@ -58,10 +63,12 @@ class Config(BaseModel):
     run: RunSettings = Field(default_factory=RunSettings)
     report: ReportSettings = Field(default_factory=ReportSettings)
     library: LibrarySettings = Field(default_factory=LibrarySettings)
+    observer: ObserverSettings = Field(default_factory=ObserverSettings)
 
     @model_validator(mode="after")
     def _known_backends(self) -> "Config":
-        for label, name in (("report.narrator", self.report.narrator), ("library.embeddings", self.library.embeddings)):
+        for label, name in (("report.narrator", self.report.narrator), ("library.embeddings", self.library.embeddings),
+                            ("observer.judge", self.observer.judge)):
             if name is not None and name not in self.models:
                 raise ValueError(f"{label} names unknown model backend {name!r}")
         if self.library.embeddings and not isinstance(self.models[self.library.embeddings], OpenAIBackend):
@@ -79,6 +86,7 @@ def load_config(path: Path) -> Config:
     base = path.resolve().parent
     cfg.community_dir = (base / cfg.community_dir).resolve()
     cfg.runs_dir = (base / cfg.runs_dir).resolve()
+    cfg.observer.dir = (base / cfg.observer.dir).resolve()
     return cfg
 
 
@@ -121,4 +129,8 @@ reputation_half_life_runs = 5          # a rating this many runs old counts half
 #   base_url = "http://localhost:8000/v1"
 #   model = "mlx-community--all-MiniLM-L6-v2-4bit"
 top_k = 3                              # methods from earlier runs shown in each View
+
+[observer]
+# judge = "claude"                     # a backend that judges text for `aiswarm observe` (agents never see it)
+dir = "observer"                       # Observer reports and its own database
 """

@@ -136,3 +136,13 @@ def test_code_state_ignores_an_enclosing_repo_that_does_not_track_the_package(tm
     package.mkdir(parents=True)
     (package / "__init__.py").write_text("")
     assert code_state(package) == (None, None)
+
+
+async def test_observer_settings_are_not_part_of_provenance(run_row):
+    conn, run_id = run_row
+    plain = await capture(conn, run_id, "start", make_config(), {"a": "local"}, probe=fake_probe)
+    cfg = make_config()
+    cfg.observer.judge = "claude"
+    with_judge = await capture(conn, run_id, "resume", cfg, {"a": "local"}, probe=fake_probe)
+    assert "observer" not in plain.config
+    assert plain.fingerprint == with_judge.fingerprint

@@ -88,3 +88,16 @@ top_k = 5
 def test_report_and_library_must_name_suitable_backends(tmp_path, extra):
     with pytest.raises(ValidationError):
         load_config(write(tmp_path, '[models.l]\nkind = "openai"\nmodel = "m"\n' + extra))
+
+
+def test_observer_settings_default_and_resolve(tmp_path):
+    cfg = load_config(write(tmp_path, '[models.claude]\nkind = "claude_cli"\n'))
+    assert cfg.observer.judge is None
+    assert cfg.observer.dir == (tmp_path / "observer").resolve()
+    cfg = load_config(write(tmp_path, '[models.claude]\nkind = "claude_cli"\n[observer]\njudge = "claude"\ndir = "obs"\n'))
+    assert cfg.observer.judge == "claude" and cfg.observer.dir == (tmp_path / "obs").resolve()
+
+
+def test_observer_judge_must_name_a_backend(tmp_path):
+    with pytest.raises(ValidationError, match="observer.judge"):
+        load_config(write(tmp_path, '[models.claude]\nkind = "claude_cli"\n[observer]\njudge = "nope"\n'))

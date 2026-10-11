@@ -104,7 +104,7 @@ async def capture(
 ) -> Provenance:
     """Record what is about to produce (or continue) a run. Never fails because a server is unreachable."""
     commit, dirty = code_state(code_dir)
-    config = _without_keys(cfg.model_dump(mode="json"))
+    config = _without_keys(cfg.model_dump(mode="json", exclude={"observer"}))  # the Observer is not the harness
     prompts = prompt_snapshot()
     models = {agent: {"backend": name, **_without_keys(cfg.models[name].model_dump(mode="json"))}
               for agent, name in sorted(agent_backends.items())}
