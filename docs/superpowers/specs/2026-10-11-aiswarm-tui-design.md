@@ -1,7 +1,7 @@
 # AISwarm — TUI Design (Plan 3c)
 
 - **Date:** 2026-10-11
-- **Status:** Draft, awaiting review
+- **Status:** Approved; Plan 3c implemented
 - **Author:** Andrew Marconi (with Claude)
 - **Extends:** `2026-10-10-aiswarm-design.md` §8 (TUI) and the Plan 3a/3b addenda. Where this document is more specific, it governs; the principles still apply, above all **observation never feeds back**.
 
@@ -51,7 +51,7 @@ Keys: `q` quit; `f` toggle following (auto-scroll to new entries). Scrolling the
 - Agent cards: display name, `[control]` if control, ★ reputation (the existing `reputation()` overall, "–" with no reviews), state (`thinking…` between `agent_step_started` and `agent_step_finished`, otherwise `idle`; `failed: <kind>` when the last step failed), and the last action with its entry id.
 - Calls: each `call_consensus` of the run with supporters and objectors (from `call_status`), newest first.
 - Workspace: latest version of each file in the run (`files` table), with author and round.
-- After `run_closed`, the calls and workspace panels give way to the **post-run grid**: one row per step in `STEPS` (journal, review, responses, update, norms_critique, norms_vote, library, narrative) with done / failed / pending counts and the agents whose step failed. A run with no post-run shows "no post-run".
+- After `run_closed`, the calls and workspace panels give way to the **post-run grid**: one row per step in `STEPS` (journal, review, responses, update, norms_critique, norms_vote, library, narrative) with done and failed counts, the agents whose step failed, and a marker on the step currently running (expected call counts are not recorded, so pending cannot be shown). The workspace panel is built from the run's `write_file` entries, since the `files` table has no round. A run with no post-run shows "no post-run".
 
 Phases shown in the header: `waiting` (no events yet), `rounds`, `paused — resume with aiswarm run --resume <id>`, `closed: <reason>`, `post-run`, `post-run paused — resume with aiswarm postrun <id>`, `done`.
 
