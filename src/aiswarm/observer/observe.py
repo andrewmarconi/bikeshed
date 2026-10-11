@@ -15,7 +15,7 @@ from aiswarm.observer.inputs import benchmark_inputs, private_public_inputs, sel
 from aiswarm.observer.judge import ANALYSES, Judge
 from aiswarm.observer.report import RunSection, SummarySection, render_run, render_summary
 from aiswarm.observer.store import ObserverStore
-from aiswarm.profiles import ProfileStore
+from aiswarm.profiles import ProfileError, ProfileStore
 from aiswarm.provenance import provenance_changes
 from aiswarm.view import Who, make_who
 
@@ -50,8 +50,11 @@ async def _judge_run(judge: Judge, ostore: ObserverStore, conn: sqlite3.Connecti
 
 async def observe(cfg: Config, *, run_id: str | None = None, judge_client: ModelClient | None = None,
                   twin: str | None = None, judge_note: str | None = None) -> ObserveResult:
+    try:
+        store = ProfileStore(cfg.community_dir, create=False)  # never init, never commit
+    except ProfileError as exc:
+        raise ValueError(str(exc)) from exc
     conn = connect_readonly(cfg.db_path)
-    store = ProfileStore(cfg.community_dir)
     out_dir = cfg.observer.dir
     ostore = ObserverStore(out_dir / "observer.db")
     unfinished = [r.id for r in m.closed_runs(conn) if m.postrun_unfinished(conn, cfg.runs_dir, r.id)]

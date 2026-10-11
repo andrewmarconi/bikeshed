@@ -59,3 +59,28 @@ async def test_observe_leaves_the_community_untouched(tmp_path, community):
     await observe(cfg, judge_note="--no-judge")
     assert _fingerprint(cfg.community_dir) == before
     assert not any("observer" in p.parts for p in cfg.community_dir.rglob("*") if ".git" not in p.parts)
+
+
+async def test_observe_never_initialises_or_commits_to_the_community_repo(tmp_path, community):
+    import pytest
+
+    from aiswarm.config import Config
+    from aiswarm.observer.observe import observe
+
+    store, conn = community
+    add_run(conn, "r1", created="2099-01-01T00:00:00+00:00")
+    cfg = Config.model_validate({"models": {"claude": {"kind": "claude_cli"}}})
+    cfg.community_dir = tmp_path / "community"
+    cfg.observer.dir = tmp_path / "observer"
+    (cfg.community_dir / ".gitignore").unlink()
+    head = GitRepo(cfg.community_dir).head()
+    await observe(cfg, judge_note="--no-judge")
+    assert GitRepo(cfg.community_dir).head() == head and not (cfg.community_dir / ".gitignore").exists()
+
+    bare = tmp_path / "copy"
+    bare.mkdir()
+    (bare / "community.db").write_bytes((cfg.community_dir / "community.db").read_bytes())
+    cfg.community_dir = bare
+    with pytest.raises(ValueError, match="not a community"):
+        await observe(cfg, judge_note="--no-judge")
+    assert not (bare / ".git").exists()

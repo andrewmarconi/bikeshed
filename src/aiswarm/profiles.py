@@ -96,9 +96,15 @@ def _check_private(filename: str, content: str) -> None:
 
 
 class ProfileStore:
-    def __init__(self, community_dir: Path):
+    def __init__(self, community_dir: Path, *, create: bool = True):
+        """create=False opens an existing community without ever writing to it (for the Observer)."""
         self.root = community_dir
         self.agents_dir = community_dir / "agents"
+        if not create:
+            if not (community_dir / ".git").exists():
+                raise ProfileError(f"{community_dir} is not a community (no git repository); run `aiswarm init`")
+            self._repo = GitRepo(community_dir)
+            return
         self._repo = GitRepo.init(community_dir)
         gitignore = community_dir / ".gitignore"
         if not gitignore.exists():
