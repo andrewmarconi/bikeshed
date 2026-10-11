@@ -68,6 +68,14 @@ def test_names_are_unique_case_insensitively(store):
         store.set_public("b", "wREN", "h", "i")
 
 
+@pytest.mark.parametrize("name,headline", [("Wren (a)", "h"), ("Wren", "The Wren (A) - Wren (a)")])
+def test_set_public_rejects_the_agents_own_id_marker(store, name, headline):
+    with pytest.raises(ProfileError, match=r"your id \(a\) is shown next to your name automatically; leave it out"):
+        store.set_public("a", name, headline, "i")
+    assert store.public("a") is None
+    assert store.set_public("a", "Wren (b)", "Mentions (b)", "I am Wren (a).").name == "Wren (b)"
+
+
 def test_rename_keeps_public_history(store):
     store.set_public("a", "Wren", "h", "i")
     store.set_public("a", "Kestrel", "h2", "i2")

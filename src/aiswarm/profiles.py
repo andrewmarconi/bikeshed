@@ -238,6 +238,9 @@ class ProfileStore:
                                       former_names=former)
         except ValidationError as exc:
             raise ProfileError(summarise_validation(exc)) from exc
+        marker = f"({agent_id})"  # the display is "Name (id)"; small models copy the marker back into their name
+        if marker in candidate.name.casefold() or marker in candidate.headline.casefold():
+            raise ProfileError(f"your id {marker} is shown next to your name automatically; leave it out")
         for other in self.ids():
             other_profile = self.public(other) if other != agent_id else None
             if other_profile and other_profile.name.casefold() == candidate.name.casefold():
