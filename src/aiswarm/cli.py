@@ -62,7 +62,9 @@ def init(config: ConfigOpt = DEFAULT_PATH) -> None:
 
 
 def _introduce(cfg: Config, store: ProfileStore, agent_id: str) -> None:
-    client = make_client(cfg.models[store.record(agent_id).model], cfg.run.model_retries)
+    backend = store.record(agent_id).model
+    client = make_client(cfg.models[backend], cfg.run.model_retries)
+    typer.echo(f"asking {agent_id} ({backend}) to introduce itself…", err=True)
     try:
         profile = asyncio.run(introduce(store, agent_id, client))
     except (ProfileError, ModelError) as exc:
@@ -99,6 +101,24 @@ def agents_introduce(agent_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
     """Ask an existing agent to (re)write its first public profile."""
     cfg = _load(config)
     _introduce(cfg, ProfileStore(cfg.community_dir), agent_id)
+
+
+@agents_app.command("set-model")
+def agents_set_model(agent_id: str, model: str, config: ConfigOpt = DEFAULT_PATH) -> None:
+    """Point an agent at another model backend (not while it is in an unclosed run)."""
+    cfg = _load(config)
+    if model not in cfg.models:
+        _fail(f"unknown model backend {model!r}; known: {', '.join(cfg.models)}")
+    store = ProfileStore(cfg.community_dir)
+    if agent_id not in store.ids():
+        _fail(f"no agent {agent_id!r}")
+    conn = connect(cfg.db_path)
+    for row in conn.execute("SELECT id, status, agent_ids FROM runs WHERE status != 'closed'"):
+        if agent_id in json.loads(row["agent_ids"]):  # provenance recorded its model when that run started
+            _fail(f"{agent_id} is in run {row['id']} ({row['status']}); finish it with `aiswarm run --resume {row['id']}`")
+    was = store.record(agent_id).model
+    store.set_model(agent_id, model)
+    typer.echo(f"{agent_id} now uses {model} (was {was})")
 
 
 @agents_app.command("checkin")
@@ -246,6 +266,8 @@ def run(
     conn = connect(cfg.db_path)
     selected = None
     if resume:
+        if goal or next_:
+            _fail("give --resume or a goal/--next, not both")
         row = conn.execute("SELECT agent_ids FROM runs WHERE id = ?", (resume,)).fetchone()
         if row is None:
             _fail(f"no run {resume!r}")

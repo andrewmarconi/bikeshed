@@ -201,3 +201,14 @@ async def test_reintroducing_a_control_agent_keeps_its_first_seed(tmp_path):
     await introduce(s, "e", FakeModel([json.dumps({"name": "Eve", "headline": "H", "introduction": "Hi."})]))
     await introduce(s, "e", FakeModel([json.dumps({"name": "Eden", "headline": "H2", "introduction": "Hello."})]))
     assert 'name = "Eve"' in (s.root / "agents" / "e" / "seed" / "public.toml").read_text()
+
+
+def test_set_model_updates_the_record_and_commits(store):
+    store.set_model("a", "small")
+    assert store.record("a").model == "small"
+    assert any(c.subject == "set agent a model to small" for c in store.history("a"))
+
+
+def test_set_model_rejects_an_unknown_agent(store):
+    with pytest.raises(ProfileError, match="no agent"):
+        store.set_model("ghost", "small")

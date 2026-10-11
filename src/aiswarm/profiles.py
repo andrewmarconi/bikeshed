@@ -134,6 +134,15 @@ class ProfileStore:
     def record(self, agent_id: str) -> AgentRecord:
         return AgentRecord.model_validate(tomllib.loads((self._dir(agent_id) / "agent.toml").read_text()))
 
+    def set_model(self, agent_id: str, model: str) -> AgentRecord:
+        """Point an agent at another model backend."""
+        if agent_id not in self.ids():
+            raise ProfileError(f"no agent {agent_id!r}")
+        record = self.record(agent_id).model_copy(update={"model": model})
+        (self._dir(agent_id) / "agent.toml").write_text(_toml(record.model_dump()))
+        self._repo.commit([f"agents/{agent_id}/agent.toml"], f"set agent {agent_id} model to {model}", author="aiswarm")
+        return record
+
     def save_seed_public(self, agent_id: str) -> None:
         """Keep a control agent's first introduction as its seed profile."""
         target = self._dir(agent_id) / SEED_DIR / "public.toml"

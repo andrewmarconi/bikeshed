@@ -273,3 +273,43 @@ def test_agents_timeline(project):
     assert missing.exit_code != 0 and "no agent" in missing.output
     bad_since = invoke("agents", "timeline", "a", "--since", "nope", "-c", config)
     assert bad_since.exit_code != 0 and "no run" in bad_since.output
+
+
+def test_agents_introduce_says_what_it_is_waiting_for(project):
+    tmp_path, config = project
+    result = invoke("agents", "new", "a", "--model", "local", "--temperament", "T.", "-c", config)
+    assert "asking a (local) to introduce itself" in result.output
+
+
+def test_agents_set_model(project):
+    tmp_path, config = project
+    config.write_text(config.read_text() + '\n[models.other]\nkind = "openai"\nbase_url = "http://x/v1"\nmodel = "m"\n')
+    assert invoke("agents", "new", "a", "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    unknown = invoke("agents", "set-model", "a", "nope", "-c", config)
+    assert unknown.exit_code != 0 and "unknown model backend" in unknown.output
+    result = invoke("agents", "set-model", "a", "other", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert "a now uses other (was local)" in result.output
+    assert "other" in invoke("agents", "list", "-c", config).output
+
+
+def test_agents_set_model_refuses_during_an_unclosed_run(project):
+    from aiswarm.db import connect
+
+    tmp_path, config = project
+    assert invoke("agents", "new", "a", "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    conn = connect(tmp_path / "community" / "community.db")
+    conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES "
+                 "('r1', 'g', 'paused', '[\"a\"]', '2026-10-10T00:00:00+00:00')")
+    conn.commit()
+    result = invoke("agents", "set-model", "a", "local", "-c", config)
+    assert result.exit_code != 0
+    assert "r1" in result.output
+
+
+@pytest.mark.parametrize("extra", [["Some goal"], ["--next"]])
+def test_run_resume_rejects_a_goal_or_next(project, extra):
+    tmp_path, config = project
+    result = invoke("run", "--resume", "r1", *extra, "-c", config)
+    assert result.exit_code != 0
+    assert "--resume" in result.output and "not both" in result.output
