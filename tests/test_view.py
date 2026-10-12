@@ -183,7 +183,7 @@ def test_member_lines_show_dimension_scores(tmp_path, community, make_run):
                             view_entries=15)
     inputs = replace(inputs, dimension_scores={"b": [("Care", Reputation(4.5, 2)), ("Candour", Reputation(None, 0))]})
     view = build_view(inputs, budget_chars=50_000)
-    assert "- Bea (b) — Bea headline · no reviews yet · Care 4.5\n" in view
+    assert "- Bea (b) — Bea headline · no reviews yet · Care 4.5 · 0 Scorer points\n" in view
 
 
 def test_control_agents_see_no_earlier_journals_and_never_their_status(tmp_path, community, make_run):
@@ -230,3 +230,24 @@ def test_process2_view_counts_rounds_and_shows_own_think_notes_only(tmp_path, co
     assert "B-THOUGHT" not in view
     assert "think" not in [e.type for e in inputs.entries]
     assert "# Round 3\n" in view_for("a", 3, store, board, ws)  # Process 1 header unchanged
+
+
+def test_member_lines_show_scorer_points(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    conn.executemany("INSERT INTO scorer_points (run_id, agent_id, call_id, contribution, created_at) "
+                     "VALUES ('r1', ?, 9, 'x', 't')", [("b",), ("b",), ("c",)])
+    view = view_for("a", 2, store, board, ws)
+    assert "- Bea (b) — Bea headline · no reviews yet · 2 Scorer points" in view
+    assert "- Cyd (c) — Cyd headline · no reviews yet · 1 Scorer point\n" in view
+    assert "- Alpha (a) — Alpha headline · no reviews yet · 0 Scorer points" in view
+
+
+def test_rejected_calls_leave_the_open_calls_and_show_their_feedback(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    spent = board.append(2, "b", "call_consensus", {"synthesis": "Poll first", "refs": [], "credits": []})
+    board.append(2, SYSTEM, "scorer_rejected", {"call_id": spent.id, "feedback": "No colour named."}, refs=[spent.id])
+    open_call = board.append(3, "c", "call_consensus", {"synthesis": "Blue", "refs": [], "credits": []})
+    view = view_for("a", 3, store, board, ws)
+    opens = view.split("# Open calls for consensus\n")[1].split("\n\n")[0]
+    assert f"#{open_call.id} by Cyd (c)" in opens and f"#{spent.id} " not in opens
+    assert f"# Calls the Scorer rejected\n- #{spent.id} by Bea (b): No colour named." in view

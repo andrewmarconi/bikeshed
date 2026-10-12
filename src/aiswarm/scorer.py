@@ -1,13 +1,19 @@
 """The Scorer: an outside check that a passing call for consensus answers the goal. It never judges quality."""
 
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from aiswarm.actions import ActionError, correction_request, extract_json, simplify_schema, summarise_validation
 from aiswarm.models.base import Message, ModelClient, ModelError
 from aiswarm.prompts import render
+
+if TYPE_CHECKING:
+    from aiswarm.board import Entry
+    from aiswarm.view import Who
 
 FEEDBACK_MAX = 600
 
@@ -60,3 +66,21 @@ async def score(client: ModelClient, goal: str, synthesis: str) -> ScoreResult:
 def points(conn: sqlite3.Connection) -> dict[str, int]:
     """Lifetime Scorer points per agent, counted from the rows (never stored as a total)."""
     return {r[0]: r[1] for r in conn.execute("SELECT agent_id, COUNT(*) FROM scorer_points GROUP BY agent_id")}
+
+
+def run_summary(conn: sqlite3.Connection, run_id: str, entries: Sequence["Entry"], who: "Who") -> str:
+    """The Scorer's rulings in one run and who earned points, for the post-run journal. Empty if it never ruled."""
+    authors = {e.id: e.author for e in entries}
+    rulings = [e for e in entries if e.type in ("scorer_accepted", "scorer_rejected")]
+    if not rulings:
+        return ""
+    lines = ["## The Scorer this run"]
+    for e in rulings:
+        call = e.payload.get("call_id")
+        verdict = "accepted" if e.type == "scorer_accepted" else f"rejected — {e.payload.get('feedback', '')}"
+        lines.append(f"- call #{call} by {who(authors.get(call, '?'))}: {verdict}")
+    earned = conn.execute("SELECT agent_id, COUNT(*) FROM scorer_points WHERE run_id = ? GROUP BY agent_id "
+                          "ORDER BY agent_id", (run_id,)).fetchall()
+    if earned:
+        lines.append("Scorer points earned: " + ", ".join(f"{who(r[0])} {r[1]}" for r in earned))
+    return "\n".join(lines)

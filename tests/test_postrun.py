@@ -591,3 +591,31 @@ async def test_the_journal_step_shows_an_agent_its_own_think_notes(tmp_path, com
     assert "## Your private notes from this run\nRound 2: SECRET-THOUGHT-A" in journal_a
     journal_c = next(m[0]["content"] for _, m, _ in clients["c"].calls if m[0]["content"].startswith("# Post-run: journal"))
     assert "Your private notes from this run" not in journal_c
+
+
+async def test_the_journal_step_is_told_the_scorers_rulings_and_points(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run, reason="consensus")
+    board = Board(conn, run_id)
+    first = board.append(2, "a", "call_consensus", {"synthesis": "Poll", "refs": [], "credits": []})
+    board.append(2, SYSTEM, "scorer_rejected", {"call_id": first.id, "feedback": "No colour named."}, refs=[first.id])
+    second = board.append(3, "b", "call_consensus", {"synthesis": "Blue", "refs": [], "credits": [
+        {"agent_id": "a", "contribution": "data"}]})
+    board.append(3, SYSTEM, "scorer_accepted", {"call_id": second.id}, refs=[second.id])
+    conn.execute("INSERT INTO scorer_points (run_id, agent_id, call_id, contribution, created_at) "
+                 "VALUES (?, 'a', ?, 'data', 't')", (run_id, second.id))
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    journal_c = next(m[0]["content"] for _, m, _ in clients["c"].calls if m[0]["content"].startswith("# Post-run: journal"))
+    assert (f"## The Scorer this run\n- call #{first.id} by Alpha (a): rejected — No colour named.\n"
+            f"- call #{second.id} by Bea (b): accepted\nScorer points earned: Alpha (a) 1") in journal_c
+
+
+async def test_the_journal_step_says_nothing_about_a_scorer_that_made_no_ruling(tmp_path, community, make_run,
+                                                                                postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    journal = next(m[0]["content"] for _, m, _ in clients["a"].calls if m[0]["content"].startswith("# Post-run: journal"))
+    assert "Scorer" not in journal

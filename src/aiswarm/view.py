@@ -6,9 +6,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from aiswarm.board import SYSTEM, Board, Entry
-from aiswarm.consensus import call_status
+from aiswarm.consensus import call_status, spent_calls
 from aiswarm.profiles import ProfileStore, PublicProfile
 from aiswarm.reviews import Reputation, dimension_reputations, reputation
+from aiswarm.scorer import points
 from aiswarm.workspace import Workspace
 
 Who = Callable[[str], str]
@@ -54,6 +55,7 @@ class ViewInputs:
     dimension_scores: Mapping[str, list[tuple[str, Reputation]]] = field(default_factory=dict)
     max_rounds: int | None = None  # Process 2 shows "Round N of M"; Process 1 shows no limit
     think_notes: tuple[tuple[int, str], ...] = ()  # own think notes this run, (round, text)
+    points: Mapping[str, int] = field(default_factory=dict)  # lifetime Scorer points per member
 
 
 def _norms(store: ProfileStore) -> str:
@@ -82,7 +84,7 @@ def collect_inputs(
         reputations={i: reputation(board.conn, i, half_life) for i in store.ids()},
         library=tuple(library),
         dimension_scores={i: dimension_reputations(board.conn, i, half_life) for i in store.ids()},
-        max_rounds=max_rounds, think_notes=notes,
+        max_rounds=max_rounds, think_notes=notes, points=points(board.conn),
     )
 
 
@@ -136,7 +138,8 @@ def build_view(inputs: ViewInputs, budget_chars: int, opening_hint: bool = True)
             positions.append(f"- You adopted #{entry.payload.get('target')} (r{entry.round})")
     if positions:
         fixed.append("# Your positions\n" + "\n".join(positions))
-    calls = [e for e in inputs.entries if e.type == "call_consensus"]
+    spent = spent_calls(inputs.entries)
+    calls = [e for e in inputs.entries if e.type == "call_consensus" and e.id not in spent]
     if calls:
         lines = []
         for call in calls:
@@ -148,6 +151,12 @@ def build_view(inputs: ViewInputs, budget_chars: int, opening_hint: bool = True)
                 f"- #{call.id} by {who(call.author)}: support: {support} · object: {objection} · critiqued: {critiqued}"
             )
         fixed.append("# Open calls for consensus\n" + "\n".join(lines))
+    authors = {e.id: e.author for e in inputs.entries}
+    rejected = [e for e in inputs.entries if e.type == "scorer_rejected"]
+    if rejected:
+        fixed.append("# Calls the Scorer rejected\n" + "\n".join(
+            f"- #{e.payload.get('call_id')} by {who(authors.get(e.payload.get('call_id'), '?'))}: "
+            f"{e.payload.get('feedback', '')}" for e in rejected))
 
     footer = f"# Current goal\n{inputs.goal}"  # restated last, where a small model attends most
     remaining = budget_chars - sum(len(part) + 2 for part in [*fixed, footer])
@@ -165,6 +174,8 @@ def build_view(inputs: ViewInputs, budget_chars: int, opening_hint: bool = True)
         suffix = f" · {rep.label()}" if rep else ""
         suffix += "".join(f" · {name} {score.score:.1f}" for name, score in inputs.dimension_scores.get(agent_id, [])
                           if score.count and score.score is not None)
+        earned = inputs.points.get(agent_id, 0)
+        suffix += f" · {earned} Scorer point{'' if earned == 1 else 's'}"
         pronouns = f" · {profile.pronouns}" if profile.pronouns else ""
         block = f"- {profile.name} ({agent_id}){pronouns} — {profile.headline}{suffix}\n  {profile.introduction}"
         if profile.former_names:

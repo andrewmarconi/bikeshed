@@ -30,6 +30,7 @@ from aiswarm.report import account
 from aiswarm.reviews import (
     Review, add_response, add_review, ratings_for, render_review, responses_for, reviews_of, set_ratings,
 )
+from aiswarm.scorer import run_summary
 from aiswarm.view import Who, make_who
 
 _OPTIONAL = ("library", "narrative")  # their failure never pauses the cycle
@@ -223,6 +224,8 @@ class PostRun:
         if notes:  # Process 2 only; Process 1 runs have none, so their request is unchanged
             packet += "\n\n## Your private notes from this run\n" + "\n\n".join(
                 f"Round {e.round}: {e.payload.get('text', '').strip()}" for e in notes)
+        if summary := run_summary(self.conn, ctx.run_id, ctx.entries, ctx.who):
+            packet += "\n\n" + summary
         request = render("journal_request.md", packet=packet, journal_max=JOURNAL_MAX)
         answer = await ask(self.clients[agent_id], self._system(ctx, agent_id), request, JournalReply)
         write_journal(self.conn, self.store, agent_id, ctx.run_id, "before", answer.reply.journal)
