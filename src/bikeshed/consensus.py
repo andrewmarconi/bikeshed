@@ -57,7 +57,8 @@ def _is_idle(entry: Entry, entries: Sequence[Entry]) -> bool:
 
 
 def _idle_round(entries: Sequence[Entry], agent_ids: Sequence[str], round: int) -> bool:
-    posted = [e for e in entries if e.round == round and e.author in agent_ids and e.type != "think"]
+    posted = [e for e in entries if e.round == round and e.author in agent_ids and e.type != "think"
+              and not e.payload.get("pre_action")]  # stagnation is about each turn's action, not what came before it
     return bool(posted) and all(_is_idle(e, entries) for e in posted)
 
 

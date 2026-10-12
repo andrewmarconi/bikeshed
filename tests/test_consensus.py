@@ -114,3 +114,16 @@ def test_a_call_the_scorer_rejected_is_spent():
     assert stop_decision(entries, AGENTS, 3, RunSettings()) is None
     later = entries + [e(9, 4, "c", "vote", target=5, stance="support", reason="again")]
     assert stop_decision(later, AGENTS, 4, RunSettings()) is None  # votes on a spent call count for nothing
+
+
+def test_pre_action_messages_do_not_prevent_stagnation():
+    dm = lambda id, rnd: e(id, rnd, "a", "private_message", to="b", text="psst", pre_action=True)
+    entries = base()[:4] + [dm(5, 2), e(6, 2, "a", "pass"), e(7, 2, "b", "pass"), e(8, 2, "c", "pass"),
+                            dm(9, 3), e(10, 3, "a", "pass"), e(11, 3, "b", "pass"), e(12, 3, "c", "pass")]
+    assert stop_decision(entries, AGENTS, 3, RunSettings()) == StopDecision("stagnation")
+
+
+def test_a_message_taken_as_the_action_is_still_progress():
+    entries = base()[:4] + [e(5, 2, "a", "private_message", to="b", text="psst"), e(6, 2, "b", "pass"),
+                            e(7, 2, "c", "pass")] + [e(8 + i, 3, a, "pass") for i, a in enumerate(AGENTS)]
+    assert stop_decision(entries, AGENTS, 3, RunSettings()) is None

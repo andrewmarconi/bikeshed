@@ -404,3 +404,13 @@ async def test_resume_discards_pre_action_entries_of_a_partial_round(tmp_path, c
     assert len(rows(conn, run_id, "write_file")) == 1  # posted before the crash
     await runner_factory(store, conn, clients(), rng=NoShuffle(), max_rounds=2).run(run_id)
     assert len(rows(conn, run_id, "write_file")) == 1  # the replayed round wrote it once, not twice
+
+
+async def test_messages_followed_by_pass_still_stagnate(community, process2, runner_factory):
+    store, conn = community
+    dm = lambda v: {"type": "private_message", "to": "b", "text": "psst"}
+    clients = {"a": process2(react={r: [dm, lambda v: {"type": "pass"}] for r in range(2, 7)} | {1: propose("A")}),
+               "b": process2(react={1: propose("B")}), "c": process2(react={1: propose("C")})}
+    runner = runner_factory(store, conn, clients, max_rounds=6)
+    result = await runner.run(runner.start("G", AGENTS, process=2))
+    assert result.reason == "stagnation"
