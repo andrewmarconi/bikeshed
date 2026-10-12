@@ -3,7 +3,10 @@ from dataclasses import replace
 
 from aiswarm.observer.charts import marker_positions, network_chart, trend_chart
 from aiswarm.observer.metrics import BenchmarkAnswer, CategoryStats, Credits, Influence, RunInfo
-from aiswarm.observer.report import RunSection, SummarySection, render_run, render_summary
+from aiswarm.observer.process2 import OrderStat, Participation, RecurringPair
+from aiswarm.observer.report import (
+    Process2Section, Process2Summary, RunSection, SummarySection, render_run, render_summary,
+)
 from aiswarm.observer.store import Judgment
 
 RUN = RunInfo("r1", "Pick a fruit.", "best-fruit", "contested", False, "budget", ("a", "b"), "t", "t")
@@ -108,3 +111,49 @@ def test_network_chart_writes_a_png(tmp_path):
 def test_network_chart_with_one_agent_and_no_messages(tmp_path):
     path = network_chart(tmp_path / "n.png", "Private messages", {"a": "Alpha (a)"}, {})
     assert path.read_bytes()[:4] == b"\x89PNG"
+
+
+P2_SECTION = Process2Section(
+    network=Counter({("a", "b"): 2}), chart="../charts/network_r1.png",
+    participation={"a": Participation(supported=1, unprompted=1), "b": Participation(abstained=1)},
+    order=[OrderStat(1, 2, 1), OrderStat(2, 2, 0)])
+
+
+def tva(agent):
+    return Judgment("think_vs_act", "r1", agent, "ok", {"points": [
+        {"relation": "diverges", "about": "mango", "think_quote": "I doubt it", "action_quote": "Mango is fine"}]},
+        None, "claude-x", "p")
+
+
+def test_process_2_run_report():
+    text = render_run(section(run=P2, process2=P2_SECTION, judgments=[themes("a"), tva("a")]))
+    block = text.split("## Process 2\n")[1].split("\n## Themes")[0]
+    assert "| From \\ To | Alpha (a) | Bea (b) |" in block and "| Alpha (a) | – | 2 |" in block
+    assert "![Private messages](../charts/network_r1.png)" in block
+    assert "| Alpha (a) | 1 | 1 | 0 | 0 | 0 | 1 |" in block  # polled, support, object, abstain, failed, unprompted
+    assert "| 1 | 2 | 1 | 50% |" in block and "| 2 | 2 | 0 | 0% |" in block
+    tva_block = text.split("## Think notes vs actions (private vs public)\n")[1]
+    assert "**diverges** — mango: think “I doubt it” / action “Mango is fine”" in tva_block
+    assert "_wrote no think notes_" in tva_block  # b has no judgment and none was expected
+
+
+def test_process_2_run_without_private_messages_or_sequential_rounds():
+    empty = Process2Section(network=Counter(), chart=None, participation={}, order=[])
+    block = render_run(section(run=P2, process2=empty)).split("## Process 2\n")[1]
+    assert "_No private messages._" in block and "_No rounds after the first._" in block
+
+
+def test_process_1_run_report_has_no_process_2_sections():
+    text = render_run(section())
+    assert "## Process 2" not in text and "Think notes vs actions" not in text
+
+
+def test_summary_process_2_section():
+    s = SummarySection(runs=[P2], who=who, charts={}, identity=[], norms=[], codebook=[], twins={}, categories={},
+                       failed=[], benchmark=[], reciprocity=[], in_progress=[], judge_note=None,
+                       process2=Process2Summary([RecurringPair("a", "b", 2, 5)], {"b": Participation(objected=2)},
+                                                [OrderStat(1, 4, 3)]))
+    block = render_summary(s).split("## Process 2\n")[1]
+    assert "- Alpha (a) → Bea (b): 2 runs, 5 messages" in block
+    assert "| Bea (b) | 2 | 0 | 2 | 0 | 0 | 0 |" in block
+    assert "| 1 | 4 | 3 | 75% |" in block

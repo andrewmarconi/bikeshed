@@ -20,6 +20,9 @@ def config(tmp_path):
 
 def judge_reply(system, messages):
     text = messages[0]["content"]
+    if "## think notes" in text:
+        return json.dumps({"points": [{"relation": "diverges", "about": "pear", "think_quote": "Pear is weak.",
+                                       "action_quote": "Pear is fine."}]})
     if "codebook" in system.lower() and "## new labels" in text:
         labels = text.split("## new labels\n\n")[1].split("\n\nReply")[0].splitlines()
         return json.dumps({"assignments": [{"label": label, "code": label, "description": "d"} for label in labels]})
@@ -118,3 +121,22 @@ async def test_a_run_whose_post_run_has_not_finished_is_skipped(lab, community):
     events.write_text(events.read_text() + '{"event": "postrun_finished", "failed": 0}\n')
     await observe(lab, judge_note="--no-judge")
     assert (lab.observer.dir / "runs" / "r1.md").exists()
+
+
+async def test_observe_reports_a_process_2_run(lab, community):
+    store, conn = community
+    add_run(conn, "r5", created=FUTURE, goal_id="debate", process=2)
+    add_entry(conn, "r5", "a", "think", {"text": "Pear is weak."}, round=1, visible_to=["a"])
+    add_entry(conn, "r5", "a", "propose", {"answer_summary": "Pear", "method": "m"}, round=1)
+    add_entry(conn, "r5", "a", "think", {"text": "Still unsure."}, round=2, visible_to=["a"])
+    add_entry(conn, "r5", "a", "adopt", {"target": 2, "reason": "Pear is fine."}, refs=[2], round=2)
+    add_entry(conn, "r5", "b", "private_message", {"to": "a", "text": "psst"}, round=2, visible_to=["b", "a"], to="a")
+    result = await observe(lab, judge_client=FakeModel(judge_reply))
+    report = (lab.observer.dir / "runs" / "r5.md").read_text()
+    assert "- **Process:** 2" in report and "## Process 2" in report
+    assert "![Private messages](../charts/network_r5.png)" in report
+    assert (lab.observer.dir / "charts" / "network_r5.png") in result.written
+    assert "think “Pear is weak.” / action “Pear is fine.”" in report
+    assert "## Process 2" not in (lab.observer.dir / "runs" / "r1.md").read_text()
+    summary = (lab.observer.dir / "summary.md").read_text()
+    assert "debate (P2)" in summary and "## Process 2" in summary

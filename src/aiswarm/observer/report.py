@@ -6,8 +6,17 @@ from dataclasses import dataclass, field
 from aiswarm.observer.metrics import (
     ACTIONS, BenchmarkAnswer, CategoryStats, Credits, IdentityEvent, Influence, NormEvent, RunInfo,
 )
+from aiswarm.observer.process2 import OrderStat, Participation, RecurringPair
 from aiswarm.observer.store import Judgment
 from aiswarm.view import Who
+
+
+@dataclass
+class Process2Section:
+    network: Counter  # (sender, recipient) -> private messages
+    chart: str | None  # network PNG relative to the run report; None when no messages were sent
+    participation: dict[str, Participation]
+    order: list[OrderStat]
 
 
 @dataclass
@@ -25,6 +34,7 @@ class RunSection:
     benchmark: BenchmarkAnswer | None
     judge_note: str | None  # why nothing was judged (no judge configured / --no-judge), else None
     dimensions: dict[str, dict[str, float]] = field(default_factory=dict)  # agent -> adopted dimension -> peer mean
+    process2: Process2Section | None = None  # only for Process 2 runs
 
 
 def _dimensions(s: RunSection) -> list[str]:
@@ -78,6 +88,39 @@ def _credits(s: RunSection) -> list[str]:
     return out
 
 
+def _participation(rows: dict[str, Participation], who: Who) -> list[str]:
+    out = ["### Poll participation", "", "| Agent | polled | support | object | abstain | failed | unprompted votes |",
+           "|---|---|---|---|---|---|---|"]
+    out += [f"| {who(a)} | {p.polled} | {p.supported} | {p.objected} | {p.abstained} | {p.failed} | {p.unprompted} |"
+            for a, p in rows.items()]
+    return out + [""]
+
+
+def _order(stats: list[OrderStat]) -> list[str]:
+    out = ["### Speaking order", "", "Rounds after the first; position 1 spoke first. Taken up: adopted, refined or "
+           "cited in a call by another member.", ""]
+    if not stats:
+        return out + ["_No rounds after the first._", ""]
+    out += ["| Position | turns | taken up | share |", "|---|---|---|---|"]
+    out += [f"| {s.position} | {s.turns} | {s.taken_up} | {round(100 * s.taken_up / s.turns)}% |" for s in stats]
+    return out + [""]
+
+
+def _process2(s: RunSection) -> list[str]:
+    p = s.process2
+    out = ["## Process 2", "", "### Private messages", ""]
+    if not p.network:
+        out += ["_No private messages._", ""]
+    else:
+        agents = s.run.agent_ids
+        out += ["| From \\ To | " + " | ".join(s.who(a) for a in agents) + " |", "|---" * (len(agents) + 1) + "|"]
+        out += [f"| {s.who(a)} | " + " | ".join("–" if a == b else str(p.network.get((a, b), 0)) for b in agents) + " |"
+                for a in agents]
+        out += [""] + ([f"![Private messages]({p.chart})", ""] if p.chart else [])
+    return out + _participation({a: p.participation[a] for a in s.run.agent_ids if a in p.participation}, s.who) \
+        + _order(p.order)
+
+
 def _per_agent(s: RunSection, title: str, analysis: str, body, none_without_judgment: str | None = None) -> list[str]:
     out = [f"## {title}", ""]
     for agent in s.run.agent_ids:
@@ -102,12 +145,18 @@ def render_run(s: RunSection) -> str:
     if s.changes:
         out += ["", "> **Harness changed:** " + "; ".join(s.changes)]
     out += [""] + _metrics(s) + [""] + _dimensions(s) + _credits(s) + [""]
+    if s.process2 is not None:
+        out += _process2(s)
     out += _per_agent(s, "Themes", "themes", lambda res: [
         f"- **{s.codes.get(t['label'], t['label'])}** ({t['polarity']}; “{t['label']}”): "
         f"“{t['evidence']}” — _{t['source']}_" for t in res["themes"]])
     out += _per_agent(s, "Private journal vs public reviews", "private_public", lambda res: [
         f"- {f['colleague']}: **{f['verdict']}** — journal: “{f['journal_quote']}” / review: “{f['review_quote']}”"
         for f in res["findings"]] or ["- no colleagues compared"], none_without_judgment="_gave no peer reviews_")
+    if r.process == 2:
+        out += _per_agent(s, "Think notes vs actions (private vs public)", "think_vs_act", lambda res: [
+            f"- **{p['relation']}** — {p['about']}: think “{p['think_quote']}” / action “{p['action_quote']}”"
+            for p in res["points"]] or ["- nothing to compare"], none_without_judgment="_wrote no think notes_")
     out += _per_agent(s, "Self-image", "self_image", lambda res: (
         [f"- {c['what']}: “{c['evidence']}”" for c in res["changes"]] or ["- no change"])
         + [f"- private/public gap: **{res['private_public_gap']}** {res.get('gap_evidence', '')}".rstrip()])
@@ -127,6 +176,13 @@ def render_run(s: RunSection) -> str:
 
 
 @dataclass
+class Process2Summary:
+    pairs: list[RecurringPair]  # who wrote privately to whom in two or more runs
+    participation: dict[str, Participation]  # summed over Process 2 runs
+    order: list[OrderStat]  # summed by position over Process 2 runs
+
+
+@dataclass
 class SummarySection:
     runs: list[RunInfo]
     who: Who
@@ -143,6 +199,7 @@ class SummarySection:
     judge_note: str | None
     # control id -> rows of (run label, agent id, mean peer score, action counts) for the control and its twins
     twin_rows: dict[str, list[tuple[str, str, float | None, Counter]]] = field(default_factory=dict)
+    process2: Process2Summary | None = None  # None when no Process 2 run has closed
 
 
 TWIN_ACTIONS = ("propose", "critique", "adopt", "vote", "call_consensus", "failed")
@@ -199,6 +256,12 @@ def render_summary(s: SummarySection) -> str:
     out += [f"- {n.run_id} {s.who(n.author)} proposed a {n.kind} ({n.status}): {n.text}" for n in s.norms] or ["_None yet._"]
     out += ["", "## Credit reciprocity", ""]
     out += [f"- {run}: {s.who(g)} → {s.who(r)}" for run, g, r in s.reciprocity] or ["_No credits yet._"]
+    if s.process2 is not None:
+        p = s.process2
+        out += ["", "## Process 2", "", "### Recurring private-message pairs", ""]
+        out += [f"- {s.who(r.sender)} → {s.who(r.recipient)}: {r.runs} runs, {r.messages} messages" for r in p.pairs] \
+            or ["_None yet._"]
+        out += [""] + _participation(p.participation, s.who) + _order(p.order)
     out += ["", "## Codebook", ""]
     out += [f"- **{name}**: {description}" for name, description in s.codebook] or ["_Empty._"]
     out += ["", "## Not judged", ""]

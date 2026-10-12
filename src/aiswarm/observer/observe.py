@@ -9,11 +9,16 @@ from aiswarm.config import Config
 from aiswarm.db import connect_readonly
 from aiswarm.models.base import ModelClient, limit_clients
 from aiswarm.observer import metrics as m
-from aiswarm.observer.charts import trend_chart
+from aiswarm.observer import process2 as p2
+from aiswarm.observer.charts import network_chart, trend_chart
 from aiswarm.observer.codebook import theme_counts, update_codebook
-from aiswarm.observer.inputs import benchmark_inputs, private_public_inputs, self_image_inputs, themes_inputs
+from aiswarm.observer.inputs import (
+    benchmark_inputs, private_public_inputs, self_image_inputs, themes_inputs, think_vs_act_inputs,
+)
 from aiswarm.observer.judge import ANALYSES, Judge
-from aiswarm.observer.report import RunSection, SummarySection, render_run, render_summary
+from aiswarm.observer.report import (
+    Process2Section, Process2Summary, RunSection, SummarySection, render_run, render_summary,
+)
 from aiswarm.observer.store import ObserverStore
 from aiswarm.profiles import ProfileError, ProfileStore
 from aiswarm.provenance import provenance_changes
@@ -38,6 +43,8 @@ async def _judge_run(judge: Judge, ostore: ObserverStore, conn: sqlite3.Connecti
                               inputs=themes_inputs(conn, store, run, agent)))
         if (pp := private_public_inputs(conn, run, agent, who)) is not None:
             jobs.append(judge.run(ANALYSES["private_public"], run_id=run.id, agent_id=agent, inputs=pp))
+        if run.process == 2 and (tva := think_vs_act_inputs(conn, run, agent, who)) is not None:
+            jobs.append(judge.run(ANALYSES["think_vs_act"], run_id=run.id, agent_id=agent, inputs=tva))
         jobs.append(judge.run(ANALYSES["self_image"], run_id=run.id, agent_id=agent,
                               inputs=self_image_inputs(store, runs, run, agent)))
     if run.is_benchmark:
@@ -46,6 +53,20 @@ async def _judge_run(judge: Judge, ostore: ObserverStore, conn: sqlite3.Connecti
     await asyncio.gather(*jobs)
     labels = [t["label"] for j in ostore.judgments(run.id, "themes") if j.status == "ok" for t in j.result["themes"]]
     await update_codebook(judge, ostore, run.id, labels)
+
+
+def _process2_section(conn: sqlite3.Connection, run: m.RunInfo, who: Who, out_dir: Path,
+                      written: list[Path]) -> Process2Section | None:
+    if run.process != 2:
+        return None
+    network = p2.pm_network(conn, run)
+    chart = None
+    if network:
+        path = network_chart(out_dir / "charts" / f"network_{run.id}.png", f"Private messages: {run.tag}",
+                             {a: who(a) for a in run.agent_ids}, network)
+        written.append(path)
+        chart = f"../charts/{path.name}"
+    return Process2Section(network, chart, p2.poll_participation(conn, run), p2.speaking_order(conn, run))
 
 
 async def observe(cfg: Config, *, run_id: str | None = None, judge_client: ModelClient | None = None,
@@ -85,7 +106,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
             gap=m.self_peer_gap(conn, run.id), judgments=judgments,
             codes={label: ostore.code_for(label) or label for label in labels},
             benchmark=next((a for a in answers if a.run_id == run.id), None), judge_note=note,
-            dimensions=m.dimension_scores(conn, run.id),
+            dimensions=m.dimension_scores(conn, run.id), process2=_process2_section(conn, run, who, out_dir, written),
         )
         path = out_dir / "runs" / f"{run.id}.md"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -155,11 +176,18 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
             charts[f"Control vs twin: {who(control)}"] = trend_chart(
                 out_dir / "charts" / f"control_{control}.png", f"Peer score: {who(control)} (control) vs twin",
                 [r.tag for r in compared], series, m.harness_changes(conn, compared), "mean peer rating")
+    p2_runs = [r for r in runs if r.process == 2]
+    process2 = Process2Summary(
+        p2.recurring_pairs(conn, p2_runs),
+        p2.combine_participation([p2.poll_participation(conn, r) for r in p2_runs]),
+        p2.combine_order([p2.speaking_order(conn, r) for r in p2_runs]),
+    ) if p2_runs else None
     summary = SummarySection(
         runs=runs, who=who, charts={title: f"charts/{path.name}" for title, path in charts.items()},
         identity=m.identity_events(conn, store, runs), norms=m.norm_events(conn), codebook=ostore.codes(),
         twins=found, categories=m.by_category(conn, runs), failed=ostore.failed(), benchmark=answers,
         reciprocity=m.credit_pairs(conn, runs), in_progress=in_progress, judge_note=judge_note, twin_rows=twin_rows,
+        process2=process2,
     )
     path = out_dir / "summary.md"
     path.parent.mkdir(parents=True, exist_ok=True)
