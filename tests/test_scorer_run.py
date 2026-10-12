@@ -3,6 +3,7 @@ import json
 from aiswarm.board import Board, Entry
 from aiswarm.events import read_events
 from aiswarm.models.fake import FakeModel
+from aiswarm.scorer import scorer_request
 
 AGENTS = ["a", "b", "c"]
 ACCEPT = json.dumps({"accepted": True, "feedback": ""})
@@ -50,7 +51,7 @@ async def test_an_accepted_call_closes_the_run_and_awards_points(tmp_path, commu
     call_id = result.call_id
     assert points_rows(conn, run_id) == [("a", call_id, "the call"), ("b", call_id, "framing")]
     assert board_types(conn, run_id)[-2:] == ["scorer_accepted", "run_closed"]
-    assert scorer.calls[0][1][0]["content"] == "## Goal\n\nPick a colour\n\n## Synthesis\n\nBlue it is\n\nReply with JSON only."
+    assert scorer.calls[0][1][0]["content"] == scorer_request("Pick a colour", "Blue it is")
     events = read_events(tmp_path / "runs" / run_id / "events.jsonl")
     ruled = next(e for e in events if e["event"] == "scorer_ruled")
     assert (ruled["call"], ruled["accepted"], ruled["model"]) == (call_id, True, "fake")

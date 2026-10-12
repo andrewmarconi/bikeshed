@@ -96,3 +96,16 @@ def test_write_report_writes_account(tmp_path):
     entries = [_e(1, 0, SYSTEM, "goal", goal="G"), _e(2, 1, "a", "propose", answer_summary="S", method="M")]
     write_report(tmp_path, "G", entries, StopDecision("budget"), WHO)
     assert (tmp_path / "report" / "account.md").read_text().startswith("# Account")
+
+
+def test_a_budget_end_after_a_rejected_call_says_the_scorer_accepted_none(tmp_path):
+    entries = [
+        e(1, 0, "system", "goal", goal="G"),
+        e(2, 1, "a", "propose", answer_summary="Blue", method="Gut"),
+        e(3, 2, "a", "call_consensus", synthesis="Poll first", refs=[], credits=[]),
+        e(4, 2, "system", "scorer_rejected", call_id=3, feedback="No colour named."),
+    ]
+    write_report(tmp_path, "G", entries, StopDecision("budget"), who)
+    minority = read(tmp_path, "minority.md")
+    assert "_The community reached a consensus, but the Scorer accepted no call._" in minority
+    assert "No consensus was reached" not in minority

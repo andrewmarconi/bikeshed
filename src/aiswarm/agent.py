@@ -13,6 +13,7 @@ from aiswarm.actions import (
 from aiswarm.board import Entry
 from aiswarm.models.base import Message, ModelClient, ModelError
 from aiswarm.prompts import render
+from aiswarm.scorer import FEEDBACK_FILE
 from aiswarm.view import Who, render_entry
 from aiswarm.workspace import InvalidPath, Workspace, normalise_path
 
@@ -98,9 +99,11 @@ def make_validator(entries: Sequence[Entry], agent_ids: Sequence[str], agent_id:
                 raise ActionError(f"Unknown agent ids in credits: {unknown}. Members are {list(agent_ids)}.")
         if isinstance(action, WriteFile):
             try:
-                normalise_path(action.path)
+                path = normalise_path(action.path)
             except InvalidPath as exc:
                 raise ActionError(str(exc)) from exc
+            if path.casefold() == FEEDBACK_FILE:
+                raise ActionError(f"{FEEDBACK_FILE} is written only by the Scorer; choose another path.")
         if isinstance(action, PrivateMessage):
             others = [a for a in agent_ids if a != agent_id]
             if action.to not in others:

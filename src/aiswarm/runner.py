@@ -23,7 +23,7 @@ from aiswarm.profiles import ProfileStore
 from aiswarm.prompts import render
 from aiswarm.report import write_report
 from aiswarm.reviews import render_public_reviews
-from aiswarm.scorer import score
+from aiswarm.scorer import FEEDBACK_FILE, score
 from aiswarm.view import build_view, collect_inputs, make_who, render_entry
 from aiswarm.gitrepo import GitError
 from aiswarm.workspace import InvalidPath, Workspace, WriteConflict
@@ -358,7 +358,7 @@ class Runner:
 
     def _reject(self, run_id: str, board: Board, ws: Workspace, rnd: int, call: Entry, feedback: str) -> None:
         """The call is spent; its feedback goes on the board and into the workspace before the next round."""
-        path = "scorer_feedback.md"
+        path = FEEDBACK_FILE
         with transaction(self.conn):
             ws.write(path, ws.current_version(path), f"# Scorer feedback on call #{call.id}\n\n{feedback.strip()}\n",
                      author=SYSTEM, note=f"Scorer feedback on call #{call.id}")

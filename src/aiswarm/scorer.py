@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from aiswarm.view import Who
 
 FEEDBACK_MAX = 600
+FEEDBACK_FILE = "scorer_feedback.md"  # written only by the harness, from the Scorer's rejections
 
 
 class Ruling(BaseModel):
@@ -38,7 +39,8 @@ class ScoreResult:
 
 def scorer_request(goal: str, synthesis: str) -> str:
     """Everything the Scorer sees: the goal and the synthesis. No names, credits, votes, board or workspace."""
-    return f"## Goal\n\n{goal.strip()}\n\n## Synthesis\n\n{synthesis.strip()}\n\nReply with JSON only."
+    return (f"## Goal\n\n{goal.strip()}\n\n## Synthesis\n\n<synthesis>\n{synthesis.strip()}\n</synthesis>\n\n"
+            "Reply with JSON only.")
 
 
 async def score(client: ModelClient, goal: str, synthesis: str) -> ScoreResult:

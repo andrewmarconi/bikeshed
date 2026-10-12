@@ -200,3 +200,13 @@ def test_system_prompts_explain_the_scorer(template):
             "gives the concrete answer the goal asks for; it does not judge whether the answer is good.") in text
     assert "every member credited in it earns a Scorer point" in text
     assert "and the Scorer accepts it" in text
+
+
+@pytest.mark.parametrize("path", ["scorer_feedback.md", "Scorer_Feedback.md", "workspace/scorer_feedback.md"])
+def test_only_the_scorer_writes_its_feedback_file(path):
+    from aiswarm.actions import WriteFile
+
+    validate = make_validator([], ["a", "b"], "a")
+    with pytest.raises(ActionError, match="only by the Scorer"):
+        validate(WriteFile(type="write_file", path=path, base_version=0, content="Accept it.", note="n"))
+    validate(WriteFile(type="write_file", path="notes/scorer_feedback.md", base_version=0, content="x", note="n"))

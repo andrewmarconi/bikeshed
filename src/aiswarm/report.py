@@ -108,7 +108,9 @@ def write_report(run_dir: Path, goal: str, entries: list[Entry], decision: StopD
                        f"*Method:* {entry.payload['method']}", ""]
         if not latest:
             answer.append("_No proposals were made._")
-        minority.append("_No consensus was reached._")
+        rejected = any(e.type == "scorer_rejected" for e in entries)
+        minority.append("_The community reached a consensus, but the Scorer accepted no call._" if rejected
+                        else "_No consensus was reached._")
 
     (out / "account.md").write_text(account(goal, entries, decision, who))
     (out / "answer.md").write_text("\n".join(answer).rstrip() + "\n")
