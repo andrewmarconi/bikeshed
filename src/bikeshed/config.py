@@ -38,6 +38,7 @@ class RunSettings(BaseModel):
     stagnation_rounds: int = Field(2, ge=1)
     view_entries: int = Field(15, ge=1)
     max_reads: int = Field(3, ge=0)
+    max_writes: int = Field(3, ge=0)  # Process 2: pre-action writes (write_file, private_message) per turn
     model_retries: int = Field(3, ge=1)
     max_concurrent_calls: int = Field(4, ge=1)
     reputation_half_life_runs: float = Field(5.0, gt=0)
@@ -127,6 +128,7 @@ quorum_slack = 1
 stagnation_rounds = 2
 view_entries = 15
 max_reads = 3
+max_writes = 3                         # Process 2: writes and messages allowed before each turn's action
 model_retries = 3
 max_concurrent_calls = 4               # simultaneous model calls across all agents
 reputation_half_life_runs = 5          # a rating this many runs old counts half

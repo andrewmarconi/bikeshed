@@ -126,3 +126,13 @@ def test_scorer_judge_must_name_a_backend():
     with pytest.raises(ValueError, match="scorer.judge"):
         Config.model_validate({"models": {}, "scorer": {"judge": "nope"}})
     assert Config.model_validate({"models": {}}).scorer.judge is None
+
+
+def test_max_writes_defaults_to_three_and_cannot_be_negative():
+    from pydantic import ValidationError
+
+    from bikeshed.config import RunSettings
+
+    assert RunSettings().max_writes == 3
+    with pytest.raises(ValidationError):
+        RunSettings(max_writes=-1)

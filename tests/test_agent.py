@@ -290,3 +290,16 @@ async def test_reads_and_writes_have_separate_caps():
 def test_system_prompt_fills_in_max_writes():
     text = system_prompt("Ash (a)", "Calm.", 3, "process2_agent_system.md", max_writes=2)
     assert "up to 3 reads and up to 2 writes" in text
+
+
+def test_process2_prompt_lists_writes_as_pre_actions():
+    text = system_prompt("Ash (a)", "Calm.", 3, "process2_agent_system.md", max_writes=3)
+    pre, actions = text.split("\nPre-actions:\n")[1].split("\nActions:\n")
+    assert '"type": "write_file"' in pre and '"type": "private_message"' in pre and '"type": "read_file"' in pre
+    assert '"type": "write_file"' not in actions and '"type": "private_message"' not in actions
+    assert "without seeing the others' proposals, and you cannot write or message." in text
+
+
+def test_process1_prompt_keeps_write_file_as_an_action():
+    text = system_prompt("Ash (a)", "Calm.", 3)
+    assert "Pre-actions" not in text and '"type": "write_file"' in text
