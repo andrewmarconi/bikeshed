@@ -183,11 +183,14 @@ class Runner:
             who = make_who(inputs.profiles)
             template = "agent_system.md" if ctx.process == 1 else "process2_agent_system.md"
             system = system_prompt(
-                who(agent_id), self.store.private(agent_id)["temperament.md"], self.settings.max_reads, template
+                who(agent_id), self.store.private(agent_id)["temperament.md"], self.settings.max_reads, template,
+                max_writes=self.settings.max_writes,
             )
             client = self.clients[agent_id]
             budget = max(2_000, int(client.context_window * 3 * 0.75) - len(system) - len(request))
             view = build_view(inputs, budget_chars=budget, opening_hint=phase is None)
+            writer = (lambda action: self._pre_write(ctx, agent_id, action)) if ctx.process == 2 and phase is None \
+                else None
             outcome = await take_step(
                 client=client, system=system, view=f"{view}\n\n{request}" if request else view, round=ctx.round,
                 max_reads=self.settings.max_reads if max_reads is None else max_reads,
@@ -195,6 +198,7 @@ class Runner:
                                    reviews=lambda a: render_public_reviews(self.conn, a, who, budget // 4)),
                 validate=make_validator(inputs.entries, ctx.agent_ids, agent_id),
                 shape=shape, opening_rule=opening_rule,
+                writer=writer, max_writes=self.settings.max_writes,
             )
         except Exception as exc:  # one agent's bad step must never take down the run
             outcome = StepOutcome(Pass(type="pass"), "step_error", f"{type(exc).__name__}: {exc}")
@@ -266,6 +270,48 @@ class Runner:
             entry = board.append(rnd, agent_id, action.type, action.model_dump(exclude={"type"}), refs=target_refs(action))
         self._trace(entry.id, run_id, agent_id, outcome)
         return {"round": rnd, "agent": agent_id, "entry": entry.id, "type": entry.type, "failure": failure}
+
+    def _pre_write(self, ctx: RoundContext, agent_id: str, action: Any) -> str:
+        """A write taken before the turn's action: posted now, flagged, and reported back to the agent."""
+        with transaction(self.conn):
+            if isinstance(action, PrivateMessage):
+                entry: Entry | None = ctx.board.append(
+                    ctx.round, agent_id, "private_message", {"to": action.to, "text": action.text, "pre_action": True},
+                    to=action.to, visible_to=[agent_id, action.to])
+                result = f"Message sent to {action.to}."
+            else:
+                entry, result = self._pre_write_file(ctx, agent_id, action)
+        if entry is not None:
+            ctx.events.emit("action_posted", round=ctx.round, agent=agent_id, entry=entry.id, type=entry.type,
+                            failure=None)
+        return result
+
+    def _pre_write_file(self, ctx: RoundContext, agent_id: str, action: WriteFile) -> tuple[Entry | None, str]:
+        flag = {"pre_action": True}
+        path = action.path
+        try:
+            version = ctx.ws.write(path, action.base_version, action.content, author=agent_id, note=action.note)
+            path = ctx.ws.canonical_path(path)
+        except (InvalidPath, OSError, GitError, UnicodeError) as exc:
+            reason = f"{type(exc).__name__}: {exc}"
+            self._fail(ctx.run_id, ctx.round, agent_id, "write_error", reason)
+            ctx.board.append(ctx.round, SYSTEM, "write_rejected",
+                             {"agent": agent_id, "path": path, "reason": reason, **flag})
+            return None, f"Write rejected: {reason}"
+        except WriteConflict as exc:
+            self._fail(ctx.run_id, ctx.round, agent_id, "write_conflict", str(exc))
+            ctx.board.append(ctx.round, SYSTEM, "write_rejected", {
+                "agent": agent_id, "path": path, "base_version": action.base_version,
+                "current_version": exc.current_version, **flag,
+            })
+            return None, f"Write rejected: {path} changed since v{action.base_version}; it is now v{exc.current_version}."
+        entry = ctx.board.append(ctx.round, agent_id, "write_file",
+                                 {"path": path, "version": version, "note": action.note, **flag})
+        ctx.board.append(ctx.round, SYSTEM, "artifact_changed", {
+            "agent": agent_id, "path": path, "from_version": action.base_version, "to_version": version,
+            "note": action.note, **flag,
+        }, refs=[entry.id])
+        return entry, f"{path} is now v{version}."
 
     def _trace(self, entry_id: int, run_id: str, agent_id: str, outcome: StepOutcome) -> None:
         if outcome.reasoning:

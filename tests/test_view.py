@@ -251,3 +251,12 @@ def test_rejected_calls_leave_the_open_calls_and_show_their_feedback(tmp_path, c
     opens = view.split("# Open calls for consensus\n")[1].split("\n\n")[0]
     assert f"#{open_call.id} by Cyd (c)" in opens and f"#{spent.id} " not in opens
     assert f"# Calls the Scorer rejected\n- #{spent.id} by Bea (b): No colour named." in view
+
+
+def test_render_entry_hides_harness_flags():
+    from bikeshed.board import Entry
+    from bikeshed.view import render_entry
+
+    entry = Entry(7, "r1", 2, "a", "private_message", {"to": "b", "text": "hi", "pre_action": True}, [], "b", "t")
+    text = render_entry(entry, lambda agent_id: agent_id)
+    assert "text: hi" in text and "pre_action" not in text

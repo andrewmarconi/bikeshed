@@ -114,6 +114,7 @@ def _process2(react=None, think=None, poll=None, **kwargs):
     """A FakeModel for Process 2. Each plan maps round -> (request text -> action dict).
 
     Defaults: think writes "note rN", react passes, poll abstains.
+    A plan value may be a list: the replies for successive model calls in one turn.
     """
     def respond(system, messages):
         content = messages[0]["content"]
@@ -124,7 +125,10 @@ def _process2(react=None, think=None, poll=None, **kwargs):
             plan, default = poll or {}, lambda v: {"type": "poll_answer", "stance": "abstain", "reason": "Unsure."}
         else:
             plan, default = react or {}, lambda v: {"type": "pass"}
-        return json.dumps({"action": plan.get(rnd, default)(content)})
+        reply = plan.get(rnd, default)
+        if isinstance(reply, list):  # one reply per model call within the turn; the last one repeats
+            reply = reply[min((len(messages) - 1) // 2, len(reply) - 1)]
+        return json.dumps({"action": reply(content)})
 
     return FakeModel(respond, **kwargs)
 

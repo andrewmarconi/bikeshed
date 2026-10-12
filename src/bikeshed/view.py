@@ -30,11 +30,14 @@ def _fmt(value: Any) -> str:
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 
 
+HIDDEN_KEYS = frozenset({"pre_action"})  # harness bookkeeping, never shown to agents
+
+
 def render_entry(entry: Entry, who: Who) -> str:
     head = f"#{entry.id} [r{entry.round}] {who(entry.author)} {entry.type}"
     if entry.refs:
         head += " → " + ", ".join(f"#{ref}" for ref in entry.refs)
-    body = [f"  {key}: {_fmt(value)}" for key, value in entry.payload.items()]
+    body = [f"  {key}: {_fmt(value)}" for key, value in entry.payload.items() if key not in HIDDEN_KEYS]
     return "\n".join([head, *body])
 
 

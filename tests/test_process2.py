@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from bikeshed.config import RunSettings
 from bikeshed.events import read_events
 from bikeshed.runner import Runner
 
@@ -65,13 +66,14 @@ async def test_round_one_is_blind_and_later_rounds_speak_in_turn(community, proc
 async def test_private_messages_reach_only_their_recipient(community, process2, runner_factory):
     store, conn = community
     dm = lambda v: {"type": "private_message", "to": "b", "text": "SECRET-DM"}
-    clients = {"a": process2(react={1: propose("A"), 2: dm}),
+    clients = {"a": process2(react={1: propose("A"), 2: [dm, lambda v: {"type": "pass"}]}),
                "b": process2(react={1: propose("B")}), "c": process2(react={1: propose("C")})}
     runner = runner_factory(store, conn, clients, rng=NoShuffle(), max_rounds=3)
     run_id = runner.start("G", AGENTS, process=2)
     await runner.run(run_id)
     [message] = rows(conn, run_id, "private_message")
     assert (message["author"], message["to_"], json.loads(message["visible_to"])) == ("a", "b", ["a", "b"])
+    assert json.loads(message["payload"]) == {"to": "b", "text": "SECRET-DM", "pre_action": True}
     assert any("SECRET-DM" in v for v in views(clients["b"]))
     assert not any("SECRET-DM" in v for v in views(clients["c"]))
 
@@ -317,3 +319,88 @@ async def test_the_poll_skips_a_call_the_scorer_rejected():
             raise AssertionError("a spent call must not be polled")
 
     assert await poll(NoPoll(), ctx) is None
+
+
+WRITE_PLAN = lambda v: {"type": "write_file", "path": "plan.md", "base_version": 0, "content": "PLAN", "note": "n"}
+
+
+async def test_a_turn_writes_messages_and_then_acts(tmp_path, community, process2, find, runner_factory):
+    store, conn = community
+    dm = lambda v: {"type": "private_message", "to": "c", "text": "see plan.md"}
+    ask = lambda v: {"type": "question", "target": find(v, "propose", "b")[0], "text": "Why?"}
+    clients = {"a": process2(react={1: propose("A"), 2: [WRITE_PLAN, dm, ask]}),
+               "b": process2(react={1: propose("B")}), "c": process2(react={1: propose("C")})}
+    runner = runner_factory(store, conn, clients, rng=NoShuffle(), max_rounds=2)
+    run_id = runner.start("G", AGENTS, process=2)
+    await runner.run(run_id)
+    turn = [(r["type"], json.loads(r["payload"]).get("pre_action")) for r in conn.execute(
+        "SELECT type, payload FROM entries WHERE run_id = ? AND round = 2 AND type NOT IN ('think') ORDER BY id",
+        (run_id,))][:4]
+    assert turn == [("write_file", True), ("artifact_changed", True), ("private_message", True), ("question", None)]
+    assert (tmp_path / "runs" / run_id / "workspace" / "plan.md").read_text() == "PLAN"
+    replies = [m[-1]["content"] for _, m, _ in clients["a"].calls if len(m) > 1]
+    assert "Write result:\nplan.md is now v1." in replies and "Write result:\nMessage sent to c." in replies
+
+
+async def test_a_conflicting_pre_action_write_does_not_cost_the_turn(community, process2, find, runner_factory):
+    store, conn = community
+    ask = lambda v: {"type": "question", "target": find(v, "propose", "a")[0], "text": "Why?"}
+    clients = {"a": process2(react={1: propose("A"), 2: [WRITE_PLAN, lambda v: {"type": "pass"}]}),
+               "b": process2(react={1: propose("B"), 2: [WRITE_PLAN, ask]}), "c": process2(react={1: propose("C")})}
+    runner = runner_factory(store, conn, clients, rng=NoShuffle(), max_rounds=2)
+    run_id = runner.start("G", AGENTS, process=2)
+    await runner.run(run_id)
+    assert [r["author"] for r in rows(conn, run_id, "question")] == ["b"]  # b's turn still acted
+    [rejected] = rows(conn, run_id, "write_rejected")
+    assert json.loads(rejected["payload"])["current_version"] == 1
+    assert ("b", "write_conflict") in [tuple(r) for r in conn.execute(
+        "SELECT agent_id, kind FROM failures WHERE run_id = ?", (run_id,))]
+    replies = [m[-1]["content"] for _, m, _ in clients["b"].calls if len(m) > 1]
+    assert "Write result:\nWrite rejected: plan.md changed since v0; it is now v1." in replies
+
+
+async def test_round_one_writes_are_refused(community, process2, runner_factory):
+    store, conn = community
+    dm = lambda v: {"type": "private_message", "to": "b", "text": "early"}
+    clients = {"a": process2(react={1: [dm, propose("A")]}),
+               "b": process2(react={1: propose("B")}), "c": process2(react={1: propose("C")})}
+    runner = runner_factory(store, conn, clients, max_rounds=1)
+    run_id = runner.start("G", AGENTS, process=2)
+    await runner.run(run_id)
+    assert rows(conn, run_id, "private_message") == []
+    assert "a" in [p["author"] for p in rows(conn, run_id, "propose")]
+
+
+async def test_the_pre_action_flag_is_not_shown_to_agents(community, process2, runner_factory):
+    store, conn = community
+    dm = lambda v: {"type": "private_message", "to": "b", "text": "hello"}
+    clients = {"a": process2(react={1: propose("A"), 2: [dm, lambda v: {"type": "pass"}]}),
+               "b": process2(react={1: propose("B")}), "c": process2(react={1: propose("C")})}
+    runner = runner_factory(store, conn, clients, rng=NoShuffle(), max_rounds=3)
+    await runner.run(runner.start("G", AGENTS, process=2))
+    assert any("hello" in v for v in views(clients["b"]))
+    assert not any("pre_action" in v for a in AGENTS for v in views(clients[a]))
+
+
+async def test_resume_discards_pre_action_entries_of_a_partial_round(tmp_path, community, process2, runner_factory):
+    store, conn = community
+
+    def clients():
+        return {"a": process2(react={1: propose("A"), 2: [WRITE_PLAN, lambda v: {"type": "pass"}]}),
+                "b": process2(react={1: propose("B")}), "c": process2(react={1: propose("C")})}
+
+    class CrashingRunner(Runner):
+        async def _step(self, agent_id, ctx):
+            outcome = await super()._step(agent_id, ctx)
+            if ctx.round == 2 and agent_id == "a":
+                raise RuntimeError("crash")
+            return outcome
+
+    run_id = runner_factory(store, conn, clients(), rng=NoShuffle(), max_rounds=2).start("G", AGENTS, process=2)
+    crashing = CrashingRunner(settings=RunSettings(max_rounds=2, process=2), conn=conn, store=store,
+                              runs_dir=tmp_path / "runs", clients=clients(), rng=NoShuffle())
+    with pytest.raises(RuntimeError):
+        await crashing.run(run_id)
+    assert len(rows(conn, run_id, "write_file")) == 1  # posted before the crash
+    await runner_factory(store, conn, clients(), rng=NoShuffle(), max_rounds=2).run(run_id)
+    assert len(rows(conn, run_id, "write_file")) == 1  # the replayed round wrote it once, not twice
