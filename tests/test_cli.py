@@ -16,6 +16,8 @@ def project(tmp_path, monkeypatch, postrun_reply):
     counter = itertools.count(1)
 
     def respond(system, messages):
+        if system.startswith("You are the Scorer"):
+            return json.dumps({"accepted": True, "feedback": ""})
         first = messages[0]["content"]
         reply = postrun_reply(first)
         if reply:
@@ -396,3 +398,24 @@ def test_abandon_closes_a_dead_run_and_keeps_its_record(project):
     again = invoke("abandon", "r1", "--yes", "-c", config)
     assert again.exit_code != 0 and "already closed" in again.output
     assert invoke("abandon", "nope", "--yes", "-c", config).exit_code != 0
+
+
+def test_run_refuses_without_a_scorer(project):
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    config.write_text(config.read_text().replace('\njudge = "claude"\n', "\n"))  # the [observer] line is commented
+    result = invoke("run", "Pick a colour", "--no-postrun", "-c", config)
+    assert result.exit_code != 0 and "[scorer]" in result.output
+
+
+def test_runs_record_the_scorer_in_provenance(project):
+    import sqlite3
+
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    result = invoke("run", "Pick a colour", "--max-rounds", "1", "--no-postrun", "-c", config)
+    assert result.exit_code == 0, result.output
+    conn = sqlite3.connect(tmp_path / "community" / "community.db")
+    cfg_json, prompts = conn.execute("SELECT config, prompts FROM run_provenance WHERE phase = 'start'").fetchone()
+    assert json.loads(cfg_json)["scorer"]["judge"] == "claude" and "claude" in json.loads(cfg_json)["models"]
+    assert "scorer.md" in json.loads(prompts)

@@ -267,6 +267,9 @@ def run(
     cfg = _load(config)
     if max_rounds is not None:
         cfg.run.max_rounds = max_rounds
+    if cfg.scorer.judge is None:
+        _fail('no [scorer] configured: add a [scorer] section with judge = "<model backend>" to the config')
+    scorer_client = make_client(cfg.models[cfg.scorer.judge], cfg.run.model_retries)
     if process is not None and process not in (1, 2):
         _fail("--process must be 1 or 2")
     store = ProfileStore(cfg.community_dir)
@@ -307,7 +310,7 @@ def run(
         limited = limit_clients({**clients, **({_NARRATOR: narrator} if narrator else {})}, cfg.run.max_concurrent_calls)
         narrator_client = limited.pop(_NARRATOR, None)
         runner = Runner(settings=cfg.run, conn=conn, store=store, runs_dir=cfg.runs_dir, clients=limited,
-                        sink=_print_event, embedder=embedder, library_top_k=cfg.library.top_k)
+                        sink=_print_event, embedder=embedder, library_top_k=cfg.library.top_k, scorer=scorer_client)
         try:
             run_id = resume or runner.start(
                 goal or "", agent_ids,

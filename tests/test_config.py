@@ -101,3 +101,13 @@ def test_observer_settings_default_and_resolve(tmp_path):
 def test_observer_judge_must_name_a_backend(tmp_path):
     with pytest.raises(ValidationError, match="observer.judge"):
         load_config(write(tmp_path, '[models.claude]\nkind = "claude_cli"\n[observer]\njudge = "nope"\n'))
+
+
+def test_scorer_judge_must_name_a_backend():
+    import pytest
+
+    from aiswarm.config import Config
+
+    with pytest.raises(ValueError, match="scorer.judge"):
+        Config.model_validate({"models": {}, "scorer": {"judge": "nope"}})
+    assert Config.model_validate({"models": {}}).scorer.judge is None

@@ -57,6 +57,10 @@ class ObserverSettings(BaseModel):
     dir: Path = Path("observer")
 
 
+class ScorerSettings(BaseModel):
+    judge: str | None = None  # the backend that rules whether a passing call answers the goal; agents see its rulings
+
+
 class Config(BaseModel):
     community_dir: Path = Path("community")
     runs_dir: Path = Path("runs")
@@ -65,11 +69,12 @@ class Config(BaseModel):
     report: ReportSettings = Field(default_factory=ReportSettings)
     library: LibrarySettings = Field(default_factory=LibrarySettings)
     observer: ObserverSettings = Field(default_factory=ObserverSettings)
+    scorer: ScorerSettings = Field(default_factory=ScorerSettings)
 
     @model_validator(mode="after")
     def _known_backends(self) -> "Config":
         for label, name in (("report.narrator", self.report.narrator), ("library.embeddings", self.library.embeddings),
-                            ("observer.judge", self.observer.judge)):
+                            ("observer.judge", self.observer.judge), ("scorer.judge", self.scorer.judge)):
             if name is not None and name not in self.models:
                 raise ValueError(f"{label} names unknown model backend {name!r}")
         if self.library.embeddings and not isinstance(self.models[self.library.embeddings], OpenAIBackend):
@@ -134,4 +139,8 @@ top_k = 3                              # methods from earlier runs shown in each
 [observer]
 # judge = "claude"                     # a backend that judges text for `aiswarm observe` (agents never see it)
 dir = "observer"                       # Observer reports and its own database
+
+[scorer]
+# the backend that rules whether a passing call for consensus answers the goal (agents see its rulings)
+judge = "claude"
 """
