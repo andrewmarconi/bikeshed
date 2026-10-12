@@ -61,13 +61,19 @@ def _idle_round(entries: Sequence[Entry], agent_ids: Sequence[str], round: int) 
     return bool(posted) and all(_is_idle(e, entries) for e in posted)
 
 
+def spent_calls(entries: Sequence[Entry]) -> set[int]:
+    """Calls the Scorer rejected: they can never close the run, and votes on them count for nothing."""
+    return {e.payload.get("call_id") for e in entries if e.type == "scorer_rejected"}
+
+
 def stop_decision(
     entries: Sequence[Entry], agent_ids: Sequence[str], round: int, settings: RunSettings
 ) -> StopDecision | None:
     members = set(agent_ids)
     needed = max(1, len(members) - settings.quorum_slack)
+    spent = spent_calls(entries)
     for entry in entries:
-        if entry.type == "call_consensus":
+        if entry.type == "call_consensus" and entry.id not in spent:
             status = call_status(entries, entry.id)
             if status.critiqued and len(status.supporters & members) >= needed:
                 return StopDecision("consensus", entry.id)

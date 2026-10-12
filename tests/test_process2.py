@@ -297,3 +297,23 @@ async def test_process2_header_counts_rounds_and_process1_does_not(community, pr
     runner = runner_factory(store, conn, p1, max_rounds=1)
     await runner.run(runner.start("G", AGENTS))
     assert all("# Round 1\n" in v and " of 1" not in v for v in views(p1["a"]))
+
+
+async def test_the_poll_skips_a_call_the_scorer_rejected():
+    from types import SimpleNamespace
+
+    from aiswarm.board import Entry
+    from aiswarm.phases import poll
+
+    def entry(id_, author, type_, payload):
+        return Entry(id_, "r1", 2, author, type_, payload, [], "all", "t")
+
+    entries = [entry(5, "a", "call_consensus", {"synthesis": "S", "credits": []}),
+               entry(6, "system", "scorer_rejected", {"call_id": 5, "feedback": "No answer."})]
+    ctx = SimpleNamespace(board=SimpleNamespace(entries=lambda: entries), agent_ids=["a", "b", "c"])
+
+    class NoPoll:
+        async def _poll(self, *args):
+            raise AssertionError("a spent call must not be polled")
+
+    assert await poll(NoPoll(), ctx) is None

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from aiswarm.board import Board
-from aiswarm.consensus import call_status
+from aiswarm.consensus import call_status, spent_calls
 from aiswarm.db import transaction
 from aiswarm.events import EventLog
 from aiswarm.workspace import Workspace
@@ -94,6 +94,8 @@ async def poll(runner: "Runner", ctx: RoundContext) -> str | None:
     if not calls:
         return None
     call = calls[-1]
+    if call.id in spent_calls(entries):
+        return None  # the Scorer rejected it; there is nothing to poll on
     status = call_status(entries, call.id)
     asked = [a for a in ctx.agent_ids if a not in status.supporters | status.objectors]
     if not asked:

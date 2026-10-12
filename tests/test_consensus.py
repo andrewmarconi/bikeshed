@@ -1,6 +1,6 @@
 from aiswarm.board import Entry
 from aiswarm.config import RunSettings
-from aiswarm.consensus import StopDecision, call_status, stop_decision
+from aiswarm.consensus import StopDecision, call_status, spent_calls, stop_decision
 
 AGENTS = ["a", "b", "c"]
 
@@ -102,3 +102,15 @@ def test_adopting_a_different_entry_is_progress():
         e(8, 3, "a", "adopt", target=3, reason="changed mind"), e(9, 3, "b", "pass"), e(10, 3, "c", "pass"),
     ]
     assert stop_decision(entries, AGENTS, 3, RunSettings()) is None
+
+
+def test_a_call_the_scorer_rejected_is_spent():
+    entries = base() + [
+        e(6, 3, "b", "critique", target=5, about="answer", points="p"),
+        e(7, 3, "c", "vote", target=5, stance="support", reason="r"),
+        e(8, 3, "system", "scorer_rejected", call_id=5, feedback="No answer."),
+    ]
+    assert spent_calls(entries) == {5}
+    assert stop_decision(entries, AGENTS, 3, RunSettings()) is None
+    later = entries + [e(9, 4, "c", "vote", target=5, stance="support", reason="again")]
+    assert stop_decision(later, AGENTS, 4, RunSettings()) is None  # votes on a spent call count for nothing
