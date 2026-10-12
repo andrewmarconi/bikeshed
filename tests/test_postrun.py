@@ -580,3 +580,14 @@ async def test_review_evidence_must_be_visible_to_the_reviewer(tmp_path, communi
     await cycle(store, conn, tmp_path, clients).run(run_id)
     assert steps(conn)[("review", "c", "c")] == "failed"
     assert steps(conn)[("review", "a", "a")] == "done"
+
+
+async def test_the_journal_step_shows_an_agent_its_own_think_notes(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = private_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    journal_a = next(m[0]["content"] for _, m, _ in clients["a"].calls if m[0]["content"].startswith("# Post-run: journal"))
+    assert "## Your private notes from this run\nRound 2: SECRET-THOUGHT-A" in journal_a
+    journal_c = next(m[0]["content"] for _, m, _ in clients["c"].calls if m[0]["content"].startswith("# Post-run: journal"))
+    assert "Your private notes from this run" not in journal_c

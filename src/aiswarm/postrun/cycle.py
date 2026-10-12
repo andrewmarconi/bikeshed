@@ -218,7 +218,12 @@ class PostRun:
     # --- steps -------------------------------------------------------------------------------
 
     async def _journal(self, ctx: _Context, agent_id: str) -> str | None:
-        request = render("journal_request.md", packet=self._packet(ctx, agent_id), journal_max=JOURNAL_MAX)
+        packet = self._packet(ctx, agent_id)
+        notes = [e for e in ctx.entries if e.type == "think" and e.author == agent_id]
+        if notes:  # Process 2 only; Process 1 runs have none, so their request is unchanged
+            packet += "\n\n## Your private notes from this run\n" + "\n\n".join(
+                f"Round {e.round}: {e.payload.get('text', '').strip()}" for e in notes)
+        request = render("journal_request.md", packet=packet, journal_max=JOURNAL_MAX)
         answer = await ask(self.clients[agent_id], self._system(ctx, agent_id), request, JournalReply)
         write_journal(self.conn, self.store, agent_id, ctx.run_id, "before", answer.reply.journal)
         return answer.reasoning
