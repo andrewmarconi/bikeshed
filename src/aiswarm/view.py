@@ -105,11 +105,11 @@ NOTES_HEADER = "# Your private notes from earlier runs (only you can see these; 
 METHODS_HEADER = "# Methods from earlier runs (each is shown with its own goal, which may differ from this one)"
 
 
-def build_view(inputs: ViewInputs, budget_chars: int) -> str:
+def build_view(inputs: ViewInputs, budget_chars: int, opening_hint: bool = True) -> str:
     who = make_who(inputs.profiles)
     rounds = f"# Round {inputs.round}" + (f" of {inputs.max_rounds}" if inputs.max_rounds else "")
     header = f"# Goal\n{inputs.goal}\n\n{rounds}\nYou are {who(inputs.agent_id)}."
-    if inputs.round == 1:
+    if inputs.round == 1 and opening_hint:  # a think or poll request in round 1 asks for something else
         header += (
             "\nThis is the opening round. Propose your own position (action `propose`). "
             "Other members' opening proposals are hidden until the round ends."

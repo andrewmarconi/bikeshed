@@ -212,6 +212,81 @@ async def test_a_poll_outage_pauses_without_inventing_votes(community, process2,
     assert rows(conn, run_id, "vote") == [] and rows(conn, run_id, "abstain") == []
 
 
+class Down:
+    """Answers like the wrapped model, except requests matching `when` fail with a model error."""
+    def __init__(self, inner, when):
+        self.inner, self.when, self.context_window, self.calls = inner, when, inner.context_window, inner.calls
+
+    async def chat(self, system, messages, json_schema=None):
+        if self.when(messages[0]["content"]):
+            from aiswarm.models.base import ModelError
+            raise ModelError("down")
+        return await self.inner.chat(system, messages, json_schema)
+
+
+def react_in(round_):
+    return lambda c: f"# Round {round_} of" in c and "\n# Think\n" not in c and "\n# Poll\n" not in c
+
+
+async def test_one_dead_agent_in_the_poll_does_not_stall_the_run(community, process2, find, runner_factory):
+    store, conn = community
+    plans = {"a": {1: propose("A"), 2: lambda v: {"type": "call_consensus", "synthesis": "A it is",
+                                                  "refs": find(v, "propose", "a"), "credits": []}},
+             "b": {1: propose("B"), 2: lambda v: {"type": "vote", "target": find(v, "call_consensus")[0],
+                                                  "stance": "support", "reason": "Yes."}},
+             "c": {1: propose("C")}}
+    clients = {"a": process2(react=plans["a"]), "b": process2(react=plans["b"]),
+               "c": Down(process2(react=plans["c"]), lambda c: "\n# Poll\n" in c)}
+    runner = runner_factory(store, conn, clients, rng=NoShuffle(), max_rounds=2)
+    run_id = runner.start("G", AGENTS, process=2)
+    result = await runner.run(run_id)
+    assert result.status == "closed"
+    assert ("c", "poll:model_error") in [tuple(r) for r in conn.execute(
+        "SELECT agent_id, kind FROM failures WHERE run_id = ?", (run_id,))]
+
+
+async def test_an_outage_that_starts_mid_turn_pauses_and_the_round_replays(tmp_path, community, process2, find,
+                                                                         runner_factory):
+    store, conn = community
+
+    def plans():
+        return {a: {1: propose(a), 2: lambda v, a=a: {"type": "question", "target": find(v, "propose")[0],
+                                                      "text": f"Q-{a}"}} for a in AGENTS}
+
+    p = plans()
+    clients = {"a": process2(react=p["a"]), "b": Down(process2(react=p["b"]), react_in(2)),
+               "c": Down(process2(react=p["c"]), react_in(2))}
+    runner = runner_factory(store, conn, clients, rng=NoShuffle(), max_rounds=2)
+    run_id = runner.start("G", AGENTS, process=2)
+    assert (await runner.run(run_id)).status == "paused"
+    healthy = {a: process2(react=plan) for a, plan in plans().items()}
+    result = await runner_factory(store, conn, healthy, rng=NoShuffle(), max_rounds=2).run(run_id)
+    assert result.status == "closed"
+    assert [q["author"] for q in rows(conn, run_id, "question")] == ["a", "b", "c"]
+    events = read_events(tmp_path / "runs" / run_id / "events.jsonl")
+    assert [e["round"] for e in events if e["event"] == "round_discarded"] == [2]
+
+
+async def test_one_dead_agent_speaking_last_does_not_pause_the_run(community, process2, runner_factory):
+    store, conn = community
+    clients = {"a": process2(react={1: propose("A")}), "b": process2(react={1: propose("B")}),
+               "c": Down(process2(react={1: propose("C")}), react_in(2))}
+    runner = runner_factory(store, conn, clients, rng=NoShuffle(), max_rounds=2)
+    result = await runner.run(runner.start("G", AGENTS, process=2))
+    assert result.status == "closed"
+
+
+async def test_the_round_one_think_request_does_not_also_ask_for_a_proposal(community, process2, runner_factory):
+    store, conn = community
+    clients = {a: process2(react={1: propose(a)}) for a in AGENTS}
+    runner = runner_factory(store, conn, clients, max_rounds=1)
+    await runner.run(runner.start("G", AGENTS, process=2))
+    think = next(v for v in views(clients["a"]) if "\n# Think\n" in v)
+    react = next(v for v in views(clients["a"]) if "\n# Think\n" not in v)
+    assert "Propose your own position" not in think
+    assert "Propose your own position" in react
+
+
 async def test_process2_header_counts_rounds_and_process1_does_not(community, process2, scripted, runner_factory):
     store, conn = community
     p2 = {a: process2(react={1: propose(a)}) for a in AGENTS}

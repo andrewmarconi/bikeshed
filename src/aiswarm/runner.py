@@ -179,7 +179,7 @@ class Runner:
             )
             client = self.clients[agent_id]
             budget = max(2_000, int(client.context_window * 3 * 0.75) - len(system) - len(request))
-            view = build_view(inputs, budget_chars=budget)
+            view = build_view(inputs, budget_chars=budget, opening_hint=phase is None)
             outcome = await take_step(
                 client=client, system=system, view=f"{view}\n\n{request}" if request else view, round=ctx.round,
                 max_reads=self.settings.max_reads if max_reads is None else max_reads,

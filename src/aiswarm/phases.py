@@ -37,6 +37,14 @@ class RoundContext:
 Phase = Callable[["Runner", RoundContext], Awaitable[str | None]]  # returns a pause detail, or None to carry on
 
 
+def _outage(failed: int, members: int) -> bool:
+    """Model errors from two or more members together (or from all) look like a server outage worth pausing for.
+
+    A single dead backend costs only that agent its turns, as in Process 1; it must not stall the run.
+    """
+    return failed >= min(2, members)
+
+
 async def simultaneous_act(runner: "Runner", ctx: RoundContext) -> str | None:
     """Every agent acts on the same view; the actions are posted together in a shuffled order."""
     outcomes = await asyncio.gather(*(runner._step(a, ctx) for a in ctx.agent_ids))
@@ -68,15 +76,15 @@ async def sequential_act(runner: "Runner", ctx: RoundContext) -> str | None:
     """Agents speak one at a time in a seeded order; each sees what was said before its turn."""
     order = list(ctx.agent_ids)
     ctx.rng(runner).shuffle(order)
-    errors: list[str] = []
+    streak: list[str] = []  # model errors since the last turn that reached its model
     for agent_id in order:
         outcome = await runner._step(agent_id, ctx)
-        if outcome.failure == "model_error":
-            errors.append(outcome.detail)
+        streak = [*streak, outcome.detail] if outcome.failure == "model_error" else []
         with transaction(runner.conn):
             event = runner._post(ctx.board, ctx.ws, ctx.run_id, ctx.round, agent_id, outcome)
         ctx.events.emit("action_posted", **event)
-    return errors[0] if len(errors) == len(order) else None
+    # The turns ended in an outage: pause, and the resumed run discards and replays this round.
+    return streak[0] if streak and _outage(len(streak), len(order)) else None
 
 
 async def poll(runner: "Runner", ctx: RoundContext) -> str | None:
@@ -91,7 +99,7 @@ async def poll(runner: "Runner", ctx: RoundContext) -> str | None:
     if not asked:
         return None
     outcomes = await asyncio.gather(*(runner._poll(a, ctx, call) for a in asked))
-    if all(o.failure == "model_error" for o in outcomes):
+    if all(o.failure == "model_error" for o in outcomes) and _outage(len(asked), len(ctx.agent_ids)):
         return outcomes[0].detail
     order = list(zip(asked, outcomes))
     ctx.rng(runner, "-poll").shuffle(order)
