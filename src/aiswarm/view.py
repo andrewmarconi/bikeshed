@@ -94,6 +94,11 @@ def _fit(title: str, items: list[str], remaining: int) -> tuple[str | None, int]
     return title + "\n" + "\n".join(reversed(kept)), remaining - used
 
 
+# Notes, journals and library methods carry over from runs with other goals; small models drift back to those goals
+NOTES_HEADER = "# Your private notes from earlier runs (only you can see these; those runs may have had other goals)"
+METHODS_HEADER = "# Methods from earlier runs (each is shown with its own goal, which may differ from this one)"
+
+
 def build_view(inputs: ViewInputs, budget_chars: int) -> str:
     who = make_who(inputs.profiles)
     header = f"# Goal\n{inputs.goal}\n\n# Round {inputs.round}\nYou are {who(inputs.agent_id)}."
@@ -106,7 +111,7 @@ def build_view(inputs: ViewInputs, budget_chars: int) -> str:
     notes = [f"## {name}\n{text.strip()}" for name, text in inputs.own_notes.items() if text.strip()]
     notes += [f"## journal/{run_id}.md\n{text.strip()}" for run_id, text in inputs.journals if text.strip()]
     if notes:
-        fixed.append("# Your private notes (only you can see these)\n" + "\n\n".join(notes))
+        fixed.append(f"{NOTES_HEADER}\n" + "\n\n".join(notes))
     if inputs.norms.strip():
         fixed.append("# Community norms\n" + inputs.norms.strip())
     positions: list[str] = []
@@ -134,7 +139,8 @@ def build_view(inputs: ViewInputs, budget_chars: int) -> str:
             )
         fixed.append("# Open calls for consensus\n" + "\n".join(lines))
 
-    remaining = budget_chars - sum(len(part) + 2 for part in fixed)
+    footer = f"# Current goal\n{inputs.goal}"  # restated last, where a small model attends most
+    remaining = budget_chars - sum(len(part) + 2 for part in [*fixed, footer])
     recent = inputs.entries[-inputs.view_entries:]
     recent_ids = {e.id for e in recent}
     mine = {e.id for e in inputs.entries if e.author == inputs.agent_id}
@@ -159,11 +165,11 @@ def build_view(inputs: ViewInputs, budget_chars: int) -> str:
     for title, items in (
         ("# Entries that respond to you", [render_entry(e, who) for e in about_me]),
         ("# Recent board entries", [render_entry(e, who) for e in recent]),
-        ("# Methods from earlier runs", list(inputs.library)),
+        (METHODS_HEADER, list(inputs.library)),
         ("# Workspace files", files),
         ("# Community members", members),
     ):
         section, remaining = _fit(title, items, remaining)
         if section:
             parts.append(section)
-    return "\n\n".join(parts)
+    return "\n\n".join([*parts, footer])

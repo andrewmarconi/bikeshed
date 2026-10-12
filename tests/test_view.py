@@ -1,7 +1,7 @@
 from dataclasses import replace
 
 from aiswarm.board import SYSTEM, Board, Entry
-from aiswarm.view import build_view, collect_inputs, make_who, render_entry
+from aiswarm.view import METHODS_HEADER, NOTES_HEADER, build_view, collect_inputs, make_who, render_entry
 from aiswarm.workspace import Workspace
 
 
@@ -68,6 +68,27 @@ def test_trimming_keeps_newest_entries_and_header(tmp_path, community, make_run)
     assert "QUESTION-59" in view
     assert "QUESTION-00" not in view
     assert len(view) <= 2_500
+    assert view.endswith("# Current goal\nPick a colour")
+
+
+def test_view_ends_by_restating_the_current_goal(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    store.write_private("a", "lessons.md", "An old lesson about pizza.")
+    view = view_for("a", 1, store, board, ws)
+    assert view.startswith("# Goal\nPick a colour")
+    assert view.endswith("\n\n# Current goal\nPick a colour")
+
+
+def test_carried_over_notes_and_methods_are_labelled_as_from_earlier_runs(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    store.write_private("a", "lessons.md", "An old lesson.")
+    inputs = collect_inputs(agent_id="a", goal="Pick a colour", round=2, board=board, store=store, workspace=ws,
+                            view_entries=15, library=["- #9 in run old by Bea (b) (propose); goal: G\n  method: M"])
+    view = build_view(inputs, budget_chars=50_000)
+    assert f"{NOTES_HEADER}\n## lessons.md\nAn old lesson." in view
+    assert NOTES_HEADER == "# Your private notes from earlier runs (only you can see these; those runs may have had other goals)"
+    assert METHODS_HEADER == "# Methods from earlier runs (each is shown with its own goal, which may differ from this one)"
+    assert METHODS_HEADER in view
 
 
 def test_entries_responding_to_me_survive_outside_recent_window(tmp_path, community, make_run):
@@ -145,7 +166,7 @@ def test_view_shows_methods_from_earlier_runs(tmp_path, community, make_run):
     inputs = collect_inputs(agent_id="a", goal="Pick a colour", round=2, board=board, store=store, workspace=ws,
                             view_entries=15, library=["- #9 in run old by Bea (b) (propose); goal: G\n  method: LIB-METHOD"])
     view = build_view(inputs, budget_chars=50_000)
-    assert "# Methods from earlier runs\n- #9 in run old" in view
+    assert f"{METHODS_HEADER}\n- #9 in run old" in view
     assert view.index("# Methods from earlier runs") < view.index("# Workspace files")
     assert "# Methods from earlier runs" not in view_for("a", 2, store, board, ws)
 

@@ -119,6 +119,8 @@ Contents, in priority order when trimming to the model's real context window:
 8. Workspace file list (paths + versions)
 9. All agents' public profiles with reputation scores (e.g. `Wren (b) — "headline" ★4.2 (12 reviews) · credit-giving 3.1`, plus introduction and former names)
 
+The View ends by restating the goal (`# Current goal`), never trimmed. Private notes and library methods are headed as coming from earlier runs that may have had other goals: small models otherwise drift back to the previous run's goal.
+
 **Privacy invariants** (enforced and tested): an agent's journal, `temperament.md`, `self.md`, `lessons.md`, `peer-notes.md`, and its private vote rationale (Phase 2) never appear in any other agent's View. Reasoning traces, goal category tags, control status, and the Observer's output never appear in any View.
 
 ### 4.3 Posting actions
