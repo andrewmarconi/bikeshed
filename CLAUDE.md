@@ -44,7 +44,7 @@ A run records code provenance (git HEAD and whether the tree is dirty, untracked
 - Editing `lab/bikeshed.toml` is safe; it is re-read at the next start/resume and recorded then.
 - Don't run `omlx restart`; Andrew restarts oMLX from its app.
 
-`develop` is the working branch; there is no remote.
+`develop` is the working branch. `origin` is the public GitHub repo `andrewmarconi/bikeshed`; push only when Andrew asks.
 
 ## Architecture
 
