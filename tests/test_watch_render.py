@@ -1,5 +1,11 @@
+from rich.text import Text
+
+from aiswarm.board import Entry
 from aiswarm.watch import render
-from aiswarm.watch.state import AgentCard, CallLine, FileLine, PostRunRow, RunState
+from aiswarm.watch.state import AgentCard, CallLine, FeedLine, FileLine, PostRunRow, RunState, feed_line
+
+COLOURS = render.agent_colours(["a", "b"])
+PINK, TEAL = render.AGENT_COLOURS[0], render.AGENT_COLOURS[1]
 
 
 def state(**kw):
@@ -9,39 +15,92 @@ def state(**kw):
     return s
 
 
-def test_header():
-    assert render.header(state(round=4, phase="rounds")) == \
-        "best-fruit (contested) · run r1 · round 4/12 · rounds — Pick a fruit."
+def who(agent_id):
+    return {"a": "Ash (a)", "b": "Bea (b)", "system": "system"}.get(agent_id, f"{agent_id} ({agent_id})")
 
 
-def test_cards_show_control_reputation_state_and_last_action():
-    s = state(cards={"a": AgentCard("a", "Ash", control=True, reputation=4.25, state="thinking…", last="critique #301"),
-                     "b": AgentCard("b", "Bea")})
-    text = render.cards(s)
-    assert "Ash (a) [control] ★4.2  thinking…" in text and "  last: critique #301" in text
-    assert "Bea (b) ★–  idle" in text and "  last: –" in text
+def line(type_, payload, author="a"):
+    return feed_line(Entry(5, "r1", 2, author, type_, payload, [], "all", "t"), who)
 
 
-def test_calls_and_files():
-    s = state(calls=[CallLine(9, "Bea (b)", 3, 1)], files=[FileLine("rules.md", 3, "c", 4)])
-    assert render.calls(s) == "Calls for consensus\n#9 by Bea (b): 3 for, 1 against"
-    assert render.files(s) == "Workspace\nrules.md v3 (c, r4)"
-    assert render.calls(state()) == "Calls for consensus\n(none yet)"
+def style_of(text: Text, fragment: str) -> str:
+    start = text.plain.index(fragment)
+    return " ".join(str(s.style) for s in text.spans if s.start <= start < s.end)
+
+
+ALL = [line("propose", {"answer_summary": "Mango [bold]ripe[/] [red]x", "method": "m"}),
+       line("critique", {"target": 3, "points": "too sweet"}, "b"),
+       line("vote", {"target": 3, "stance": "object", "reason": "no"}),
+       line("vote", {"target": 3, "stance": "support", "reason": ""}),
+       line("pass", {"failure": "model_error"}), line("pass", {}),
+       line("think", {"text": "[/] where I stand"}), line("private_message", {"to": "b", "text": "psst"}),
+       line("private_message", {"to": "zz", "text": "to nobody"}),
+       line("artifact_changed", {"path": "x"}, "system"), line("question", {"text": "why?"}, "q")]
+
+
+def test_styled_text_reads_exactly_like_the_plain_line():
+    for item in ALL:
+        assert render.styled(item, COLOURS).plain == item.text
+
+
+def test_brackets_in_entries_stay_literal():
+    assert "Mango [bold]ripe[/] [red]x" in render.styled(ALL[0], COLOURS).plain
+
+
+def test_action_words_and_agents_are_coloured():
+    propose = render.styled(ALL[0], COLOURS)
+    assert "green" in style_of(propose, "propose") and f"bold {PINK}" in style_of(propose, "Ash (a)")
+    assert "dark_orange" in style_of(render.styled(ALL[1], COLOURS), "critique")
+    assert "red" in style_of(render.styled(ALL[2], COLOURS), "object")
+    assert "green" in style_of(render.styled(ALL[3], COLOURS), "support")
+    assert "red" in style_of(render.styled(ALL[4], COLOURS), "(failed: model_error)")
+    assert "dim" in style_of(render.styled(ALL[5], COLOURS), "pass")
+    pm = render.styled(ALL[7], COLOURS)
+    assert f"bold {TEAL}" in style_of(pm, "Bea (b)")
+    assert style_of(render.styled(ALL[9], COLOURS), "artifact_changed") == "dim italic"
+
+
+def test_unknown_agents_are_bold_without_a_colour():
+    assert style_of(render.styled(ALL[8], COLOURS), "zz (zz)") == "bold"
+    assert style_of(render.styled(ALL[10], COLOURS), "q (q)") == "bold"
+
+
+def test_agent_colours_follow_id_order_and_repeat():
+    colours = render.agent_colours(["f", "b", "a", "c", "d", "e"])
+    assert [colours[x] for x in "abcde"] == list(render.AGENT_COLOURS)
+    assert colours["f"] == render.AGENT_COLOURS[0]
+
+
+def test_status_bar():
+    s = state(process=2, phase="rounds", step_phase="react", round=7,
+              cards={"a": AgentCard("a", "Ash", control=True, reputation=4.25, state="speaking…"),
+                     "b": AgentCard("b", "Bartholomew-the-long", state="failed: model_error")},
+              calls=[CallLine(40, "Bea (b)", 3, 1), CallLine(12, "Ash (a)", 1, 0)])
+    bar = render.status(s, COLOURS)
+    assert bar.plain == ("round 7/12 · react │ Ash ctl ★4.2 speaking… · Bartholomew… ★– failed: model_error"
+                         " │ call #40: 3 for, 1 against")
+    assert "bold" in style_of(bar, "speaking…") and "red" in style_of(bar, "failed: model_error")
+    assert f"bold {PINK}" in style_of(bar, "Ash")
+    assert render.status(state(), COLOURS).plain == "round 0/12 · waiting │ (no agents yet) │ no call yet"
+
+
+def test_phase_label():
+    assert render.phase_label(state(process=2, phase="rounds", step_phase="poll")) == "poll"
+    assert render.phase_label(state(process=2, phase="post-run", step_phase="poll")) == "post-run"
+    assert render.phase_label(state(phase="rounds")) == "rounds"
+
+
+def test_popup_holds_the_workspace_and_post_run_grid():
+    s = state(files=[FileLine("rules.md", 3, "c", 4)], postrun=[PostRunRow("journal", 5, 0, [])], postrun_seen=True)
+    text = render.popup(s)
+    assert "Workspace\nrules.md v3 (c, r4)" in text and "Post-run" in text and "journal" in text
+
+
+def test_files_and_postrun_grid():
     assert render.files(state()) == "Workspace\n(no files yet)"
-
-
-def test_calls_show_only_the_newest_few():
-    many = [CallLine(i, "Bea (b)", 1, 0) for i in range(50, 30, -1)]  # newest first
-    text = render.calls(state(calls=many))
-    assert text.count(" by Bea (b)") == render.CALLS_SHOWN and "#50" in text and "#30" not in text
-    assert text.endswith(f"+{20 - render.CALLS_SHOWN} older")
-
-
-def test_postrun_grid():
     rows = [PostRunRow("journal", 5, 0, []), PostRunRow("review", 3, 2, ["b", "d"])]
     text = render.postrun(state(postrun=rows, postrun_seen=True, current_step="review"))
-    assert "journal" in text and "done 5" in text
-    assert "review" in text and "failed 2 (b, d)" in text and "← running" in text
+    assert "done 5" in text and "failed 2 (b, d)" in text and "← running" in text
     assert render.postrun(state(closed_reason="budget")) == "Post-run\nno post-run"
 
 
@@ -51,5 +110,10 @@ def test_show_postrun_only_after_the_rounds():
 
 
 def test_footer():
-    assert render.footer(state(), True) == "q quit · f follow: on"
-    assert render.footer(state(bad_lines=2), False) == "q quit · f follow: off · 2 unreadable event lines"
+    assert render.footer(state(), True) == "q quit · f follow: on · w workspace"
+    assert render.footer(state(bad_lines=2), False) == \
+        "q quit · f follow: off · w workspace · 2 unreadable event lines"
+
+
+def test_feed_line_type_is_exported_for_the_app():
+    assert FeedLine is type(ALL[0])
