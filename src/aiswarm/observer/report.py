@@ -96,7 +96,7 @@ def _scorer_run(s: RunSection) -> list[str]:
     if not s.rulings:
         return out + ["_The Scorer did not rule in this run._", ""]
     for r in s.rulings:
-        verdict = "**accepted**" if r.accepted else f"**rejected** — {r.feedback}"
+        verdict = "**accepted**" if r.accepted else f"**rejected** — {' '.join(r.feedback.split())}"  # one list item
         out.append(f"- call #{r.call_id} by {s.who(r.caller)}: {verdict}")
     if s.awards:
         callers = {r.call_id: r.caller for r in s.rulings}

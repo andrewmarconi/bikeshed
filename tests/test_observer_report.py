@@ -204,3 +204,9 @@ def test_summary_before_any_ruling():
         benchmark=[], reciprocity=[], in_progress=[], judge_note=None,
         scorer=ScorerSummary(0, 0, {}, {}))
     assert "_The Scorer has not ruled yet._" in render_summary(s)
+
+
+def test_multi_line_feedback_stays_inside_its_list_item():
+    text = render_run(section(rulings=[RulingRow(4, "a", False, "Missing:\n- a price\n# Next")]))
+    assert "- call #4 by Alpha (a): **rejected** — Missing: - a price # Next" in text
+    assert "\n# Next" not in text
