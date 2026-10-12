@@ -14,6 +14,7 @@ from bikeshed.view import Who
 
 ACTIONS = ("propose", "critique", "adopt", "refine", "vote", "call_consensus", "private_message", "write_file", "pass",
            "failed")
+PRE_ACTIONS = ("pre:write_file", "pre:private_message")  # Process 2 writes taken before a turn's action
 
 
 @dataclass(frozen=True)
@@ -92,14 +93,17 @@ def _entries(conn: sqlite3.Connection, run_id: str) -> list[sqlite3.Row]:
 
 
 def action_mix(conn: sqlite3.Connection, run: RunInfo) -> dict[str, Counter]:
-    mix: dict[str, Counter] = {agent: Counter({a: 0 for a in ACTIONS}) for agent in run.agent_ids}
+    mix: dict[str, Counter] = {agent: Counter({a: 0 for a in ACTIONS + PRE_ACTIONS}) for agent in run.agent_ids}
     for row in _entries(conn, run.id):
         if row["author"] not in mix:
             continue
         kind = row["type"]
-        if kind == "pass" and "failure" in json.loads(row["payload"]):
+        payload = json.loads(row["payload"])
+        if kind == "pass" and "failure" in payload:
             kind = "failed"
-        if kind in ACTIONS:
+        elif payload.get("pre_action"):
+            kind = f"pre:{kind}"
+        if kind in ACTIONS or kind in PRE_ACTIONS:
             mix[row["author"]][kind] += 1
     return mix
 

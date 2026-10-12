@@ -220,3 +220,16 @@ def test_closed_runs_reads_a_store_from_before_process_2():
         "INSERT INTO runs VALUES ('r1', 'g', 'closed', 'budget', '[\"a\"]', '2026-10-01T00:00:00+00:00', "
         "NULL, NULL, 0);")
     assert [(r.id, r.process) for r in closed_runs(conn)] == [("r1", 1)]
+
+
+def test_action_mix_counts_pre_actions_apart_from_turns(community):
+    store, conn = community
+    add_run(conn, "r1")
+    add_entry(conn, "r1", "a", "private_message", {"to": "b", "text": "t", "pre_action": True}, to="b",
+              visible_to=["a", "b"])
+    add_entry(conn, "r1", "a", "write_file", {"path": "p.md", "version": 1, "note": "n", "pre_action": True})
+    add_entry(conn, "r1", "a", "private_message", {"to": "b", "text": "t"}, to="b", visible_to=["a", "b"])
+    add_entry(conn, "r1", "a", "pass", {})
+    mix = action_mix(conn, closed_runs(conn)[0])
+    assert mix["a"]["pre:private_message"] == 1 and mix["a"]["pre:write_file"] == 1
+    assert mix["a"]["private_message"] == 1 and mix["a"]["write_file"] == 0 and mix["a"]["pass"] == 1

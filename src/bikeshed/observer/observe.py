@@ -151,7 +151,7 @@ def _charts(conn: sqlite3.Connection, ostore: ObserverStore, runs: list[m.RunInf
     mixes = {r.id: m.action_mix(conn, r) for r in runs}
 
     def share(run: m.RunInfo, action: str) -> float | None:
-        total = sum(sum(c.values()) for c in mixes[run.id].values())
+        total = sum(c[a] for c in mixes[run.id].values() for a in m.ACTIONS)
         return None if total == 0 else sum(c[action] for c in mixes[run.id].values()) / total
 
     specs: dict[str, tuple[str, dict[str, list[float | None]], str]] = {

@@ -85,3 +85,26 @@ def test_a_failed_turn_keeps_its_place_but_is_not_counted(community):
     lead = add_entry(conn, "r1", "b", "propose", {"answer_summary": "y", "method": "m"}, round=2)
     add_entry(conn, "r1", "c", "adopt", {"target": lead, "reason": "r"}, refs=[lead], round=2)
     assert speaking_order(conn, closed_runs(conn)[0]) == [OrderStat(2, 1, 1), OrderStat(3, 1, 0)]
+
+
+def test_pre_action_messages_are_not_the_turn(community):
+    store, conn = community
+    add_run(conn, "r1", process=2)
+    add_entry(conn, "r1", "a", "propose", {"answer_summary": "x", "method": "m"}, round=1)
+    for agent in ("b", "a"):
+        think(conn, "r1", agent, 2)
+    add_entry(conn, "r1", "b", "private_message", {"to": "a", "text": "psst", "pre_action": True}, round=2,
+              visible_to=["b", "a"], to="a")
+    lead = add_entry(conn, "r1", "b", "propose", {"answer_summary": "y", "method": "m"}, round=2)
+    add_entry(conn, "r1", "a", "adopt", {"target": lead, "reason": "r"}, refs=[lead], round=2)
+    # round 2: b's turn is its propose (taken up by a), not its message
+    assert speaking_order(conn, closed_runs(conn)[0])[0] == OrderStat(1, 1, 1)
+
+
+def test_unflagged_messages_in_old_runs_are_the_turn(community):
+    store, conn = community
+    add_run(conn, "r1", process=2)
+    add_entry(conn, "r1", "a", "propose", {"answer_summary": "x", "method": "m"}, round=1)
+    pm(conn, "r1", "b", "a", round=2)
+    add_entry(conn, "r1", "a", "pass", {}, round=2)
+    assert [s.turns for s in speaking_order(conn, closed_runs(conn)[0])] == [1, 1]

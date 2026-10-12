@@ -4,7 +4,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from bikeshed.observer.metrics import (
-    ACTIONS, BenchmarkAnswer, CategoryStats, Credits, IdentityEvent, Influence, NormEvent, RunInfo,
+    ACTIONS, PRE_ACTIONS, BenchmarkAnswer, CategoryStats, Credits, IdentityEvent, Influence, NormEvent, RunInfo,
 )
 from bikeshed.observer.process2 import OrderStat, Participation, RecurringPair
 from bikeshed.observer.scoring import Award, RulingRow, SelfCredit
@@ -67,11 +67,11 @@ def _fmt(value: float | None) -> str:
 
 
 def _metrics(s: RunSection) -> list[str]:
-    out = ["## Metrics", "", "| Agent | " + " | ".join(ACTIONS) + " | influence | peer | self − peer |",
-           "|---" * (len(ACTIONS) + 4) + "|"]
+    out = ["## Metrics", "", "| Agent | " + " | ".join(ACTIONS + PRE_ACTIONS) + " | influence | peer | self − peer |",
+           "|---" * (len(ACTIONS + PRE_ACTIONS) + 4) + "|"]
     for agent in s.run.agent_ids:
         mix = s.mix.get(agent, Counter())
-        counts = " | ".join(str(mix.get(a, 0)) for a in ACTIONS)
+        counts = " | ".join(str(mix.get(a, 0)) for a in ACTIONS + PRE_ACTIONS)
         score = s.influence.get(agent, Influence()).score
         out.append(f"| {s.who(agent)} | {counts} | {score} | {_fmt(s.peer.get(agent))} | {_fmt(s.gap.get(agent))} |")
     return out

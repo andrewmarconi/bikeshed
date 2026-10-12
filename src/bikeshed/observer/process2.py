@@ -14,10 +14,11 @@ def _entries(conn: sqlite3.Connection, run: RunInfo) -> list[sqlite3.Row]:
 
 
 def _turns(rows: list[sqlite3.Row]) -> dict[tuple[int, str], int]:
-    """(round, member) -> entry id of that member's react turn: its first entry in the round that is not a think note."""
+    """(round, member) -> entry id of that member's react turn: its first entry in the round that is neither a think
+    note nor a pre-action. In runs before pre-actions existed, a write or message was itself the turn."""
     turns: dict[tuple[int, str], int] = {}
     for r in rows:
-        if r["type"] != "think":
+        if r["type"] != "think" and not json.loads(r["payload"]).get("pre_action"):
             turns.setdefault((r["round"], r["author"]), r["id"])
     return turns
 
