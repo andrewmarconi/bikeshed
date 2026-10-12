@@ -134,3 +134,10 @@ def test_footer():
 
 def test_feed_line_type_is_exported_for_the_app():
     assert FeedLine is type(ALL[0])
+
+
+def test_agents_line_breaks_after_every_third_agent():
+    cards = {a: AgentCard(a, n) for a, n in zip("abcde", ["Ash", "Bea", "Cyd", "Dee", "Eve"])}
+    lines = render.status(state(cards=cards), COLOURS).plain.split("\n")
+    assert lines[1:] == ["Ash ★ – ◆ 0 idle   ·   Bea ★ – ◆ 0 idle   ·   Cyd ★ – ◆ 0 idle",
+                         "Dee ★ – ◆ 0 idle   ·   Eve ★ – ◆ 0 idle"]

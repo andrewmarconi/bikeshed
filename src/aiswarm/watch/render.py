@@ -73,6 +73,7 @@ def short(name: str) -> str:
 
 RULING_STYLES = {"accepted": "green", "rejected": "red"}
 AGENT_SEPARATOR = "   ·   "
+AGENTS_PER_LINE = 3  # a hard break, so five agents read 3 + 2 instead of wrapping mid-agent
 
 
 def ruling(s: RunState) -> Text:
@@ -83,7 +84,7 @@ def ruling(s: RunState) -> Text:
 
 
 def status(s: RunState, colours: Mapping[str, str]) -> Text:
-    """Two lines: the run (round, phase, newest call, Scorer) and the agents. The agents line wraps, never cuts."""
+    """Two lines: the run (round, phase, newest call, Scorer) and the agents. Agents go three to a line; a line still wraps, never cuts."""
     out = Text(f"round {s.round}/{s.max_rounds} · {phase_label(s)} │ ")
     if s.calls:  # newest first; the poll treats the latest call as the open one
         c = s.calls[0]
@@ -95,7 +96,7 @@ def status(s: RunState, colours: Mapping[str, str]) -> Text:
     out.append("\n")
     for i, card in enumerate(s.cards.values()):
         if i:
-            out.append(AGENT_SEPARATOR)
+            out.append("\n" if i % AGENTS_PER_LINE == 0 else AGENT_SEPARATOR)
         out.append_text(_agent(short(card.name), card.agent_id, colours))
         if card.control:
             out.append(" ctl", style="dim")
