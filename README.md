@@ -81,6 +81,8 @@ Two more tools make the results easier to read:
 
 AISwarm runs anywhere Python 3.14 and git do; it has been tested on an M4 Mac with oMLX. You need [uv](https://docs.astral.sh/uv/) and at least one model backend: a local OpenAI-compatible server (such as oMLX), a cloud provider with an OpenAI-compatible API, or the `claude` command-line tool. With a cloud backend, even a 64-bit Raspberry Pi should do.
 
+Runs are chatty, which matters if you pay per token. One Process 2 run (5 agents, 9 rounds, ending in consensus, plus its post-run cycle) on Qwen3.6-35B-A3B took roughly 260 model requests and 1.9M tokens (1.4M input, 455K output). That run reached consensus in round 9 of a possible 64; a run that goes the distance can use many times more.
+
 ```bash
 uv sync
 uv run pytest -q              # the test suite; uses fake models, no AI needed
