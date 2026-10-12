@@ -1,5 +1,6 @@
 """The Scorer: an outside check that a passing call for consensus answers the goal. It never judges quality."""
 
+import sqlite3
 from dataclasses import dataclass
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -54,3 +55,8 @@ async def score(client: ModelClient, goal: str, synthesis: str) -> ScoreResult:
         messages += [{"role": "assistant", "content": result.text},
                      {"role": "user", "content": correction_request(problem)}]
     return ScoreResult(None, f"invalid ruling: {problem}", model)
+
+
+def points(conn: sqlite3.Connection) -> dict[str, int]:
+    """Lifetime Scorer points per agent, counted from the rows (never stored as a total)."""
+    return {r[0]: r[1] for r in conn.execute("SELECT agent_id, COUNT(*) FROM scorer_points GROUP BY agent_id")}

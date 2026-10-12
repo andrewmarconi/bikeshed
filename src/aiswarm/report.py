@@ -77,6 +77,12 @@ def write_report(run_dir: Path, goal: str, entries: list[Entry], decision: StopD
     out.mkdir(parents=True, exist_ok=True)
     ended = decision.reason + (f" (call #{decision.call_id})" if decision.call_id else "")
     answer = ["# Answer", "", f"**Goal:** {goal}", "", f"**Ended:** {ended}", ""]
+    rulings = [e for e in entries if e.type in ("scorer_accepted", "scorer_rejected")]
+    if rulings:
+        answer += ["## Scorer", ""] + [
+            f"- call #{e.payload.get('call_id')}: "
+            + ("accepted" if e.type == "scorer_accepted" else f"rejected — {e.payload.get('feedback', '')}")
+            for e in rulings] + [""]
     minority = ["# Minority report", ""]
 
     if decision.reason == "consensus" and decision.call_id is not None:

@@ -64,9 +64,9 @@ def find():
 
 @pytest.fixture
 def runner_factory(tmp_path):
-    def make(store, conn, clients, rng=None, **settings):
+    def make(store, conn, clients, rng=None, scorer=None, **settings):
         return Runner(settings=RunSettings(**settings), conn=conn, store=store, runs_dir=tmp_path / "runs",
-                      clients=clients, rng=rng or random.Random(0))
+                      clients=clients, rng=rng or random.Random(0), scorer=scorer)
 
     return make
 

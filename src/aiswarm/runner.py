@@ -23,6 +23,7 @@ from aiswarm.profiles import ProfileStore
 from aiswarm.prompts import render
 from aiswarm.report import write_report
 from aiswarm.reviews import render_public_reviews
+from aiswarm.scorer import score
 from aiswarm.view import build_view, collect_inputs, make_who, render_entry
 from aiswarm.gitrepo import GitError
 from aiswarm.workspace import InvalidPath, Workspace, WriteConflict
@@ -45,6 +46,7 @@ class Runner:
         self, *, settings: RunSettings, conn: sqlite3.Connection, store: ProfileStore, runs_dir: Path,
         clients: Mapping[str, ModelClient], sink: Callable[[dict[str, Any]], None] | None = None,
         rng: Any = None, embedder: Embedder | None = None, library_top_k: int = 3,
+        scorer: ModelClient | None = None,
     ):
         self.settings = settings
         self.conn = conn
@@ -55,6 +57,7 @@ class Runner:
         self.rng = rng  # tests inject one; otherwise each round is shuffled from the run's recorded seed
         self.embedder = embedder
         self.library_top_k = library_top_k
+        self.scorer = scorer  # None: a passing call closes the run unscored (library and tests); the CLI always sets one
 
     def _events(self, run_id: str) -> EventLog:
         return EventLog(self.runs_dir / run_id / "events.jsonl", sink=self.sink)
@@ -117,6 +120,10 @@ class Runner:
         self._discard_after(run_id, completed, events)
         self.conn.execute("UPDATE runs SET status = 'running' WHERE id = ?", (run_id,))
         library = await self._library(run_id, goal, events)
+        settled = await self._settle(run_id, goal, agent_ids, board, ws, events, completed,
+                                     final=completed >= self.settings.max_rounds)
+        if settled is not None:  # e.g. resumed after a pause at the Scorer: rule before any new round
+            return settled
 
         for rnd in range(completed + 1, self.settings.max_rounds + 1):
             events.emit("round_started", round=rnd)
@@ -134,11 +141,12 @@ class Runner:
                 )
             events.emit("round_completed", round=rnd)
             completed = rnd
-            decision = stop_decision(board.entries(), agent_ids, rnd, self.settings)
-            if decision:
-                return self._close(run_id, goal, board, events, rnd, decision)
-        decision = stop_decision(board.entries(), agent_ids, completed, self.settings) or StopDecision("budget")
-        return self._close(run_id, goal, board, events, completed, decision)
+            settled = await self._settle(run_id, goal, agent_ids, board, ws, events, rnd, final=False)
+            if settled is not None:
+                return settled
+        settled = await self._settle(run_id, goal, agent_ids, board, ws, events, completed, final=True)
+        assert settled is not None
+        return settled
 
     def _discard_after(self, run_id: str, completed: int, events: EventLog) -> None:
         """Remove what an interrupted round left behind, so that round replays from its start."""
@@ -312,10 +320,61 @@ class Runner:
         return self._close(run_id, row["goal"], Board(self.conn, run_id), self._events(run_id), last or 0,
                            StopDecision("abandoned"))
 
+    async def _settle(self, run_id: str, goal: str, agent_ids: list[str], board: Board, ws: Workspace,
+                      events: EventLog, rnd: int, *, final: bool) -> RunResult | None:
+        """The stop rules after a round. A call that passes goes to the Scorer before the run may close."""
+        while True:
+            decision = stop_decision(board.entries(), agent_ids, rnd, self.settings)
+            if decision is None or decision.reason != "consensus" or self.scorer is None:
+                break
+            call = next(e for e in board.entries() if e.id == decision.call_id)
+            result = await score(self.scorer, goal, str(call.payload.get("synthesis", "")))
+            if result.ruling is None:  # nothing is guessed: pause, and the resumed run asks again
+                self.conn.execute("UPDATE runs SET status = 'paused' WHERE id = ?", (run_id,))
+                events.emit("run_paused", round=rnd, detail=f"scorer: {result.detail}")
+                return RunResult(run_id, "paused")
+            ruling = result.ruling
+            events.emit("scorer_ruled", call=call.id, accepted=ruling.accepted, feedback=ruling.feedback,
+                        model=result.model)
+            if ruling.accepted:
+                return self._close(run_id, goal, board, events, rnd, decision,
+                                   before=lambda: self._accept(board, rnd, call, agent_ids))
+            self._reject(run_id, board, ws, rnd, call, ruling.feedback)
+        if decision is not None:
+            return self._close(run_id, goal, board, events, rnd, decision)
+        return self._close(run_id, goal, board, events, rnd, StopDecision("budget")) if final else None
+
+    def _accept(self, board: Board, rnd: int, call: Entry, agent_ids: Sequence[str]) -> None:
+        """One point per member the caller credited (the caller too, if it credited itself); no one else."""
+        board.append(rnd, SYSTEM, "scorer_accepted", {"call_id": call.id}, refs=[call.id])
+        credited: dict[str, str] = {}
+        for credit in call.payload.get("credits", []):
+            agent = credit.get("agent_id")
+            if agent in agent_ids and agent not in credited:
+                credited[agent] = str(credit.get("contribution", ""))
+        self.conn.executemany(
+            "INSERT INTO scorer_points (run_id, agent_id, call_id, contribution, created_at) VALUES (?, ?, ?, ?, ?)",
+            [(board.run_id, agent, call.id, text, now_iso()) for agent, text in credited.items()])
+
+    def _reject(self, run_id: str, board: Board, ws: Workspace, rnd: int, call: Entry, feedback: str) -> None:
+        """The call is spent; its feedback goes on the board and into the workspace before the next round."""
+        path = "scorer_feedback.md"
+        with transaction(self.conn):
+            ws.write(path, ws.current_version(path), f"# Scorer feedback on call #{call.id}\n\n{feedback.strip()}\n",
+                     author=SYSTEM, note=f"Scorer feedback on call #{call.id}")
+            board.append(rnd, SYSTEM, "scorer_rejected", {"call_id": call.id, "feedback": feedback.strip()},
+                         refs=[call.id])
+            # the round's checkpoint now includes the feedback, so a resumed run keeps it
+            self.conn.execute("UPDATE rounds SET workspace_commit = ? WHERE run_id = ? AND round = ?",
+                              (ws.head(), run_id, rnd))
+
     def _close(
-        self, run_id: str, goal: str, board: Board, events: EventLog, rnd: int, decision: StopDecision
+        self, run_id: str, goal: str, board: Board, events: EventLog, rnd: int, decision: StopDecision,
+        before: Callable[[], None] | None = None,
     ) -> RunResult:
         with transaction(self.conn):
+            if before is not None:
+                before()  # e.g. the Scorer's points: awarded in the same transaction as the close, never twice
             board.append(rnd, SYSTEM, "run_closed", {"reason": decision.reason, "call_id": decision.call_id})
             self.conn.execute(
                 "UPDATE runs SET status = 'closed', ended_reason = ? WHERE id = ?", (decision.reason, run_id)

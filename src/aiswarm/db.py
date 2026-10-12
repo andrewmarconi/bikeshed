@@ -191,6 +191,17 @@ MIGRATIONS: list[str] = [
     ALTER TABLE runs ADD COLUMN process INTEGER NOT NULL DEFAULT 1;
     ALTER TABLE entries ADD COLUMN visible_to TEXT;
     """,
+    """
+    CREATE TABLE scorer_points (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL REFERENCES runs(id),
+        agent_id TEXT NOT NULL,
+        call_id INTEGER NOT NULL,
+        contribution TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX scorer_points_by_agent ON scorer_points (agent_id);
+    """,
 ]
 
 
