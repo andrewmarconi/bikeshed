@@ -44,8 +44,8 @@ def call_status(entries: Sequence[Entry], call_id: int) -> CallStatus:
 
 
 def _is_idle(entry: Entry, entries: Sequence[Entry]) -> bool:
-    """A pass, or an adopt repeating one the same author already made."""
-    if entry.type == "pass":
+    """A pass or an abstention, or an adopt repeating one the same author already made."""
+    if entry.type in ("pass", "abstain"):
         return True
     if entry.type != "adopt":
         return False
@@ -57,7 +57,7 @@ def _is_idle(entry: Entry, entries: Sequence[Entry]) -> bool:
 
 
 def _idle_round(entries: Sequence[Entry], agent_ids: Sequence[str], round: int) -> bool:
-    posted = [e for e in entries if e.round == round and e.author in agent_ids]
+    posted = [e for e in entries if e.round == round and e.author in agent_ids and e.type != "think"]
     return bool(posted) and all(_is_idle(e, entries) for e in posted)
 
 

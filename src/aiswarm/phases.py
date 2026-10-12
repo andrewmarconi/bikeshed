@@ -50,7 +50,41 @@ async def simultaneous_act(runner: "Runner", ctx: RoundContext) -> str | None:
     return None
 
 
+async def think(runner: "Runner", ctx: RoundContext) -> str | None:
+    """Every agent writes a private note to itself, all at once; the notes are posted after all have finished."""
+    outcomes = await asyncio.gather(*(runner._think(a, ctx) for a in ctx.agent_ids))
+    if all(o.failure == "model_error" for o in outcomes):
+        return outcomes[0].detail
+    with transaction(runner.conn):
+        posted = [runner._post_note(ctx, a, o) for a, o in zip(ctx.agent_ids, outcomes)]
+    for event in posted:
+        if event:
+            ctx.events.emit("action_posted", **event)
+    return None
+
+
+async def sequential_act(runner: "Runner", ctx: RoundContext) -> str | None:
+    """Agents speak one at a time in a seeded order; each sees what was said before its turn."""
+    order = list(ctx.agent_ids)
+    ctx.rng(runner).shuffle(order)
+    errors: list[str] = []
+    for agent_id in order:
+        outcome = await runner._step(agent_id, ctx)
+        if outcome.failure == "model_error":
+            errors.append(outcome.detail)
+        with transaction(runner.conn):
+            event = runner._post(ctx.board, ctx.ws, ctx.run_id, ctx.round, agent_id, outcome)
+        ctx.events.emit("action_posted", **event)
+    return errors[0] if len(errors) == len(order) else None
+
+
+async def poll(runner: "Runner", ctx: RoundContext) -> str | None:
+    return None  # Task 8
+
+
 def phases(process: int, round: int) -> list[Phase]:
     if process == 1:
         return [simultaneous_act]
+    if process == 2:
+        return [think, simultaneous_act if round == 1 else sequential_act, poll]
     raise ValueError(f"unknown process {process}")

@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from aiswarm.actions import STEP, STEP_P2, Pass, WriteFile, target_refs
+from aiswarm.actions import NOTE_MAX, STEP, STEP_P2, THINK, Pass, PrivateMessage, WriteFile, target_refs
 from aiswarm.agent import StepOutcome, make_reader, make_validator, system_prompt, take_step
 from aiswarm.board import SYSTEM, Board, public
 from aiswarm.config import RunSettings
@@ -20,6 +20,7 @@ from aiswarm.library import render_methods, retrieve
 from aiswarm.models.base import Embedder, ModelClient, ModelError
 from aiswarm.phases import RoundContext, phases
 from aiswarm.profiles import ProfileStore
+from aiswarm.prompts import render
 from aiswarm.report import write_report
 from aiswarm.reviews import render_public_reviews
 from aiswarm.view import build_view, collect_inputs, make_who
@@ -250,14 +251,33 @@ class Runner:
                     "agent": agent_id, "path": path, "from_version": action.base_version,
                     "to_version": version, "note": action.note,
                 }, refs=[entry.id])
+        elif isinstance(action, PrivateMessage):
+            entry = board.append(rnd, agent_id, "private_message", {"to": action.to, "text": action.text},
+                                 to=action.to, visible_to=[agent_id, action.to])
         else:
             entry = board.append(rnd, agent_id, action.type, action.model_dump(exclude={"type"}), refs=target_refs(action))
+        self._trace(entry.id, run_id, agent_id, outcome)
+        return {"round": rnd, "agent": agent_id, "entry": entry.id, "type": entry.type, "failure": failure}
+
+    def _trace(self, entry_id: int, run_id: str, agent_id: str, outcome: StepOutcome) -> None:
         if outcome.reasoning:
             self.conn.execute(
                 "INSERT INTO traces (entry_id, run_id, agent_id, model, reasoning) VALUES (?, ?, ?, ?, ?)",
-                (entry.id, run_id, agent_id, outcome.model, outcome.reasoning),
+                (entry_id, run_id, agent_id, outcome.model, outcome.reasoning),
             )
-        return {"round": rnd, "agent": agent_id, "entry": entry.id, "type": entry.type, "failure": failure}
+
+    async def _think(self, agent_id: str, ctx: RoundContext) -> StepOutcome:
+        request = render("process2_think_request.md", note_max=f"{NOTE_MAX:,}")
+        return await self._turn(agent_id, ctx, phase="think", request=request, shape=THINK, opening_rule=False)
+
+    def _post_note(self, ctx: RoundContext, agent_id: str, outcome: StepOutcome) -> dict[str, Any] | None:
+        """A think note, private to its author. A failed think records the failure and fabricates nothing."""
+        if outcome.failure:
+            self._fail(ctx.run_id, ctx.round, agent_id, f"think:{outcome.failure}", outcome.detail)
+            return None
+        entry = ctx.board.append(ctx.round, agent_id, "think", {"text": outcome.action.text}, visible_to=[agent_id])
+        self._trace(entry.id, ctx.run_id, agent_id, outcome)
+        return {"round": ctx.round, "agent": agent_id, "entry": entry.id, "type": "think", "failure": None}
 
     def _close(
         self, run_id: str, goal: str, board: Board, events: EventLog, rnd: int, decision: StopDecision
