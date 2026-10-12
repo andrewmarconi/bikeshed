@@ -86,7 +86,7 @@ def poll_participation(conn: sqlite3.Connection, run: RunInfo) -> dict[str, Part
 @dataclass(frozen=True)
 class OrderStat:
     position: int  # 1 = spoke first in the round
-    turns: int
+    turns: int  # turns that did not fail
     taken_up: int  # turns adopted, refined or cited in a call by another member
 
 
@@ -95,8 +95,11 @@ def speaking_order(conn: sqlite3.Connection, run: RunInfo) -> list[OrderStat]:
     rows = _entries(conn, run)
     author_of = {r["id"]: r["author"] for r in rows}
     used: set[int] = set()
+    failed: set[int] = set()  # a failed turn keeps its place in the order but could not be taken up
     for r in rows:
         payload = json.loads(r["payload"])
+        if r["type"] == "pass" and "failure" in payload:
+            failed.add(r["id"])
         targets = [payload.get("target")] if r["type"] in ("adopt", "refine") else []
         if r["type"] == "call_consensus":
             targets = json.loads(r["refs"])
@@ -109,6 +112,8 @@ def speaking_order(conn: sqlite3.Connection, run: RunInfo) -> list[OrderStat]:
     taken: Counter = Counter()
     for ids in by_round.values():
         for position, entry_id in enumerate(sorted(ids), start=1):
+            if entry_id in failed:
+                continue
             turns[position] += 1
             taken[position] += entry_id in used
     return [OrderStat(p, turns[p], taken[p]) for p in sorted(turns)]

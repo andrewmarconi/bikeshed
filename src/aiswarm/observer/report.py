@@ -89,16 +89,18 @@ def _credits(s: RunSection) -> list[str]:
 
 
 def _participation(rows: dict[str, Participation], who: Who) -> list[str]:
-    out = ["### Poll participation", "", "| Agent | polled | support | object | abstain | failed | unprompted votes |",
+    out = ["### Poll participation", "", "Counts are times polled: a member who abstains or fails to answer is asked "
+           "again each round while the call stays open. Unprompted votes were cast in the member's own turn.", "",
+           "| Agent | polled | support | object | abstain | failed | unprompted votes |",
            "|---|---|---|---|---|---|---|"]
     out += [f"| {who(a)} | {p.polled} | {p.supported} | {p.objected} | {p.abstained} | {p.failed} | {p.unprompted} |"
             for a, p in rows.items()]
     return out + [""]
 
 
-def _order(stats: list[OrderStat]) -> list[str]:
-    out = ["### Speaking order", "", "Rounds after the first; position 1 spoke first. Taken up: adopted, refined or "
-           "cited in a call by another member.", ""]
+def _order(stats: list[OrderStat], note: str = "") -> list[str]:
+    out = ["### Speaking order", "", "Rounds after the first; position 1 spoke first. Failed turns keep their place "
+           "but are not counted. Taken up: adopted, refined or cited in a call by another member." + note, ""]
     if not stats:
         return out + ["_No rounds after the first._", ""]
     out += ["| Position | turns | taken up | share |", "|---|---|---|---|"]
@@ -261,7 +263,8 @@ def render_summary(s: SummarySection) -> str:
         out += ["", "## Process 2", "", "### Recurring private-message pairs", ""]
         out += [f"- {s.who(r.sender)} → {s.who(r.recipient)}: {r.runs} runs, {r.messages} messages" for r in p.pairs] \
             or ["_None yet._"]
-        out += [""] + _participation(p.participation, s.who) + _order(p.order)
+        out += [""] + _participation(p.participation, s.who) + _order(
+            p.order, " Summed over all Process 2 runs, whatever their size.")
     out += ["", "## Codebook", ""]
     out += [f"- **{name}**: {description}" for name, description in s.codebook] or ["_Empty._"]
     out += ["", "## Not judged", ""]

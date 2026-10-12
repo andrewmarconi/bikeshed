@@ -76,3 +76,12 @@ def test_combining_runs_sums_by_agent_and_position():
     assert combine_participation(parts) == {"a": Participation(supported=1, abstained=2), "b": Participation(failed=1)}
     assert combine_order([[OrderStat(1, 2, 1)], [OrderStat(1, 1, 0), OrderStat(2, 1, 1)]]) == [
         OrderStat(1, 3, 1), OrderStat(2, 1, 1)]
+
+
+def test_a_failed_turn_keeps_its_place_but_is_not_counted(community):
+    store, conn = community
+    add_run(conn, "r1", process=2)
+    add_entry(conn, "r1", "a", "pass", {"failure": "model_error"}, round=2)  # spoke first, said nothing
+    lead = add_entry(conn, "r1", "b", "propose", {"answer_summary": "y", "method": "m"}, round=2)
+    add_entry(conn, "r1", "c", "adopt", {"target": lead, "reason": "r"}, refs=[lead], round=2)
+    assert speaking_order(conn, closed_runs(conn)[0]) == [OrderStat(2, 1, 1), OrderStat(3, 1, 0)]

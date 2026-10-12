@@ -157,3 +157,12 @@ def test_summary_process_2_section():
     assert "- Alpha (a) → Bea (b): 2 runs, 5 messages" in block
     assert "| Bea (b) | 2 | 0 | 2 | 0 | 0 | 0 |" in block
     assert "| 1 | 4 | 3 | 75% |" in block
+
+
+def test_poll_and_order_tables_say_what_they_count():
+    run = render_run(section(run=P2, process2=P2_SECTION))
+    assert "times polled" in run and "asked again each round" in run
+    s = SummarySection(runs=[P2], who=who, charts={}, identity=[], norms=[], codebook=[], twins={}, categories={},
+                       failed=[], benchmark=[], reciprocity=[], in_progress=[], judge_note=None,
+                       process2=Process2Summary([], {}, [OrderStat(1, 4, 3)]))
+    assert "Summed over all Process 2 runs, whatever their size" in render_summary(s)
