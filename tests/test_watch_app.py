@@ -2,6 +2,7 @@ import json
 
 from observer_helpers import add_entry, add_run
 from rich.text import Text
+from textual.content import Content
 from textual.widgets import RichLog, Static
 
 from aiswarm.config import Config
@@ -9,10 +10,10 @@ from aiswarm.watch.app import WatchApp, WorkspacePopup
 from aiswarm.watch.source import open_watcher
 
 
-def setup(tmp_path, community, process=1):
+def setup(tmp_path, community, process=1, goal="Pick a fruit."):
     store, conn = community
     add_run(conn, "r1", agents=("a", "b"), status="running", goal_id="best-fruit", category="contested",
-            process=process)
+            process=process, goal=goal)
     add_entry(conn, "r1", "a", "propose", {"answer_summary": "Mango [ripe]", "method": "m"})
     cfg = Config.model_validate({"models": {"local": {"kind": "openai", "model": "m"}}})
     cfg.community_dir, cfg.runs_dir = tmp_path / "community", tmp_path / "runs"
@@ -151,3 +152,23 @@ async def test_w_pop_up_shows_workspace_and_grid_and_keeps_updating(tmp_path, co
         await pilot.pause()
         assert not isinstance(app.screen, WorkspacePopup)
         assert "while the pop-up is open" in pane(app, "thinking") and shown(app, "postrun")
+
+
+async def test_a_goal_with_brackets_shows_literally_in_the_table_title(tmp_path, community):
+    conn, events, watcher = setup(tmp_path, community, goal="Pick [/] a [bold]fruit")
+    app = WatchApp(watcher, interval=3600)
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        title = app.query_one("#table", RichLog).border_title  # the getter hands back escaped markup
+        assert Content.from_markup(title).plain == "Table — Pick [/] a [bold]fruit"
+
+
+async def test_q_quits_from_the_pop_up(tmp_path, community):
+    conn, events, watcher = setup(tmp_path, community)
+    app = WatchApp(watcher, interval=3600)
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("q")
+        await pilot.pause()
+        assert app.return_code == 0

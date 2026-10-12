@@ -19,7 +19,7 @@ class Feed(RichLog):
 
     def __init__(self, title: str, **kwargs):
         super().__init__(wrap=True, min_width=20, **kwargs)  # lines are Rich Text: nothing is parsed as markup
-        self.border_title = title
+        self.border_title = Text(title)  # a str would be parsed as markup; goals may contain brackets
         self.items: list[Text] = []
         self.wrapped_at = 0
 
@@ -45,7 +45,7 @@ class WorkspacePopup(ModalScreen):
     WorkspacePopup { align: center middle; }
     #popup { width: 80%; height: auto; max-height: 80%; border: round $primary; background: $panel; padding: 0 1; }
     """
-    BINDINGS = [("w", "close", "Close"), ("escape", "close", "Close")]
+    BINDINGS = [("w", "close", "Close"), ("escape", "close", "Close"), ("q", "app.quit", "Quit")]
 
     def __init__(self, content: str):
         super().__init__()
