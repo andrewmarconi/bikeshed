@@ -54,6 +54,7 @@ class LibrarySettings(BaseModel):
 
 class ObserverSettings(BaseModel):
     judge: str | None = None  # a backend that judges text for `bikeshed observe`; agents never see its output
+    judges: dict[str, str] = {}  # analysis name -> backend, for analyses the default judge cannot or should not run
     dir: Path = Path("observer")
 
 
@@ -77,6 +78,11 @@ class Config(BaseModel):
                             ("observer.judge", self.observer.judge), ("scorer.judge", self.scorer.judge)):
             if name is not None and name not in self.models:
                 raise ValueError(f"{label} names unknown model backend {name!r}")
+        for analysis, name in self.observer.judges.items():
+            if name not in self.models:
+                raise ValueError(f"observer.judges.{analysis} names unknown model backend {name!r}")
+        if self.observer.judges and self.observer.judge is None:
+            raise ValueError("observer.judges overrides observer.judge, which is not set")
         if self.library.embeddings and not isinstance(self.models[self.library.embeddings], OpenAIBackend):
             raise ValueError("library.embeddings must name an openai backend")
         return self
@@ -139,6 +145,8 @@ top_k = 3                              # methods from earlier runs shown in each
 [observer]
 # judge = "claude"                     # a backend that judges text for `bikeshed observe` (agents never see it)
 dir = "observer"                       # Observer reports and its own database
+# [observer.judges]                    # a different backend for one analysis, e.g. one the default judge refuses
+# think_vs_act = "local"
 
 [scorer]
 # the backend that rules whether a passing call for consensus answers the goal (agents see its rulings)

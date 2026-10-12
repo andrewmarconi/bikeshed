@@ -3,6 +3,7 @@
 import asyncio
 import sqlite3
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,24 +38,24 @@ class ObserveResult:
     in_progress: list[str]
 
 
-async def _judge_run(judge: Judge, ostore: ObserverStore, conn: sqlite3.Connection, store: ProfileStore,
+async def _judge_run(judge: Callable[[str], Judge], ostore: ObserverStore, conn: sqlite3.Connection, store: ProfileStore,
                      runs: list[m.RunInfo], run: m.RunInfo, who: Who, answers: list[m.BenchmarkAnswer]) -> None:
     jobs = []
     for agent in run.agent_ids:
-        jobs.append(judge.run(ANALYSES["themes"], run_id=run.id, agent_id=agent,
+        jobs.append(judge("themes").run(ANALYSES["themes"], run_id=run.id, agent_id=agent,
                               inputs=themes_inputs(conn, store, run, agent)))
         if (pp := private_public_inputs(conn, run, agent, who)) is not None:
-            jobs.append(judge.run(ANALYSES["private_public"], run_id=run.id, agent_id=agent, inputs=pp))
+            jobs.append(judge("private_public").run(ANALYSES["private_public"], run_id=run.id, agent_id=agent, inputs=pp))
         if run.process == 2 and (tva := think_vs_act_inputs(conn, run, agent, who)) is not None:
-            jobs.append(judge.run(ANALYSES["think_vs_act"], run_id=run.id, agent_id=agent, inputs=tva))
-        jobs.append(judge.run(ANALYSES["self_image"], run_id=run.id, agent_id=agent,
+            jobs.append(judge("think_vs_act").run(ANALYSES["think_vs_act"], run_id=run.id, agent_id=agent, inputs=tva))
+        jobs.append(judge("self_image").run(ANALYSES["self_image"], run_id=run.id, agent_id=agent,
                               inputs=self_image_inputs(store, runs, run, agent)))
     if run.is_benchmark:
-        jobs.append(judge.run(ANALYSES["benchmark"], run_id=run.id, agent_id=None,
+        jobs.append(judge("benchmark").run(ANALYSES["benchmark"], run_id=run.id, agent_id=None,
                               inputs=benchmark_inputs(answers, run.id)))
     await asyncio.gather(*jobs)
     labels = [t["label"] for j in ostore.judgments(run.id, "themes") if j.status == "ok" for t in j.result["themes"]]
-    await update_codebook(judge, ostore, run.id, labels)
+    await update_codebook(judge("codebook"), ostore, run.id, labels)
 
 
 def _process2_section(conn: sqlite3.Connection, run: m.RunInfo, who: Who, out_dir: Path,
@@ -71,7 +72,26 @@ def _process2_section(conn: sqlite3.Connection, run: m.RunInfo, who: Who, out_di
     return Process2Section(network, chart, p2.poll_participation(conn, run), p2.speaking_order(conn, run))
 
 
+def _judges(cfg: Config, ostore: ObserverStore, default: ModelClient,
+            analysis_clients: dict[str, ModelClient]) -> Callable[[str], Judge]:
+    """The judge for each analysis: the default one unless `[observer.judges]` names another backend."""
+    if unknown := sorted(set(cfg.observer.judges) - set(ANALYSES)):
+        raise ValueError(f"[observer.judges] names unknown analyses: {', '.join(unknown)} (known: {', '.join(ANALYSES)})")
+    if missing := sorted(set(cfg.observer.judges) - set(analysis_clients)):
+        raise ValueError(f"no client for the judge of: {', '.join(missing)}")
+
+    def make(client: ModelClient, backend_name: str | None) -> Judge:
+        limited = limit_clients({"judge": client}, JUDGE_CONCURRENCY)["judge"]
+        backend = cfg.models.get(backend_name or "")
+        return Judge(limited, ostore, backend.model if backend else "judge")  # a new model means new judgments
+
+    fallback = make(default, cfg.observer.judge)
+    own = {name: make(analysis_clients[name], backend) for name, backend in cfg.observer.judges.items()}
+    return lambda analysis: own.get(analysis, fallback)
+
+
 async def observe(cfg: Config, *, run_id: str | None = None, judge_client: ModelClient | None = None,
+                  analysis_clients: dict[str, ModelClient] | None = None,
                   twin: str | None = None, judge_note: str | None = None) -> ObserveResult:
     try:
         store = ProfileStore(cfg.community_dir, create=False)  # never init, never commit
@@ -90,11 +110,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
     in_progress = m.open_runs(conn) + [f"{r} (post-run)" for r in unfinished]
     who = make_who({i: store.public(i) for i in store.ids()})
     answers = m.benchmark_answers(conn, runs, who)
-    judge = None
-    if judge_client is not None:
-        limited = limit_clients({"judge": judge_client}, JUDGE_CONCURRENCY)["judge"]
-        backend = cfg.models.get(cfg.observer.judge or "")
-        judge = Judge(limited, ostore, backend.model if backend else "judge")  # a new model means new judgments
+    judge = None if judge_client is None else _judges(cfg, ostore, judge_client, analysis_clients or {})
     note = judge_note if judge is None else None
     written: list[Path] = []
     for run in targets:

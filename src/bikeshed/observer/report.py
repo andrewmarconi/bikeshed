@@ -188,7 +188,13 @@ def render_run(s: RunSection) -> str:
         else:
             out += [f"- **Trend:** {j.result['trend']}", f"- **Optimises for:** {j.result['optimises_for']}"]
             out += [f"  - “{q}”" for q in j.result["evidence"]]
-    models = sorted({j.model_reported for j in s.judgments if j.model_reported})
+    by_model: dict[str, set[str]] = {}
+    for j in s.judgments:
+        if j.model_reported:
+            by_model.setdefault(j.model_reported, set()).add(j.analysis)
+    # name the analyses only when judges differ, so a mixed report says which model judged what
+    models = sorted(by_model) if len(by_model) < 2 else \
+        [f"{model} ({', '.join(sorted(names))})" for model, names in sorted(by_model.items())]
     prompts = sorted({f"{j.analysis} {j.prompt_sha256[:8]}" for j in s.judgments})
     if s.judgments:
         out += ["", f"_Judged by {', '.join(models) or 'unknown model'}; prompts {', '.join(prompts)}._"]

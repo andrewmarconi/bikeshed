@@ -103,6 +103,21 @@ def test_observer_judge_must_name_a_backend(tmp_path):
         load_config(write(tmp_path, '[models.claude]\nkind = "claude_cli"\n[observer]\njudge = "nope"\n'))
 
 
+def test_observer_judges_override_one_analysis(tmp_path):
+    cfg = load_config(write(tmp_path, '[models.claude]\nkind = "claude_cli"\n[models.l]\nkind = "openai"\nmodel = "m"\n'
+                                      '[observer]\njudge = "claude"\n[observer.judges]\nthink_vs_act = "l"\n'))
+    assert cfg.observer.judges == {"think_vs_act": "l"}
+
+
+@pytest.mark.parametrize("extra", [
+    '[observer]\njudge = "claude"\n[observer.judges]\nthink_vs_act = "nope"\n',
+    '[observer.judges]\nthink_vs_act = "claude"\n',
+])
+def test_observer_judges_need_a_known_backend_and_a_default_judge(tmp_path, extra):
+    with pytest.raises(ValidationError, match="observer.judges"):
+        load_config(write(tmp_path, '[models.claude]\nkind = "claude_cli"\n' + extra))
+
+
 def test_scorer_judge_must_name_a_backend():
     import pytest
 

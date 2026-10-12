@@ -177,3 +177,34 @@ async def test_observe_a_store_from_before_the_scorer(lab, community):
     summary = (lab.observer.dir / "summary.md").read_text()
     assert "_The Scorer has not ruled yet._" in summary
     assert "_The Scorer did not rule in this run._" in (lab.observer.dir / "runs" / "r1.md").read_text()
+
+
+async def test_an_analysis_can_have_its_own_judge(lab, community):
+    store, conn = community
+    add_run(conn, "r5", created=FUTURE, goal_id="debate", process=2)
+    add_entry(conn, "r5", "a", "think", {"text": "Pear is weak."}, round=1, visible_to=["a"])
+    add_entry(conn, "r5", "a", "propose", {"answer_summary": "Pear is fine.", "method": "m"}, round=1)
+    lab = Config.model_validate({
+        "models": {"claude": {"kind": "claude_cli"}, "local": {"kind": "openai", "model": "qwen"}},
+        "observer": {"judge": "claude", "judges": {"think_vs_act": "local"}, "dir": lab.observer.dir},
+        "community_dir": lab.community_dir, "runs_dir": lab.runs_dir})
+    default, local = FakeModel(judge_reply, model="sonnet"), FakeModel(judge_reply, model="qwen")
+    result = await observe(lab, judge_client=default, analysis_clients={"think_vs_act": local})
+    assert result.failed == 0
+    assert local.calls and all("## think notes" in m[0]["content"] for _, m, _ in local.calls)
+    assert not any("## think notes" in m[0]["content"] for _, m, _ in default.calls)
+    report = (lab.observer.dir / "runs" / "r5.md").read_text()
+    assert "think “Pear is weak.” / action “Pear is fine.”" in report
+    assert "_Judged by qwen (think_vs_act), sonnet (" in report
+
+
+async def test_an_analysis_judge_without_a_client_is_an_error(lab):
+    lab.observer.judges = {"think_vs_act": "claude"}
+    with pytest.raises(ValueError, match="think_vs_act"):
+        await observe(lab, judge_client=FakeModel(judge_reply))
+
+
+async def test_unknown_analysis_in_judges_is_an_error(lab):
+    lab.observer.judges = {"vibes": "claude"}
+    with pytest.raises(ValueError, match="vibes"):
+        await observe(lab, judge_client=FakeModel(judge_reply), analysis_clients={"vibes": FakeModel(judge_reply)})

@@ -463,7 +463,7 @@ def observe(
 ) -> None:
     """User-only analysis of the community: reports and charts under the observer directory."""
     cfg = _load(config)
-    client, note = None, None
+    client, note, own = None, None, {}
     if no_judge:
         note = "--no-judge"
     elif cfg.observer.judge is None:
@@ -471,8 +471,11 @@ def observe(
         typer.echo("no [observer] judge configured; metrics only", err=True)
     else:
         client = make_client(cfg.models[cfg.observer.judge], cfg.run.model_retries)
+        own = {name: make_client(cfg.models[backend], cfg.run.model_retries)
+               for name, backend in cfg.observer.judges.items()}
     try:
-        result = asyncio.run(run_observer(cfg, run_id=run, judge_client=client, twin=twin, judge_note=note))
+        result = asyncio.run(run_observer(cfg, run_id=run, judge_client=client, analysis_clients=own,
+                                          twin=twin, judge_note=note))
     except (ValueError, sqlite3.OperationalError) as exc:
         _fail(str(exc))
     for path in result.written:
