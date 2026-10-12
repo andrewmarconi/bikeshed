@@ -260,3 +260,16 @@ def test_render_entry_hides_harness_flags():
     entry = Entry(7, "r1", 2, "a", "private_message", {"to": "b", "text": "hi", "pre_action": True}, [], "b", "t")
     text = render_entry(entry, lambda agent_id: agent_id)
     assert "text: hi" in text and "pre_action" not in text
+
+
+def test_pre_action_entries_do_not_push_actions_out_of_the_board_window(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    first = board.append(2, "b", "propose", {"answer_summary": "TURN-ACTION-B", "method": "m"})
+    for i in range(6):
+        w = board.append(2, "c", "write_file", {"path": "p.md", "version": i + 1, "note": f"PRE-{i}", "pre_action": True})
+        board.append(2, SYSTEM, "artifact_changed", {"agent": "c", "path": "p.md", "to_version": i + 1,
+                                                    "pre_action": True}, refs=[w.id])
+    board.append(2, "c", "question", {"target": first.id, "text": "TURN-ACTION-C"}, refs=[first.id])
+    view = view_for("a", 3, store, board, ws, view_entries=2)
+    assert "TURN-ACTION-B" in view and "TURN-ACTION-C" in view  # two turn actions, however many writes between
+    assert "PRE-5" in view  # pre-actions inside the window are still shown

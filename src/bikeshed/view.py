@@ -163,7 +163,10 @@ def build_view(inputs: ViewInputs, budget_chars: int, opening_hint: bool = True)
 
     footer = f"# Current goal\n{inputs.goal}"  # restated last, where a small model attends most
     remaining = budget_chars - sum(len(part) + 2 for part in [*fixed, footer])
-    recent = inputs.entries[-inputs.view_entries:]
+    # The window counts turn actions; pre-action writes inside it are shown but cannot push actions out.
+    counted = [i for i, e in enumerate(inputs.entries) if not e.payload.get("pre_action")]
+    start = counted[-inputs.view_entries] if len(counted) >= inputs.view_entries else 0
+    recent = inputs.entries[start:]
     recent_ids = {e.id for e in recent}
     mine = {e.id for e in inputs.entries if e.author == inputs.agent_id}
     about_me = [e for e in inputs.entries if e.id not in recent_ids and set(e.refs) & mine]
