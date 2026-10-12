@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 476" width="880" height="476" role="img" aria-labelledby="title desc">
+  <title id="title">How a Bikeshed run flows</title>
+  <desc id="desc">An opening round where everyone proposes blind, then working rounds. After each round: if a consensus call passed, the Scorer checks it; accepted ends the run, rejected sends the group back to work. Two quiet rounds or the round limit also end the run. Then the after-run steps, and the next run begins with the same agents.</desc>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .box { stroke-width: 1.5; }
+    .title { font-size: 15px; font-weight: 600; }
+    .sub { font-size: 12px; }
+    .label { font-size: 11.5px; }
+    .pill { font-size: 12px; }
+    .flow { fill: none; stroke-width: 1.75; marker-end: url(#a-flow); }
+    .loop { fill: none; stroke-width: 1.5; stroke-dasharray: 5 4; marker-end: url(#a-loop); }
+    .stop { fill: none; stroke-width: 1.75; marker-end: url(#a-stop); }
+    text { fill: #1f2328; }
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f8fa; stroke: #8c959f; }
+    .box.end { stroke: #1a7f37; }
+    .sub, .label { fill: #59636e; }
+    .flow { stroke: #0969da; }
+    .loop { stroke: #bc4c00; }
+    .stop { stroke: #1a7f37; }
+    .head-flow { fill: #0969da; }
+    .head-loop { fill: #bc4c00; }
+    .head-stop { fill: #1a7f37; }
+    @media (prefers-color-scheme: dark) {
+    text { fill: #e6edf3; }
+    .bg { fill: #0d1117; }
+    .box { fill: #161b22; stroke: #3d444d; }
+    .box.end { stroke: #3fb950; }
+    .sub, .label { fill: #9198a1; }
+    .flow { stroke: #4493f8; }
+    .loop { stroke: #f0883e; }
+    .stop { stroke: #3fb950; }
+    .head-flow { fill: #4493f8; }
+    .head-loop { fill: #f0883e; }
+    .head-stop { fill: #3fb950; }
+    }
+  </style>
+  <defs>
+    <marker id="a-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-flow" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="a-loop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-loop" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="a-stop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-stop" d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="880" height="476" rx="8"/>
+
+  <!-- Row 1: the run -->
+  <rect class="box" x="16" y="70" width="170" height="90" rx="8"/>
+  <text class="title" x="101" y="100" text-anchor="middle">Opening round</text>
+  <text class="sub" x="101" y="122" text-anchor="middle">everyone proposes,</text>
+  <text class="sub" x="101" y="138" text-anchor="middle">blind to each other</text>
+
+  <rect class="box" x="236" y="70" width="170" height="90" rx="8"/>
+  <text class="title" x="321" y="100" text-anchor="middle">Working round</text>
+  <text class="sub" x="321" y="122" text-anchor="middle">P1: all at once</text>
+  <text class="sub" x="321" y="138" text-anchor="middle">P2: think → react → poll</text>
+
+  <rect class="box" x="456" y="70" width="180" height="90" rx="8"/>
+  <text class="title" x="546" y="96" text-anchor="middle">End of round</text>
+  <text class="sub" x="546" y="116" text-anchor="middle">did a consensus call pass?</text>
+  <text class="sub" x="546" y="132" text-anchor="middle">critiqued at least once,</text>
+  <text class="sub" x="546" y="148" text-anchor="middle">all but at most one support it</text>
+
+  <rect class="box" x="686" y="70" width="178" height="90" rx="8"/>
+  <text class="title" x="775" y="100" text-anchor="middle">Scorer</text>
+  <text class="sub" x="775" y="122" text-anchor="middle">does the synthesis</text>
+  <text class="sub" x="775" y="138" text-anchor="middle">answer the goal?</text>
+
+  <path class="flow" d="M186,115 L232,115"/>
+  <path class="flow" d="M406,115 L452,115"/>
+  <path class="flow" d="M636,115 L682,115"/>
+  <text class="label" x="659" y="133" text-anchor="middle">yes</text>
+
+  <!-- Loops back to work -->
+  <path class="loop" d="M775,70 C775,22 321,22 321,66"/>
+  <text class="label" x="548" y="56" text-anchor="middle">rejected: feedback goes on the board, the call is spent</text>
+  <path class="loop" d="M510,160 C510,212 321,212 321,164"/>
+  <text class="label" x="415" y="222" text-anchor="middle">no: next round</text>
+
+  <!-- Run ends -->
+  <rect class="box end" x="686" y="240" width="178" height="60" rx="8"/>
+  <text class="title" x="775" y="275" text-anchor="middle">Run ends</text>
+  <path class="stop" d="M775,160 L775,236"/>
+  <text class="label" x="783" y="190">accepted: credited</text>
+  <text class="label" x="783" y="205">agents earn a</text>
+  <text class="label" x="783" y="220">Scorer point</text>
+  <path class="stop" d="M600,160 C600,270 640,270 682,270"/>
+  <text class="label" x="592" y="248" text-anchor="end">2 quiet rounds,</text>
+  <text class="label" x="592" y="263" text-anchor="end">or the round limit</text>
+
+  <!-- After the run -->
+  <path class="flow" d="M775,300 L775,346"/>
+  <rect class="box" x="16" y="350" width="848" height="110" rx="8"/>
+  <text class="title" x="32" y="376">After the run</text>
+  <text class="sub" x="140" y="376">in order; the narrative is written for you, not the agents</text>
+  <g>
+    <rect class="box" x="32" y="394" width="88" height="44" rx="6"/><text class="pill" x="76" y="420" text-anchor="middle">Journal</text>
+    <rect class="box" x="135" y="394" width="88" height="44" rx="6"/><text class="pill" x="179" y="420" text-anchor="middle">Reviews</text>
+    <rect class="box" x="238" y="394" width="88" height="44" rx="6"/><text class="pill" x="282" y="420" text-anchor="middle">Responses</text>
+    <rect class="box" x="341" y="394" width="88" height="44" rx="6"/><text class="pill" x="385" y="420" text-anchor="middle">Self-update</text>
+    <rect class="box" x="444" y="394" width="88" height="44" rx="6"/><text class="pill" x="488" y="413" text-anchor="middle">Critique</text><text class="pill" x="488" y="428" text-anchor="middle">norms</text>
+    <rect class="box" x="547" y="394" width="88" height="44" rx="6"/><text class="pill" x="591" y="413" text-anchor="middle">Vote on</text><text class="pill" x="591" y="428" text-anchor="middle">norms</text>
+    <rect class="box" x="650" y="394" width="88" height="44" rx="6"/><text class="pill" x="694" y="420" text-anchor="middle">Library</text>
+    <rect class="box" x="753" y="394" width="95" height="44" rx="6"/><text class="pill" x="800" y="420" text-anchor="middle">Narrative</text>
+    <path class="flow" d="M120,416 L131,416"/>
+    <path class="flow" d="M223,416 L234,416"/>
+    <path class="flow" d="M326,416 L337,416"/>
+    <path class="flow" d="M429,416 L440,416"/>
+    <path class="flow" d="M532,416 L543,416"/>
+    <path class="flow" d="M635,416 L646,416"/>
+    <path class="flow" d="M738,416 L749,416"/>
+  </g>
+
+  <!-- Next run -->
+  <path class="loop" d="M101,350 L101,164"/>
+  <text class="label" x="112" y="250">next run: same agents,</text>
+  <text class="label" x="112" y="265">carrying memory,</text>
+  <text class="label" x="112" y="280">reputation and norms</text>
+</svg>
