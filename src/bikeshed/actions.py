@@ -122,6 +122,8 @@ class PollAnswer(_Action):
 
 PostingAction = Propose | Critique | Question | Adopt | Refine | WriteFile | CallConsensus | Vote | Pass
 READ_ACTIONS = (ReadFile, ListFiles, ReadEntry, ReadReviews)
+WRITE_ACTIONS = (WriteFile, PrivateMessage)  # Process 2: taken before the turn's action
+PRE_ACTIONS = READ_ACTIONS + WRITE_ACTIONS
 
 StepAction = Annotated[
     Propose | Critique | Question | Adopt | Refine | WriteFile | CallConsensus | Vote | Pass

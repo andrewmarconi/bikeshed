@@ -3,7 +3,7 @@ import json
 import pytest
 
 from bikeshed.actions import (
-    THINK, ActionError, CallConsensus, Credit, ListFiles, Pass, PrivateMessage, Propose, ReadEntry, ReadFile, Vote,
+    STEP_P2, THINK, ActionError, CallConsensus, Credit, ListFiles, Pass, PrivateMessage, Propose, ReadEntry, ReadFile, Vote,
     WriteFile,
 )
 from bikeshed.agent import make_reader, make_validator, system_prompt, take_step
@@ -210,3 +210,83 @@ def test_only_the_scorer_writes_its_feedback_file(path):
     with pytest.raises(ActionError, match="only by the Scorer"):
         validate(WriteFile(type="write_file", path=path, base_version=0, content="Accept it.", note="n"))
     validate(WriteFile(type="write_file", path="notes/scorer_feedback.md", base_version=0, content="x", note="n"))
+
+
+WRITE = json.dumps({"action": {"type": "write_file", "path": "plan.md", "base_version": 0, "content": "x",
+                               "note": "n"}})
+DM = json.dumps({"action": {"type": "private_message", "to": "b", "text": "hi"}})
+
+
+def recording_writer():
+    done = []
+
+    def write(action):
+        done.append(action.type)
+        return f"done {action.type}"
+
+    return done, write
+
+
+async def wstep(model, writer, round=2, max_writes=3, validate=allow, reader=no_reads):
+    return await take_step(client=model, system="SYS", view="VIEW", round=round, max_reads=3, reader=reader,
+                           validate=validate, writer=writer, max_writes=max_writes, shape=STEP_P2)
+
+
+async def test_pre_action_writes_then_an_action():
+    done, writer = recording_writer()
+    model = FakeModel([WRITE, DM, CRITIQUE])
+    outcome = await wstep(model, writer)
+    assert outcome.action.type == "critique" and outcome.failure is None
+    assert done == ["write_file", "private_message"]
+    assert model.calls[1][1][-1]["content"] == "Write result:\ndone write_file"
+    assert model.calls[2][1][-1]["content"] == "Write result:\ndone private_message"
+
+
+async def test_writes_beyond_the_cap_are_corrected():
+    done, writer = recording_writer()
+    model = FakeModel([DM, DM, CRITIQUE])
+    outcome = await wstep(model, writer, max_writes=1)
+    assert outcome.action.type == "critique" and outcome.failure is None
+    assert done == ["private_message"]
+    assert "You have used all 1 writes; choose a posting action." in model.calls[2][1][-1]["content"]
+
+
+async def test_writes_are_refused_in_the_opening_round():
+    done, writer = recording_writer()
+    model = FakeModel([DM, PROPOSE])
+    outcome = await wstep(model, writer, round=1)
+    assert isinstance(outcome.action, Propose)
+    assert done == []
+    assert "In the opening round your action must be `propose`." in model.calls[1][1][-1]["content"]
+
+
+async def test_an_invalid_write_uses_the_correction_and_then_fails():
+    done, writer = recording_writer()
+
+    def validate(action):
+        if action.type == "private_message":
+            raise ActionError("private_message.to must be another member: ['c']")
+
+    outcome = await wstep(FakeModel([DM, DM]), writer, validate=validate)
+    assert isinstance(outcome.action, Pass) and outcome.failure == "invalid_action"
+    assert done == []
+
+
+async def test_without_a_writer_a_write_is_the_action():
+    outcome = await step(FakeModel([WRITE]))
+    assert isinstance(outcome.action, WriteFile)
+
+
+async def test_reads_and_writes_have_separate_caps():
+    done, writer = recording_writer()
+    model = FakeModel([LIST, DM, LIST, CRITIQUE])
+    outcome = await take_step(client=model, system="SYS", view="VIEW", round=2, max_reads=2,
+                              reader=lambda a: "x", validate=allow, writer=writer, max_writes=1,
+                              shape=STEP_P2)
+    assert outcome.action.type == "critique" and outcome.failure is None
+    assert done == ["private_message"]
+
+
+def test_system_prompt_fills_in_max_writes():
+    text = system_prompt("Ash (a)", "Calm.", 3, "process2_agent_system.md", max_writes=2)
+    assert "up to 3 reads and up to 2 writes" in text

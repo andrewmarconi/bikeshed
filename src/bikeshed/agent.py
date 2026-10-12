@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from bikeshed.actions import (
-    READ_ACTIONS, STEP, ActionError, CallConsensus, ListFiles, Pass, PrivateMessage, Propose, ReadFile, ReadReviews,
+    READ_ACTIONS, STEP, WRITE_ACTIONS, ActionError, CallConsensus, ListFiles, Pass, PrivateMessage, Propose, ReadFile, ReadReviews,
     Vote, WriteFile, parse_action, step_schema,
 )
 from bikeshed.board import Entry
@@ -19,6 +19,7 @@ from bikeshed.workspace import InvalidPath, Workspace, normalise_path
 
 Reader = Callable[[Any], str]
 Validator = Callable[[Any], None]
+Writer = Callable[[Any], str]
 
 
 @dataclass(frozen=True)
@@ -30,17 +31,22 @@ class StepOutcome:
     model: str | None = None
 
 
-def system_prompt(display: str, temperament: str, max_reads: int, template: str = "agent_system.md") -> str:
-    return render(template, display=display, temperament=temperament.strip(), max_reads=max_reads)
+def system_prompt(
+    display: str, temperament: str, max_reads: int, template: str = "agent_system.md", max_writes: int = 0
+) -> str:
+    return render(template, display=display, temperament=temperament.strip(), max_reads=max_reads,
+                  max_writes=max_writes)
 
 
 async def take_step(
     *, client: ModelClient, system: str, view: str, round: int, max_reads: int,
     reader: Reader, validate: Validator, shape: type[BaseModel] = STEP, opening_rule: bool = True,
+    writer: Writer | None = None, max_writes: int = 0,
 ) -> StepOutcome:
     messages: list[Message] = [{"role": "user", "content": view}]
     schema = step_schema(shape)
     reads = 0
+    writes = 0
     corrected = False
     reasoning: list[str] = []
     model: str | None = None
@@ -65,6 +71,18 @@ async def take_step(
                 messages += [
                     {"role": "assistant", "content": result.text},
                     {"role": "user", "content": "Read result:\n" + reader(action)},
+                ]
+                continue
+            if writer is not None and isinstance(action, WRITE_ACTIONS):
+                if opening_rule and round == 1:
+                    raise ActionError("In the opening round your action must be `propose`.")
+                if writes >= max_writes:
+                    raise ActionError(f"You have used all {max_writes} writes; choose a posting action.")
+                validate(action)
+                writes += 1
+                messages += [
+                    {"role": "assistant", "content": result.text},
+                    {"role": "user", "content": "Write result:\n" + writer(action)},
                 ]
                 continue
             if opening_rule and round == 1 and not isinstance(action, Propose):
