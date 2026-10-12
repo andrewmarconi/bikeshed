@@ -1,5 +1,5 @@
 from aiswarm.board import Entry
-from aiswarm.watch.state import FEED_MAX, RunState, feed_text
+from aiswarm.watch.state import FEED_MAX, RunState, feed_line, feed_text
 
 
 def state():
@@ -75,9 +75,37 @@ def test_feed_text_truncates_only_runaway_entries():
 
 
 def test_feed_text_summarises_process2_entries():
-    assert feed_text(entry(7, "think", {"text": "where I stand"}), who).endswith("think: where I stand")
-    assert feed_text(entry(8, "private_message", {"to": "b", "text": "psst"}), who).endswith("private_message: psst")
+    assert feed_text(entry(7, "think", {"text": "where I stand"}), who) == "💭 #7 r2 Ash (a): where I stand"
+    assert feed_text(entry(8, "private_message", {"to": "b", "text": "psst"}), who) == "🔒 #8 r2 Ash (a) → Bea (b): psst"
     assert feed_text(entry(9, "abstain", {"target": 4, "reason": "unsure"}), who).endswith("abstain → #4: unsure")
+
+
+def test_feed_lines_know_their_pane_and_parts():
+    think = feed_line(entry(7, "think", {"text": "hm"}), who)
+    pm = feed_line(entry(8, "private_message", {"to": "b", "text": "psst"}), who)
+    vote = feed_line(entry(9, "vote", {"target": 4, "stance": "object", "reason": "no"}), who)
+    failed = feed_line(entry(10, "pass", {"failure": "model_error"}), who)
+    assert (think.pane, pm.pane, vote.pane, failed.pane) == ("thinking", "private", "table", "table")
+    assert (pm.to, pm.to_name) == ("b", "Bea (b)")
+    assert (vote.stance, vote.body, vote.target) == ("object", "no", " → #4")
+    assert failed.failure == "model_error" and failed.text == "#10 r2 Ash (a) pass: (failed: model_error)"
+
+
+def test_process_2_steps_set_the_phase_and_status():
+    s = RunState("r1", "g", "r1", "ad hoc", 12, process=2)
+    s.apply({"event": "run_started", "agents": ["a", "b"]})
+    s.apply({"event": "agent_step_started", "round": 2, "agent": "a", "phase": "think"})
+    assert s.step_phase == "think" and s.cards["a"].state == "thinking…"
+    s.apply({"event": "agent_step_started", "round": 2, "agent": "b"})
+    assert s.step_phase == "react" and s.cards["b"].state == "speaking…"
+    s.apply({"event": "agent_step_started", "round": 2, "agent": "a", "phase": "poll"})
+    assert s.step_phase == "poll" and s.cards["a"].state == "polling…"
+
+
+def test_process_1_steps_keep_thinking_and_no_phase():
+    s = state()
+    s.apply({"event": "agent_step_started", "round": 1, "agent": "a"})
+    assert s.cards["a"].state == "thinking…" and s.step_phase is None
 
 
 from observer_helpers import add_entry, add_review, add_run  # noqa: E402

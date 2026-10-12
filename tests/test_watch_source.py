@@ -102,3 +102,20 @@ def test_a_half_written_profile_or_odd_event_never_crashes_the_watcher(tmp_path,
     profile.write_text(good)
     watcher.poll()
     assert len(watcher.state.feed) == 2
+
+
+def test_open_watcher_knows_the_process(tmp_path, community):
+    cfg = cfg_for(tmp_path)
+    store, conn = community
+    add_run(conn, "r1")
+    add_run(conn, "r2", process=2)
+    assert open_watcher(cfg, "r1").state.process == 1
+    assert open_watcher(cfg, "r2").state.process == 2
+
+
+def test_open_watcher_reads_a_store_from_before_process_2(tmp_path, community):
+    cfg = cfg_for(tmp_path)
+    store, conn = community
+    add_run(conn, "r1")
+    conn.execute("ALTER TABLE runs DROP COLUMN process")
+    assert open_watcher(cfg, "r1").state.process == 1

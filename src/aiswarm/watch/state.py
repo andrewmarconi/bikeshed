@@ -28,10 +28,44 @@ class AgentCard:
     last: str = ""
 
 
+PANES = {"think": "thinking", "private_message": "private"}  # every other entry goes to the Table
+
+
 @dataclass(frozen=True)
 class FeedLine:
+    """One board entry, in parts, so render.py can colour each part without parsing text."""
     entry_id: int
-    text: str
+    head: str          # "#12 r3"
+    author: str        # agent id, or "system"
+    name: str          # "Ash (a)"
+    kind: str          # entry type
+    target: str = ""   # " → #9"
+    body: str = ""     # one line
+    to: str = ""       # private messages: the recipient's id
+    to_name: str = ""
+    stance: str = ""   # votes
+    failure: str = ""  # a pass that records a failure
+
+    @property
+    def pane(self) -> str:
+        return PANES.get(self.kind, "table")
+
+    @property
+    def detail(self) -> str:
+        if self.failure:
+            return f"(failed: {self.failure})"
+        if self.kind == "vote":
+            return ": ".join(x for x in (self.stance, self.body) if x)
+        return self.body
+
+    @property
+    def text(self) -> str:
+        if self.kind == "think":
+            return f"💭 {self.head} {self.name}: {self.body}"
+        if self.kind == "private_message":
+            return f"🔒 {self.head} {self.name} → {self.to_name}: {self.body}"
+        head = f"{self.head} {self.name} {self.kind}{self.target}"
+        return f"{head}: {self.detail}" if self.detail else head
 
 
 @dataclass(frozen=True)
@@ -58,23 +92,36 @@ class PostRunRow:
     failed_agents: list[str]
 
 
-def feed_text(entry: Entry, who: Who) -> str:
+def _one_line(text: str) -> str:
+    return " ".join(text.split())
+
+
+def feed_line(entry: Entry, who: Who) -> FeedLine:
     p = entry.payload
-    head = f"#{entry.id} r{entry.round} {who(entry.author)} {entry.type}"
-    if p.get("target") is not None:
-        head += f" → #{p['target']}"
+    target = f" → #{p['target']}" if p.get("target") is not None else ""
+    body, stance, failure, to = "", "", "", ""
     if entry.type == "pass":
-        body = f"(failed: {p['failure']})" if p.get("failure") else ""
+        failure = str(p.get("failure") or "")
     elif entry.type == "vote":
-        body = f"{p.get('stance', '')}: {p.get('reason', '')}"
+        stance, body = str(p.get("stance", "")), str(p.get("reason", ""))
     elif entry.type == "write_file":
         body = f"{p.get('path', '')} v{p.get('version', '')}: {p.get('note', '')}"
     elif entry.type in _SUMMARY:
         body = str(p.get(_SUMMARY[entry.type], ""))
     else:
         body = json.dumps(p, ensure_ascii=False)
-    text = f"{head}: {' '.join(body.split())}" if body.strip() else head
-    return text if len(text) <= FEED_MAX else text[: FEED_MAX - 1] + "…"
+    if entry.type == "private_message":
+        to = str(p.get("to", ""))
+    line = FeedLine(entry.id, f"#{entry.id} r{entry.round}", entry.author, who(entry.author), entry.type, target,
+                    _one_line(body), to, who(to) if to else "", _one_line(stance), failure)
+    excess = len(line.text) - FEED_MAX
+    if excess > 0:  # only a runaway entry (e.g. raw JSON) is cut
+        line = replace(line, body=line.body[: max(0, len(line.body) - excess - 1)] + "…")
+    return line
+
+
+def feed_text(entry: Entry, who: Who) -> str:
+    return feed_line(entry, who).text
 
 
 @dataclass
@@ -84,6 +131,7 @@ class RunState:
     label: str
     category: str
     max_rounds: int
+    process: int = 1  # 2: think, then react in turn, with a poll
     phase: str = "waiting"
     round: int = 0
     closed_reason: str | None = None
@@ -97,6 +145,7 @@ class RunState:
     current_step: str | None = None
     profiles_stale: bool = True  # names, headlines and reputation need reloading
     bad_lines: int = 0
+    step_phase: str | None = None  # Process 2: "think" | "react" | "poll", from the latest step
 
     @property
     def finished(self) -> bool:
@@ -116,7 +165,12 @@ class RunState:
         elif name == "round_started":
             self.phase, self.round = "rounds", int(event.get("round", self.round))
         elif name == "agent_step_started":
-            self.card(event["agent"]).state = "thinking…"
+            if self.process == 2:
+                phase = event.get("phase")
+                self.step_phase = phase or "react"
+                self.card(event["agent"]).state = {"think": "thinking…", "poll": "polling…"}.get(phase, "speaking…")
+            else:
+                self.card(event["agent"]).state = "thinking…"
         elif name == "agent_step_finished":
             failure = event.get("failure")
             self.card(event["agent"]).state = f"failed: {failure}" if failure else "idle"
@@ -156,7 +210,7 @@ class RunState:
                 card.control = store.record(agent_id).control if agent_id in known else False
                 card.reputation = reputation(conn, agent_id, half_life).score
         who = make_who({a: store.public(a) for a in cards if a in known})
-        new = [FeedLine(e.id, feed_text(e, who)) for e in entries if e.id > self.last_entry]
+        new = [feed_line(e, who) for e in entries if e.id > self.last_entry]
         calls = []
         for e in reversed(entries):
             if e.type == "call_consensus":

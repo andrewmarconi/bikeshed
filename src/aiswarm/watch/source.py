@@ -90,7 +90,8 @@ def open_watcher(cfg: Config, run_id: str | None) -> Watcher:
         row = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
         if row is None:
             raise ValueError(f"no run {run_id!r}")
+    process = row["process"] if "process" in row.keys() else 1  # read-only: an older store is never migrated
     state = RunState(row["id"], row["goal"], row["goal_id"] or "ad hoc", row["goal_category"] or "ad hoc",
-                     _max_rounds(conn, row["id"], cfg.run.max_rounds))
+                     _max_rounds(conn, row["id"], cfg.run.max_rounds), process)
     return Watcher(state, EventTail(cfg.runs_dir / row["id"] / "events.jsonl"), conn, store,
                    cfg.run.reputation_half_life_runs)
