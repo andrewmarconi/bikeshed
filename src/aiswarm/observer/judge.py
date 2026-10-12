@@ -36,6 +36,17 @@ class PrivatePublicReply(BaseModel):
     findings: list[ColleagueFinding]
 
 
+class ThinkActPoint(BaseModel):
+    relation: Literal["agrees", "diverges"]
+    about: str = Field(min_length=1, max_length=120)
+    think_quote: str = Field(min_length=1)
+    action_quote: str = Field(min_length=1)
+
+
+class ThinkActReply(BaseModel):
+    points: list[ThinkActPoint] = Field(max_length=12)
+
+
 class Change(BaseModel):
     what: str
     evidence: str = Field(min_length=1)
@@ -88,6 +99,18 @@ def _covers_labels(reply: Any, inputs: dict[str, str]) -> str | None:
     return None
 
 
+def _think_and_act(reply: Any, inputs: dict[str, str]) -> str | None:
+    """Each side is quoted from its own sections; a think note passed off as an action fails."""
+    thought = normalise(inputs["think notes"])
+    done = normalise(inputs["public actions"] + "\n" + inputs["private messages sent"])
+    missing = [p.think_quote for p in reply.points if normalise(p.think_quote) not in thought]
+    missing += [p.action_quote for p in reply.points if normalise(p.action_quote) not in done]
+    if missing:
+        return ("each think_quote must be copied from the think notes and each action_quote from the public actions "
+                "or private messages sent; these are not found verbatim there: " + "; ".join(repr(q) for q in missing[:5]))
+    return None
+
+
 @dataclass(frozen=True)
 class Analysis:
     name: str
@@ -103,6 +126,7 @@ ANALYSES: dict[str, Analysis] = {
     "themes": Analysis("themes", ThemesReply, _evidence(lambda r: [t.evidence for t in r.themes])),
     "private_public": Analysis("private_public", PrivatePublicReply, _evidence(
         lambda r: [q for f in r.findings for q in (f.journal_quote, f.review_quote)])),
+    "think_vs_act": Analysis("think_vs_act", ThinkActReply, _think_and_act),
     "self_image": Analysis("self_image", SelfImageReply, _evidence(
         lambda r: [c.evidence for c in r.changes] + [r.gap_evidence])),
     "benchmark": Analysis("benchmark", BenchmarkReply, _evidence(lambda r: list(r.evidence))),

@@ -3,9 +3,10 @@
 import sqlite3
 from datetime import datetime, timedelta
 
+from aiswarm.board import Board, public
 from aiswarm.observer.metrics import BenchmarkAnswer, RunInfo
 from aiswarm.profiles import ProfileStore
-from aiswarm.view import Who
+from aiswarm.view import Who, render_entry
 
 NONE = "(none)"
 
@@ -45,6 +46,20 @@ def private_public_inputs(conn: sqlite3.Connection, run: RunInfo, agent_id: str,
     if reviews == NONE:
         return None
     return {"journal": _journal(conn, run.id, agent_id), "reviews given": reviews}
+
+
+def think_vs_act_inputs(conn: sqlite3.Connection, run: RunInfo, agent_id: str, who: Who) -> dict[str, str] | None:
+    """One agent's own think notes, its own public entries, and the private messages it sent. Nothing it received."""
+    own = [e for e in Board(conn, run.id).entries() if e.author == agent_id]
+    notes = [e for e in own if e.type == "think"]
+    if not notes:
+        return None
+
+    def show(entries) -> str:
+        return "\n\n".join(render_entry(e, who) for e in entries) or NONE
+
+    return {"think notes": show(notes), "public actions": show(public(own)),
+            "private messages sent": show([e for e in own if e.type == "private_message"])}
 
 
 def self_image_inputs(store: ProfileStore, runs: list[RunInfo], run: RunInfo, agent_id: str) -> dict[str, str]:

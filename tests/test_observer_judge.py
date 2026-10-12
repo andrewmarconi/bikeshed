@@ -84,3 +84,27 @@ async def test_codebook_reply_must_cover_every_label(tmp_path):
 def test_normalise_collapses_whitespace_only():
     assert normalise("a \n  b\tc") == "a b c"
     assert normalise("“a”") == "“a”"
+
+
+TVA = {"think notes": "#5 [r2] Alpha (a) think\n  text: I doubt the mango plan.",
+       "public actions": "#6 [r2] Alpha (a) adopt → #3\n  target: 3\n  reason: Mango is fine.",
+       "private messages sent": "(none)"}
+
+
+def tva_reply(think_quote, action_quote):
+    return json.dumps({"points": [{"relation": "diverges", "about": "mango", "think_quote": think_quote,
+                                   "action_quote": action_quote}]})
+
+
+async def test_think_vs_act_quotes_each_side_from_its_own_section(tmp_path):
+    judge, _ = make_judge(tmp_path, [tva_reply("I doubt the mango plan.", "Mango is fine.")])
+    j = await judge.run(ANALYSES["think_vs_act"], run_id="r1", agent_id="a", inputs=TVA)
+    assert j.status == "ok" and j.result["points"][0]["relation"] == "diverges"
+
+
+async def test_think_vs_act_rejects_a_quote_from_the_wrong_side(tmp_path):
+    swapped = tva_reply("Mango is fine.", "I doubt the mango plan.")  # both verbatim, each from the other side
+    judge, client = make_judge(tmp_path, [swapped, swapped])
+    j = await judge.run(ANALYSES["think_vs_act"], run_id="r1", agent_id="a", inputs=TVA)
+    assert j.status == "failed" and "think notes" in j.error
+    assert len(client.calls) == 2  # one correction round
