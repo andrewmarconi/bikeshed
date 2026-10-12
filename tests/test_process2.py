@@ -138,6 +138,80 @@ async def test_resume_discards_a_partial_round_and_replays_it(tmp_path, communit
     assert [e["round"] for e in events if e["event"] == "round_discarded"] == [2]
 
 
+def call_then_critique(find):
+    return {
+        "a": {1: propose("A"), 2: lambda v: {"type": "call_consensus", "synthesis": "A it is",
+                                             "refs": find(v, "propose", "a"), "credits": []}},
+        "b": {1: propose("B"), 2: lambda v: {"type": "critique", "target": find(v, "call_consensus")[0],
+                                             "about": "answer", "points": "Hasty."}},
+        "c": {1: propose("C")},
+    }
+
+
+async def test_the_poll_turns_stances_into_votes_and_reaches_consensus(community, process2, find, runner_factory):
+    store, conn = community
+    support = lambda v: {"type": "poll_answer", "stance": "support", "reason": "Fine."}
+    plans = call_then_critique(find)
+    clients = {a: process2(react=plans[a], poll={2: support}) for a in AGENTS}
+    runner = runner_factory(store, conn, clients, rng=NoShuffle(), max_rounds=4)
+    run_id = runner.start("G", AGENTS, process=2)
+    result = await runner.run(run_id)
+    assert (result.status, result.reason) == ("closed", "consensus")
+    assert sorted(v["author"] for v in rows(conn, run_id, "vote")) == ["b", "c"]
+    polled = [messages[0]["content"] for _, messages, _ in clients["a"].calls if "\n# Poll\n" in messages[0]["content"]]
+    assert polled == []  # the caller is never polled
+
+
+async def test_abstaining_is_recorded_and_counts_for_nothing(community, process2, find, runner_factory):
+    store, conn = community
+    plans = call_then_critique(find)
+    clients = {a: process2(react=plans[a]) for a in AGENTS}  # the default poll answer abstains
+    runner = runner_factory(store, conn, clients, rng=NoShuffle(), max_rounds=2)
+    run_id = runner.start("G", AGENTS, process=2)
+    result = await runner.run(run_id)
+    assert result.reason == "budget"
+    abstained = rows(conn, run_id, "abstain")
+    assert sorted(a["author"] for a in abstained) == ["b", "c"] and all(a["visible_to"] is None for a in abstained)
+    assert rows(conn, run_id, "vote") == []
+
+
+async def test_a_failed_poll_answer_records_a_failure_and_no_vote(community, process2, find, runner_factory):
+    store, conn = community
+    plans = call_then_critique(find)
+    clients = {"a": process2(react=plans["a"]), "b": process2(react=plans["b"]),
+               "c": process2(react=plans["c"], poll={2: lambda v: {"type": "poll_answer", "stance": "maybe",
+                                                                     "reason": "r"}})}
+    runner = runner_factory(store, conn, clients, rng=NoShuffle(), max_rounds=2)
+    run_id = runner.start("G", AGENTS, process=2)
+    await runner.run(run_id)
+    assert "c" not in [v["author"] for v in rows(conn, run_id, "vote") + rows(conn, run_id, "abstain")]
+    assert ("c", "poll:invalid_action") in [tuple(r) for r in conn.execute(
+        "SELECT agent_id, kind FROM failures WHERE run_id = ?", (run_id,))]
+
+
+async def test_a_poll_outage_pauses_without_inventing_votes(community, process2, find, runner_factory):
+    store, conn = community
+    plans = call_then_critique(find)
+
+    class PollDown:
+        """Answers like the scripted model, except every poll request fails."""
+        def __init__(self, inner):
+            self.inner, self.context_window, self.calls = inner, inner.context_window, inner.calls
+
+        async def chat(self, system, messages, json_schema=None):
+            if "\n# Poll\n" in messages[0]["content"]:
+                from aiswarm.models.base import ModelError
+                raise ModelError("down")
+            return await self.inner.chat(system, messages, json_schema)
+
+    clients = {a: PollDown(process2(react=plans[a])) for a in AGENTS}
+    runner = runner_factory(store, conn, clients, rng=NoShuffle(), max_rounds=3)
+    run_id = runner.start("G", AGENTS, process=2)
+    result = await runner.run(run_id)
+    assert result.status == "paused"
+    assert rows(conn, run_id, "vote") == [] and rows(conn, run_id, "abstain") == []
+
+
 async def test_process2_header_counts_rounds_and_process1_does_not(community, process2, scripted, runner_factory):
     store, conn = community
     p2 = {a: process2(react={1: propose(a)}) for a in AGENTS}

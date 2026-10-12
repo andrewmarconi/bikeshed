@@ -9,9 +9,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from aiswarm.actions import NOTE_MAX, STEP, STEP_P2, THINK, Pass, PrivateMessage, WriteFile, target_refs
+from aiswarm.actions import NOTE_MAX, POLL, STEP, STEP_P2, THINK, Pass, PrivateMessage, WriteFile, target_refs
 from aiswarm.agent import StepOutcome, make_reader, make_validator, system_prompt, take_step
-from aiswarm.board import SYSTEM, Board, public
+from aiswarm.board import SYSTEM, Board, Entry, public
 from aiswarm.config import RunSettings
 from aiswarm.consensus import StopDecision, stop_decision
 from aiswarm.db import now_iso, transaction
@@ -23,7 +23,7 @@ from aiswarm.profiles import ProfileStore
 from aiswarm.prompts import render
 from aiswarm.report import write_report
 from aiswarm.reviews import render_public_reviews
-from aiswarm.view import build_view, collect_inputs, make_who
+from aiswarm.view import build_view, collect_inputs, make_who, render_entry
 from aiswarm.gitrepo import GitError
 from aiswarm.workspace import InvalidPath, Workspace, WriteConflict
 
@@ -278,6 +278,28 @@ class Runner:
         entry = ctx.board.append(ctx.round, agent_id, "think", {"text": outcome.action.text}, visible_to=[agent_id])
         self._trace(entry.id, ctx.run_id, agent_id, outcome)
         return {"round": ctx.round, "agent": agent_id, "entry": entry.id, "type": "think", "failure": None}
+
+    async def _poll(self, agent_id: str, ctx: RoundContext, call: Entry) -> StepOutcome:
+        who = make_who({i: self.store.public(i) for i in self.store.ids()})
+        request = render("process2_poll_request.md", call=render_entry(call, who), call_id=call.id)
+        return await self._turn(agent_id, ctx, phase="poll", request=request, shape=POLL, opening_rule=False,
+                                max_reads=0)
+
+    def _post_poll(self, ctx: RoundContext, agent_id: str, outcome: StepOutcome, call: Entry) -> dict[str, Any] | None:
+        """support / object become ordinary votes; abstain is recorded publicly; a failure fabricates nothing."""
+        if outcome.failure:
+            self._fail(ctx.run_id, ctx.round, agent_id, f"poll:{outcome.failure}", outcome.detail)
+            return None
+        answer = outcome.action
+        if answer.stance == "abstain":
+            entry = ctx.board.append(ctx.round, agent_id, "abstain", {"target": call.id, "reason": answer.reason},
+                                     refs=[call.id])
+        else:
+            entry = ctx.board.append(ctx.round, agent_id, "vote",
+                                     {"target": call.id, "stance": answer.stance, "reason": answer.reason},
+                                     refs=[call.id])
+        self._trace(entry.id, ctx.run_id, agent_id, outcome)
+        return {"round": ctx.round, "agent": agent_id, "entry": entry.id, "type": entry.type, "failure": None}
 
     def _close(
         self, run_id: str, goal: str, board: Board, events: EventLog, rnd: int, decision: StopDecision

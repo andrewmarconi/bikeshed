@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from aiswarm.board import Board
+from aiswarm.consensus import call_status
 from aiswarm.db import transaction
 from aiswarm.events import EventLog
 from aiswarm.workspace import Workspace
@@ -79,7 +80,27 @@ async def sequential_act(runner: "Runner", ctx: RoundContext) -> str | None:
 
 
 async def poll(runner: "Runner", ctx: RoundContext) -> str | None:
-    return None  # Task 8
+    """Members who have not yet voted on the latest call are asked for their stance, all at once."""
+    entries = ctx.board.entries()
+    calls = [e for e in entries if e.type == "call_consensus"]
+    if not calls:
+        return None
+    call = calls[-1]
+    status = call_status(entries, call.id)
+    asked = [a for a in ctx.agent_ids if a not in status.supporters | status.objectors]
+    if not asked:
+        return None
+    outcomes = await asyncio.gather(*(runner._poll(a, ctx, call) for a in asked))
+    if all(o.failure == "model_error" for o in outcomes):
+        return outcomes[0].detail
+    order = list(zip(asked, outcomes))
+    ctx.rng(runner, "-poll").shuffle(order)
+    with transaction(runner.conn):
+        posted = [runner._post_poll(ctx, a, o, call) for a, o in order]
+    for event in posted:
+        if event:
+            ctx.events.emit("action_posted", **event)
+    return None
 
 
 def phases(process: int, round: int) -> list[Phase]:
