@@ -4,3 +4,7 @@ __pycache__/
 .superpowers/
 /lab/
 .DS_Store
+
+# Report decks and their media live in the Obsidian vault (60. Platform/Reports/Bikeshed), not in this repo
+docs/presentation/
+docs/media/
