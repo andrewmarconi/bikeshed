@@ -178,3 +178,16 @@ def test_private_message_recipient_must_be_another_member():
 
 def test_system_prompt_template_can_be_chosen():
     assert system_prompt("Wren (a)", "Calm.", 3) == system_prompt("Wren (a)", "Calm.", 3, "agent_system.md")
+
+
+@pytest.mark.parametrize("template", ["agent_system.md", "process2_agent_system.md"])
+def test_system_prompts_say_how_the_workspace_works(template):
+    text = system_prompt("Ash (a)", "Calm.", 2, template)
+    assert "every member can read" in text
+    assert "relative to the workspace" in text
+
+
+def test_the_think_request_says_notes_are_kept():
+    from aiswarm.prompts import render
+
+    assert "shown to you on every turn" in render("process2_think_request.md", note_max="4,000")

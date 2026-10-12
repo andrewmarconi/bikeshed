@@ -98,3 +98,11 @@ def test_ignored_paths_are_still_committed(ws, monkeypatch, tmp_path):
     gitconfig.write_text(f"[core]\n\texcludesFile = {excludes}\n")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
     assert ws.write("run.log", 0, "x", author="a", note="n") == 1
+
+
+def test_a_leading_workspace_folder_is_dropped():
+    """Paths are already inside the workspace; small models still prefix them with `workspace/`."""
+    assert normalise_path("workspace/r0") == "r0"
+    assert normalise_path("Workspace/workspace/notes/a.md") == "notes/a.md"
+    assert normalise_path("workspace") == "workspace"  # a file of that name is still a file
+    assert normalise_path("notes/workspace/a.md") == "notes/workspace/a.md"

@@ -36,7 +36,10 @@ def normalise_path(path: str) -> str:
         raise invalid
     if any(part.casefold().startswith(".git") for part in pure.parts):
         raise invalid
-    return str(pure)
+    parts = pure.parts
+    while len(parts) > 1 and parts[0].casefold() == "workspace":  # paths are already inside the workspace
+        parts = parts[1:]
+    return str(PurePosixPath(*parts))
 
 
 class Workspace:
