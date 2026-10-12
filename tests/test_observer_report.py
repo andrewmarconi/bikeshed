@@ -1,7 +1,7 @@
 from collections import Counter
 from dataclasses import replace
 
-from aiswarm.observer.charts import marker_positions, trend_chart
+from aiswarm.observer.charts import marker_positions, network_chart, trend_chart
 from aiswarm.observer.metrics import BenchmarkAnswer, CategoryStats, Credits, Influence, RunInfo
 from aiswarm.observer.report import RunSection, SummarySection, render_run, render_summary
 from aiswarm.observer.store import Judgment
@@ -97,3 +97,14 @@ def test_summary_marks_process_2_runs():
                        norms=[], codebook=[], twins={}, categories={}, failed=[], benchmark=[], reciprocity=[],
                        in_progress=[], judge_note=None)
     assert "2 closed runs: best-fruit, dishwasher (P2)" in render_summary(s)
+
+
+def test_network_chart_writes_a_png(tmp_path):
+    path = network_chart(tmp_path / "c" / "n.png", "Private messages", {"a": "Alpha (a)", "b": "Bea (b)", "c": "Cyd (c)"},
+                         {("a", "b"): 3, ("b", "a"): 1})
+    assert path.exists() and path.read_bytes()[:4] == b"\x89PNG"
+
+
+def test_network_chart_with_one_agent_and_no_messages(tmp_path):
+    path = network_chart(tmp_path / "n.png", "Private messages", {"a": "Alpha (a)"}, {})
+    assert path.read_bytes()[:4] == b"\x89PNG"
