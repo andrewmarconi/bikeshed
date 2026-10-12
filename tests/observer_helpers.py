@@ -6,20 +6,22 @@ T0 = "2026-10-01T00:00:00+00:00"
 
 
 def add_run(conn, run_id, agents=("a", "b", "c"), *, created=T0, status="closed", ended="budget",
-            goal="Pick a fruit.", goal_id=None, category=None, benchmark=False):
+            goal="Pick a fruit.", goal_id=None, category=None, benchmark=False, process=1):
     conn.execute(
-        "INSERT INTO runs (id, goal, status, ended_reason, agent_ids, created_at, goal_id, goal_category, is_benchmark) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO runs (id, goal, status, ended_reason, agent_ids, created_at, goal_id, goal_category, is_benchmark, "
+        "process) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (run_id, goal, status, ended if status == "closed" else None, json.dumps(list(agents)), created, goal_id,
-         category, int(benchmark)),
+         category, int(benchmark), process),
     )
     return run_id
 
 
-def add_entry(conn, run_id, author, type_, payload, refs=(), round=1, created=T0):
+def add_entry(conn, run_id, author, type_, payload, refs=(), round=1, created=T0, visible_to=None, to="all"):
     cursor = conn.execute(
-        "INSERT INTO entries (run_id, round, author, type, refs, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (run_id, round, author, type_, json.dumps(list(refs)), json.dumps(payload), created),
+        "INSERT INTO entries (run_id, round, author, type, to_, refs, payload, created_at, visible_to) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (run_id, round, author, type_, to, json.dumps(list(refs)), json.dumps(payload), created,
+         json.dumps(list(visible_to)) if visible_to else None),
     )
     return cursor.lastrowid
 

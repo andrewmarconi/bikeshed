@@ -104,7 +104,7 @@ def _series(runs: list[m.RunInfo], value) -> dict[str, list[float | None]]:
 
 
 def _charts(conn: sqlite3.Connection, ostore: ObserverStore, runs: list[m.RunInfo], out_dir: Path) -> dict[str, Path]:
-    labels = [r.label for r in runs]
+    labels = [r.tag for r in runs]
     markers = m.harness_changes(conn, runs)
     peer = {r.id: m.peer_scores(conn, r.id) for r in runs}
     gap = {r.id: m.self_peer_gap(conn, r.id) for r in runs}
@@ -146,7 +146,7 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
         rows = []
         for run in runs:
             peer, mix = m.peer_scores(conn, run.id), m.action_mix(conn, run)
-            rows += [(run.label, agent, peer.get(agent), mix[agent]) for agent in group if agent in run.agent_ids]
+            rows += [(run.tag, agent, peer.get(agent), mix[agent]) for agent in group if agent in run.agent_ids]
         twin_rows[control] = rows
         compared = [r for r in runs if any(a in r.agent_ids for a in group)]
         if len(compared) >= 2:
@@ -154,7 +154,7 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
             series = {who(a): [peers[r.id].get(a) if a in r.agent_ids else None for r in compared] for a in group}
             charts[f"Control vs twin: {who(control)}"] = trend_chart(
                 out_dir / "charts" / f"control_{control}.png", f"Peer score: {who(control)} (control) vs twin",
-                [r.label for r in compared], series, m.harness_changes(conn, compared), "mean peer rating")
+                [r.tag for r in compared], series, m.harness_changes(conn, compared), "mean peer rating")
     summary = SummarySection(
         runs=runs, who=who, charts={title: f"charts/{path.name}" for title, path in charts.items()},
         identity=m.identity_events(conn, store, runs), norms=m.norm_events(conn), codebook=ostore.codes(),

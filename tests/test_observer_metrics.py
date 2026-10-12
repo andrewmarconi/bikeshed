@@ -1,7 +1,9 @@
+import sqlite3
+
 from observer_helpers import add_entry, add_run
 
 from aiswarm.observer.metrics import (
-    Influence, action_mix, closed_runs, credit_pairs, credits, influence, open_runs,
+    Influence, action_mix, by_category, closed_runs, credit_pairs, credits, harness_changes, influence, open_runs,
 )
 
 
@@ -172,3 +174,49 @@ def test_harness_changes_marks_runs_whose_provenance_changed(community, monkeypa
     add_run(conn, "r2")
     monkeypatch.setattr(metrics, "provenance_changes", lambda c, run_id: ["code"] if run_id == "r2" else [])
     assert harness_changes(conn, closed_runs(conn)) == [1]
+
+
+def test_closed_runs_record_the_process_and_tag_process_2(community):
+    store, conn = community
+    add_run(conn, "r1", goal_id="best-fruit")
+    add_run(conn, "r2", process=2)
+    r1, r2 = closed_runs(conn)
+    assert (r1.process, r1.tag) == (1, "best-fruit")
+    assert (r2.process, r2.tag) == (2, "r2 (P2)")
+
+
+def test_a_change_of_process_is_a_harness_marker(community):
+    store, conn = community
+    add_run(conn, "r1")
+    add_run(conn, "r2", process=2)
+    add_run(conn, "r3", process=2)
+    add_run(conn, "r4")
+    assert harness_changes(conn, closed_runs(conn)) == [1, 3]
+
+
+def test_by_category_splits_by_process(community):
+    store, conn = community
+    add_run(conn, "r1", category="contested")
+    add_run(conn, "r2", category="contested", process=2)
+    stats = by_category(conn, closed_runs(conn))
+    assert stats["contested"].runs == 1 and stats["contested (P2)"].runs == 1
+
+
+def test_action_mix_counts_private_messages(community):
+    store, conn = community
+    add_run(conn, "r1", process=2)
+    add_entry(conn, "r1", "a", "private_message", {"to": "b", "text": "hi"}, visible_to=["a", "b"], to="b")
+    assert action_mix(conn, closed_runs(conn)[0])["a"]["private_message"] == 1
+
+
+def test_closed_runs_reads_a_store_from_before_process_2():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        "CREATE TABLE runs (id TEXT, goal TEXT, status TEXT, ended_reason TEXT, agent_ids TEXT, created_at TEXT, "
+        "goal_id TEXT, goal_category TEXT, is_benchmark INTEGER);"
+        "CREATE TABLE entries (run_id TEXT, created_at TEXT);"
+        "CREATE TABLE postrun_steps (run_id TEXT, updated_at TEXT);"
+        "INSERT INTO runs VALUES ('r1', 'g', 'closed', 'budget', '[\"a\"]', '2026-10-01T00:00:00+00:00', "
+        "NULL, NULL, 0);")
+    assert [(r.id, r.process) for r in closed_runs(conn)] == [("r1", 1)]

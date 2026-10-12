@@ -1,4 +1,5 @@
 from collections import Counter
+from dataclasses import replace
 
 from aiswarm.observer.charts import marker_positions, trend_chart
 from aiswarm.observer.metrics import BenchmarkAnswer, CategoryStats, Credits, Influence, RunInfo
@@ -81,3 +82,18 @@ def test_summary_sections(tmp_path):
     assert "honesty" in text and "Pepperoni" in text
     assert "e vs no twin found" in text
     assert "r9" in text
+
+
+P2 = replace(RUN, process=2)
+
+
+def test_run_report_names_the_process():
+    assert "- **Process:** 1" in render_run(section())
+    assert "- **Process:** 2" in render_run(section(run=P2))
+
+
+def test_summary_marks_process_2_runs():
+    s = SummarySection(runs=[RUN, replace(P2, id="r2", goal_id="dishwasher")], who=who, charts={}, identity=[],
+                       norms=[], codebook=[], twins={}, categories={}, failed=[], benchmark=[], reciprocity=[],
+                       in_progress=[], judge_note=None)
+    assert "2 closed runs: best-fruit, dishwasher (P2)" in render_summary(s)

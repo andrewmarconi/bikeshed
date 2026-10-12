@@ -12,7 +12,8 @@ from aiswarm.provenance import provenance_changes
 from aiswarm.timeline import _rename
 from aiswarm.view import Who
 
-ACTIONS = ("propose", "critique", "adopt", "refine", "vote", "call_consensus", "write_file", "pass", "failed")
+ACTIONS = ("propose", "critique", "adopt", "refine", "vote", "call_consensus", "private_message", "write_file", "pass",
+           "failed")
 
 
 @dataclass(frozen=True)
@@ -26,10 +27,16 @@ class RunInfo:
     agent_ids: tuple[str, ...]
     created_at: str
     end: str
+    process: int = 1
 
     @property
     def label(self) -> str:
         return self.goal_id or self.id
+
+    @property
+    def tag(self) -> str:
+        """The run's name in tables and charts. Process 1 is the baseline and stays unmarked."""
+        return self.label if self.process == 1 else f"{self.label} (P2)"
 
     @property
     def category(self) -> str:
@@ -49,7 +56,8 @@ def closed_runs(conn: sqlite3.Connection) -> list[RunInfo]:
     rows = conn.execute("SELECT * FROM runs WHERE status = 'closed' ORDER BY rowid").fetchall()
     return [
         RunInfo(r["id"], r["goal"], r["goal_id"], r["goal_category"], bool(r["is_benchmark"]), r["ended_reason"],
-                tuple(json.loads(r["agent_ids"])), r["created_at"], run_end(conn, r["id"]))
+                tuple(json.loads(r["agent_ids"])), r["created_at"], run_end(conn, r["id"]),
+                r["process"] if "process" in r.keys() else 1)  # read-only: an older store is never migrated
         for r in rows
     ]
 
@@ -254,7 +262,8 @@ class CategoryStats:
 def by_category(conn: sqlite3.Connection, runs: list[RunInfo]) -> dict[str, CategoryStats]:
     stats: dict[str, CategoryStats] = {}
     for run in runs:
-        s = stats.setdefault(run.category, CategoryStats())
+        key = run.category if run.process == 1 else f"{run.category} (P2)"
+        s = stats.setdefault(key, CategoryStats())
         s.runs += 1
         s.endings[run.ended_reason or "unknown"] += 1
         for counts in action_mix(conn, run).values():
@@ -306,5 +315,6 @@ def norm_events(conn: sqlite3.Connection) -> list[NormEvent]:
 
 
 def harness_changes(conn: sqlite3.Connection, runs: list[RunInfo]) -> list[int]:
-    """Indices of runs whose provenance shows a harness change (since the previous run, or within the run)."""
-    return [i for i, run in enumerate(runs) if provenance_changes(conn, run.id)]
+    """Indices of runs whose provenance shows a harness change, or whose process differs from the run before."""
+    return [i for i, run in enumerate(runs)
+            if provenance_changes(conn, run.id) or (i > 0 and run.process != runs[i - 1].process)]

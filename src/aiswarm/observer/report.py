@@ -97,7 +97,8 @@ def render_run(s: RunSection) -> str:
     r = s.run
     out = [f"# {r.id} — {r.goal}", "",
            f"- **Goal:** {r.label} ({r.category}){' — benchmark' if r.is_benchmark else ''}",
-           f"- **Ended:** {r.ended_reason or 'unknown'}"]
+           f"- **Ended:** {r.ended_reason or 'unknown'}",
+           f"- **Process:** {r.process}"]
     if s.changes:
         out += ["", "> **Harness changed:** " + "; ".join(s.changes)]
     out += [""] + _metrics(s) + [""] + _dimensions(s) + _credits(s) + [""]
@@ -171,7 +172,7 @@ def _identity_line(e: IdentityEvent, who: Who) -> str:
 
 
 def render_summary(s: SummarySection) -> str:
-    out = ["# Observer summary", "", f"{len(s.runs)} closed runs: " + ", ".join(r.label for r in s.runs)]
+    out = ["# Observer summary", "", f"{len(s.runs)} closed runs: " + ", ".join(r.tag for r in s.runs)]
     if s.in_progress:
         out.append(f"In progress (skipped): {', '.join(s.in_progress)}")
     if s.judge_note:
