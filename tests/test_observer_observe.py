@@ -140,3 +140,40 @@ async def test_observe_reports_a_process_2_run(lab, community):
     assert "## Process 2" not in (lab.observer.dir / "runs" / "r1.md").read_text()
     summary = (lab.observer.dir / "summary.md").read_text()
     assert "debate (P2)" in summary and "## Process 2" in summary
+
+
+def _scored(conn):
+    add_run(conn, "r5", created=FUTURE, ended="consensus")
+    first = add_entry(conn, "r5", "a", "call_consensus",
+                      {"synthesis": "Fruit", "credits": [{"agent_id": "a", "contribution": "me"}]})
+    add_entry(conn, "r5", "system", "scorer_rejected", {"call_id": first, "feedback": "Which fruit?"}, refs=[first])
+    second = add_entry(conn, "r5", "b", "call_consensus",
+                       {"synthesis": "Kiwi", "credits": [{"agent_id": "c", "contribution": "kiwi"}]})
+    add_entry(conn, "r5", "system", "scorer_accepted", {"call_id": second}, refs=[second])
+    add_entry(conn, "r5", "system", "run_closed", {"reason": "consensus", "call_id": second})
+    conn.execute("INSERT INTO scorer_points (run_id, agent_id, call_id, contribution, created_at) "
+                 "VALUES ('r5', 'c', ?, 'kiwi', 't')", (second,))
+    return first, second
+
+
+async def test_observe_reports_the_scorer(lab, community):
+    store, conn = community
+    first, second = _scored(conn)
+    result = await observe(lab, judge_client=None, judge_note="--no-judge")
+    report = (lab.observer.dir / "runs" / "r5.md").read_text()
+    assert f"- call #{first} by Alpha (a): **rejected** — Which fruit?" in report
+    assert f"- Cyd (c): 1 point for call #{second} — kiwi" in report
+    summary = (lab.observer.dir / "summary.md").read_text()
+    assert "2 rulings: 1 accepted, 1 rejected." in summary
+    assert "| Alpha (a) | 0 | 1 | 1 |" in summary and "| Cyd (c) | 1 | 0 | 0 |" in summary
+    for name in ("scorer_points.png", "scorer_rulings.png", "self_credit.png"):
+        assert (lab.observer.dir / "charts" / name) in result.written
+
+
+async def test_observe_a_store_from_before_the_scorer(lab, community):
+    store, conn = community
+    conn.execute("DROP TABLE scorer_points")
+    await observe(lab, judge_client=None, judge_note="--no-judge")
+    summary = (lab.observer.dir / "summary.md").read_text()
+    assert "_The Scorer has not ruled yet._" in summary
+    assert "_The Scorer did not rule in this run._" in (lab.observer.dir / "runs" / "r1.md").read_text()

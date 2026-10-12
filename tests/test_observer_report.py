@@ -8,6 +8,8 @@ from aiswarm.observer.report import (
     Process2Section, Process2Summary, RunSection, SummarySection, render_run, render_summary,
 )
 from aiswarm.observer.store import Judgment
+from aiswarm.observer.report import ScorerSummary
+from aiswarm.observer.scoring import Award, RulingRow, SelfCredit
 
 RUN = RunInfo("r1", "Pick a fruit.", "best-fruit", "contested", False, "budget", ("a", "b"), "t", "t")
 
@@ -166,3 +168,39 @@ def test_poll_and_order_tables_say_what_they_count():
                        failed=[], benchmark=[], reciprocity=[], in_progress=[], judge_note=None,
                        process2=Process2Summary([], {}, [OrderStat(1, 4, 3)]))
     assert "Summed over all Process 2 runs, whatever their size" in render_summary(s)
+
+
+def test_run_report_lists_rulings_feedback_and_awards():
+    text = render_run(section(rulings=[RulingRow(4, "a", False, "Which fruit?"), RulingRow(9, "b", True, "")],
+                              awards=[Award("b", 9, "me"), Award("a", 9, "kiwi")]))
+    scorer = text.split("## Scorer\n")[1]
+    assert "- call #4 by Alpha (a): **rejected** — Which fruit?" in scorer
+    assert "- call #9 by Bea (b): **accepted**" in scorer
+    assert "- Bea (b): 1 point for call #9 — me (self-credit)" in scorer
+    assert "- Alpha (a): 1 point for call #9 — kiwi" in scorer
+    assert text.index("## Credits") < text.index("## Scorer")
+
+
+def test_run_report_without_rulings():
+    assert "_The Scorer did not rule in this run._" in render_run(section())
+
+
+def test_summary_scorer_section():
+    s = SummarySection(
+        runs=[RUN], who=who, charts={}, identity=[], norms=[], codebook=[], twins={}, categories={}, failed=[],
+        benchmark=[], reciprocity=[], in_progress=[], judge_note=None,
+        scorer=ScorerSummary(accepted=1, rejected=2, points={"a": 3},
+                             self_credit={"a": SelfCredit(4, 1), "b": SelfCredit(0, 0)}))
+    text = render_summary(s)
+    scorer = text.split("## Scorer\n")[1]
+    assert "3 rulings: 1 accepted, 2 rejected." in scorer
+    assert "| Alpha (a) | 3 | 4 | 1 |" in scorer and "| Bea (b) | 0 | 0 | 0 |" in scorer
+    assert text.index("## Credit reciprocity") < text.index("## Scorer")
+
+
+def test_summary_before_any_ruling():
+    s = SummarySection(
+        runs=[RUN], who=who, charts={}, identity=[], norms=[], codebook=[], twins={}, categories={}, failed=[],
+        benchmark=[], reciprocity=[], in_progress=[], judge_note=None,
+        scorer=ScorerSummary(0, 0, {}, {}))
+    assert "_The Scorer has not ruled yet._" in render_summary(s)

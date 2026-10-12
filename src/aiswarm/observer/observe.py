@@ -2,6 +2,7 @@
 
 import asyncio
 import sqlite3
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from aiswarm.db import connect_readonly
 from aiswarm.models.base import ModelClient, limit_clients
 from aiswarm.observer import metrics as m
 from aiswarm.observer import process2 as p2
+from aiswarm.observer import scoring as sc
 from aiswarm.observer.charts import network_chart, trend_chart
 from aiswarm.observer.codebook import theme_counts, update_codebook
 from aiswarm.observer.inputs import (
@@ -17,7 +19,7 @@ from aiswarm.observer.inputs import (
 )
 from aiswarm.observer.judge import ANALYSES, Judge
 from aiswarm.observer.report import (
-    Process2Section, Process2Summary, RunSection, SummarySection, render_run, render_summary,
+    Process2Section, Process2Summary, RunSection, ScorerSummary, SummarySection, render_run, render_summary,
 )
 from aiswarm.observer.store import ObserverStore
 from aiswarm.profiles import ProfileError, ProfileStore
@@ -107,6 +109,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
             codes={label: ostore.code_for(label) or label for label in labels},
             benchmark=next((a for a in answers if a.run_id == run.id), None), judge_note=note,
             dimensions=m.dimension_scores(conn, run.id), process2=_process2_section(conn, run, who, out_dir, written),
+            rulings=sc.rulings(conn, run.id), awards=sc.awards(conn, run.id),
         )
         path = out_dir / "runs" / f"{run.id}.md"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -140,6 +143,27 @@ def _charts(conn: sqlite3.Connection, ostore: ObserverStore, runs: list[m.RunInf
         "Self minus peer": ("self_peer.png", _series(runs, lambda r, a: gap[r.id].get(a)), "self − peer"),
         "Action mix": ("actions.png", {act: [share(r, act) for r in runs] for act in m.ACTIONS}, "share of turns"),
     }
+    earned = {r.id: Counter(a.agent_id for a in sc.awards(conn, r.id)) for r in runs}
+    lifetime: dict[str, list[float | None]] = {}
+    for agent in sorted({a for r in runs for a in r.agent_ids}):
+        total, values = 0, []
+        for r in runs:
+            total += earned[r.id][agent]
+            values.append(float(total) if agent in r.agent_ids else None)
+        lifetime[agent] = values
+    verdicts = {r.id: [x.accepted for x in sc.rulings(conn, r.id)] for r in runs}
+    credit = {r.id: sc.self_credit(conn, r) for r in runs}
+
+    def self_share(run: m.RunInfo) -> float | None:
+        calls = sum(c.calls for c in credit[run.id].values())
+        return None if calls == 0 else sum(c.self_credited for c in credit[run.id].values()) / calls
+
+    specs["Scorer points"] = ("scorer_points.png", lifetime, "lifetime Scorer points")
+    specs["Scorer rulings"] = ("scorer_rulings.png", {
+        "accepted": [float(sum(verdicts[r.id])) for r in runs],
+        "rejected": [float(len(verdicts[r.id]) - sum(verdicts[r.id])) for r in runs]}, "rulings")
+    specs["Self-credit"] = ("self_credit.png", {"calls crediting the caller": [self_share(r) for r in runs]},
+                            "share of calls")
     by_run = {r.id: theme_counts(ostore, ostore.judgments(r.id, "themes")) for r in runs}
     totals: dict[str, int] = {}
     for per_agent in by_run.values():
@@ -182,12 +206,18 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
         p2.combine_participation([p2.poll_participation(conn, r) for r in p2_runs]),
         p2.combine_order([p2.speaking_order(conn, r) for r in p2_runs]),
     ) if p2_runs else None
+    rulings = [x for r in runs for x in sc.rulings(conn, r.id)]
+    scorer = ScorerSummary(
+        accepted=sum(x.accepted for x in rulings), rejected=sum(not x.accepted for x in rulings),
+        points=dict(Counter(a.agent_id for r in runs for a in sc.awards(conn, r.id))),
+        self_credit=sc.combine_self_credit([sc.self_credit(conn, r) for r in runs]),
+    )
     summary = SummarySection(
         runs=runs, who=who, charts={title: f"charts/{path.name}" for title, path in charts.items()},
         identity=m.identity_events(conn, store, runs), norms=m.norm_events(conn), codebook=ostore.codes(),
         twins=found, categories=m.by_category(conn, runs), failed=ostore.failed(), benchmark=answers,
         reciprocity=m.credit_pairs(conn, runs), in_progress=in_progress, judge_note=judge_note, twin_rows=twin_rows,
-        process2=process2,
+        process2=process2, scorer=scorer,
     )
     path = out_dir / "summary.md"
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -7,6 +7,7 @@ from aiswarm.observer.metrics import (
     ACTIONS, BenchmarkAnswer, CategoryStats, Credits, IdentityEvent, Influence, NormEvent, RunInfo,
 )
 from aiswarm.observer.process2 import OrderStat, Participation, RecurringPair
+from aiswarm.observer.scoring import Award, RulingRow, SelfCredit
 from aiswarm.observer.store import Judgment
 from aiswarm.view import Who
 
@@ -35,6 +36,8 @@ class RunSection:
     judge_note: str | None  # why nothing was judged (no judge configured / --no-judge), else None
     dimensions: dict[str, dict[str, float]] = field(default_factory=dict)  # agent -> adopted dimension -> peer mean
     process2: Process2Section | None = None  # only for Process 2 runs
+    rulings: list[RulingRow] = field(default_factory=list)  # the Scorer's rulings, in board order
+    awards: list[Award] = field(default_factory=list)  # Scorer points awarded in this run
 
 
 def _dimensions(s: RunSection) -> list[str]:
@@ -86,6 +89,21 @@ def _credits(s: RunSection) -> list[str]:
         self_credit = " (self-credit)" if agent == s.credits.caller and contribution is not None else ""
         out.append(f"- {s.who(agent)}: influence {score}; {given}{self_credit}")
     return out
+
+
+def _scorer_run(s: RunSection) -> list[str]:
+    out = ["## Scorer", ""]
+    if not s.rulings:
+        return out + ["_The Scorer did not rule in this run._", ""]
+    for r in s.rulings:
+        verdict = "**accepted**" if r.accepted else f"**rejected** — {r.feedback}"
+        out.append(f"- call #{r.call_id} by {s.who(r.caller)}: {verdict}")
+    if s.awards:
+        callers = {r.call_id: r.caller for r in s.rulings}
+        out += ["", "Points awarded:"]
+        out += [f"- {s.who(a.agent_id)}: 1 point for call #{a.call_id} — {a.contribution}"
+                + (" (self-credit)" if callers.get(a.call_id) == a.agent_id else "") for a in s.awards]
+    return out + [""]
 
 
 def _participation(rows: dict[str, Participation], who: Who) -> list[str]:
@@ -146,7 +164,7 @@ def render_run(s: RunSection) -> str:
            f"- **Process:** {r.process}"]
     if s.changes:
         out += ["", "> **Harness changed:** " + "; ".join(s.changes)]
-    out += [""] + _metrics(s) + [""] + _dimensions(s) + _credits(s) + [""]
+    out += [""] + _metrics(s) + [""] + _dimensions(s) + _credits(s) + [""] + _scorer_run(s)
     if s.process2 is not None:
         out += _process2(s)
     out += _per_agent(s, "Themes", "themes", lambda res: [
@@ -185,6 +203,14 @@ class Process2Summary:
 
 
 @dataclass
+class ScorerSummary:
+    accepted: int
+    rejected: int
+    points: dict[str, int]  # agent -> Scorer points over these runs
+    self_credit: dict[str, SelfCredit]  # agent -> calls made, calls crediting the caller
+
+
+@dataclass
 class SummarySection:
     runs: list[RunInfo]
     who: Who
@@ -202,6 +228,7 @@ class SummarySection:
     # control id -> rows of (run label, agent id, mean peer score, action counts) for the control and its twins
     twin_rows: dict[str, list[tuple[str, str, float | None, Counter]]] = field(default_factory=dict)
     process2: Process2Summary | None = None  # None when no Process 2 run has closed
+    scorer: ScorerSummary | None = None
 
 
 TWIN_ACTIONS = ("propose", "critique", "adopt", "vote", "call_consensus", "failed")
@@ -228,6 +255,20 @@ def _control_vs_twin(s: SummarySection) -> list[str]:
 def _identity_line(e: IdentityEvent, who: Who) -> str:
     line = f"- {e.at.isoformat(timespec='minutes')} {who(e.agent_id)}: {e.kind} {e.detail}".rstrip()
     return line + (f" (prior peer score {e.prior_peer:.1f})" if e.prior_peer is not None else "")
+
+
+def _scorer_summary(sc: ScorerSummary, who: Who) -> list[str]:
+    out = ["## Scorer", ""]
+    total = sc.accepted + sc.rejected
+    out.append(f"{total} rulings: {sc.accepted} accepted, {sc.rejected} rejected." if total
+               else "_The Scorer has not ruled yet._")
+    agents = sorted(set(sc.points) | set(sc.self_credit))
+    if agents:
+        out += ["", "| Agent | Scorer points | calls | self-credited |", "|---|---|---|---|"]
+        for a in agents:
+            c = sc.self_credit.get(a, SelfCredit())
+            out.append(f"| {who(a)} | {sc.points.get(a, 0)} | {c.calls} | {c.self_credited} |")
+    return out + [""]
 
 
 def render_summary(s: SummarySection) -> str:
@@ -258,6 +299,8 @@ def render_summary(s: SummarySection) -> str:
     out += [f"- {n.run_id} {s.who(n.author)} proposed a {n.kind} ({n.status}): {n.text}" for n in s.norms] or ["_None yet._"]
     out += ["", "## Credit reciprocity", ""]
     out += [f"- {run}: {s.who(g)} → {s.who(r)}" for run, g, r in s.reciprocity] or ["_No credits yet._"]
+    if s.scorer is not None:
+        out += [""] + _scorer_summary(s.scorer, s.who)
     if s.process2 is not None:
         p = s.process2
         out += ["", "## Process 2", "", "### Recurring private-message pairs", ""]
