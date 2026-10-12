@@ -2,9 +2,9 @@
 
 import json
 import re
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 Text = Annotated[str, Field(min_length=1)]
 MAX_FILE_CHARS = 20_000
@@ -96,6 +96,30 @@ class ReadReviews(_Action):
     agent_id: Text
 
 
+NOTE_MAX = 1_200
+MESSAGE_MAX = 600
+
+
+class Note(_Action):
+    """Process 2: a private note an agent writes to itself before a round's discussion."""
+    type: Literal["note"]
+    text: str = Field(min_length=1, max_length=NOTE_MAX)
+
+
+class PrivateMessage(_Action):
+    """Process 2: a message only its sender and its one recipient will see."""
+    type: Literal["private_message"]
+    to: Text
+    text: str = Field(min_length=1, max_length=MESSAGE_MAX)
+
+
+class PollAnswer(_Action):
+    """Process 2: a stance on the open call when polled."""
+    type: Literal["poll_answer"]
+    stance: Literal["support", "object", "abstain"]
+    reason: Text
+
+
 PostingAction = Propose | Critique | Question | Adopt | Refine | WriteFile | CallConsensus | Vote | Pass
 READ_ACTIONS = (ReadFile, ListFiles, ReadEntry, ReadReviews)
 
@@ -108,6 +132,19 @@ StepAction = Annotated[
 
 class _Envelope(_Action):
     action: StepAction
+
+
+def envelope(*kinds: type[_Action]) -> type[BaseModel]:
+    """The reply shape {"action": <one of kinds>}."""
+    union: Any = kinds[0] if len(kinds) == 1 else Annotated[Union[kinds], Field(discriminator="type")]
+    return create_model("Envelope", __base__=_Action, action=(union, ...))
+
+
+STEP = _Envelope  # Process 1; unchanged
+STEP_P2 = envelope(Propose, Critique, Question, Adopt, Refine, WriteFile, CallConsensus, Vote, PrivateMessage, Pass,
+                   *READ_ACTIONS)
+THINK = envelope(Note, *READ_ACTIONS)
+POLL = envelope(PollAnswer)
 
 
 class ActionError(ValueError):
@@ -147,12 +184,12 @@ def extract_json(text: str) -> Any:
     return candidates[-1]
 
 
-def parse_action(text: str) -> Any:
+def parse_action(text: str, shape: type[BaseModel] = _Envelope) -> Any:
     data = extract_json(text)
     if isinstance(data, dict) and "action" not in data and "type" in data:
         data = {"action": data}
     try:
-        return _Envelope.model_validate(data).action
+        return shape.model_validate(data).action
     except ValidationError as exc:
         raise ActionError(summarise_validation(exc)) from exc
 
@@ -212,5 +249,5 @@ def simplify_schema(node: Any) -> Any:
     return out
 
 
-def step_schema() -> dict[str, Any]:
-    return simplify_schema(_Envelope.model_json_schema())
+def step_schema(shape: type[BaseModel] = _Envelope) -> dict[str, Any]:
+    return simplify_schema(shape.model_json_schema())

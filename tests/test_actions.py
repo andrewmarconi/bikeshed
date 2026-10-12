@@ -3,9 +3,37 @@ import json
 import pytest
 
 from aiswarm.actions import (
-    ActionError, CallConsensus, Critique, ListFiles, Pass, Propose, extract_json, parse_action,
-    simplify_schema, step_schema, target_refs,
+    MESSAGE_MAX, NOTE_MAX, POLL, STEP, STEP_P2, THINK, ActionError, CallConsensus, Critique, ListFiles, Note, Pass,
+    PollAnswer, PrivateMessage, Propose, extract_json, parse_action, simplify_schema, step_schema, target_refs,
 )
+
+
+def test_process2_shapes_parse_their_actions():
+    assert isinstance(parse_action('{"action": {"type": "note", "text": "hm"}}', THINK), Note)
+    assert parse_action('{"type": "list_files"}', THINK).type == "list_files"  # reads are allowed while thinking
+    message = parse_action('{"action": {"type": "private_message", "to": "b", "text": "hi"}}', STEP_P2)
+    assert isinstance(message, PrivateMessage) and message.to == "b"
+    answer = parse_action('{"action": {"type": "poll_answer", "stance": "abstain", "reason": "r"}}', POLL)
+    assert isinstance(answer, PollAnswer) and answer.stance == "abstain"
+
+
+def test_process1_shape_is_unchanged_and_rejects_process2_actions():
+    with pytest.raises(ActionError):
+        parse_action('{"action": {"type": "private_message", "to": "b", "text": "hi"}}')
+    with pytest.raises(ActionError):
+        parse_action('{"action": {"type": "propose", "answer_summary": "a", "method": "m"}}', THINK)
+    assert step_schema() == step_schema(STEP)
+    assert "private_message" in json.dumps(step_schema(STEP_P2)) and "private_message" not in json.dumps(step_schema())
+
+
+def test_note_and_message_limits():
+    with pytest.raises(ActionError, match=f"yours was {NOTE_MAX + 1:,} characters"):
+        parse_action(json.dumps({"action": {"type": "note", "text": "x" * (NOTE_MAX + 1)}}), THINK)
+    with pytest.raises(ActionError):
+        parse_action(json.dumps({"action": {"type": "private_message", "to": "b", "text": "x" * (MESSAGE_MAX + 1)}}),
+                     STEP_P2)
+    with pytest.raises(ActionError):
+        parse_action('{"action": {"type": "poll_answer", "stance": "maybe", "reason": "r"}}', POLL)
 
 
 def test_parses_enveloped_action():

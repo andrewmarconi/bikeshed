@@ -2,7 +2,10 @@ import json
 
 import pytest
 
-from aiswarm.actions import ActionError, CallConsensus, Credit, ListFiles, Pass, Propose, ReadEntry, ReadFile, Vote, WriteFile
+from aiswarm.actions import (
+    THINK, ActionError, CallConsensus, Credit, ListFiles, Pass, PrivateMessage, Propose, ReadEntry, ReadFile, Vote,
+    WriteFile,
+)
 from aiswarm.agent import make_reader, make_validator, system_prompt, take_step
 from aiswarm.board import Entry
 from aiswarm.db import connect
@@ -156,3 +159,22 @@ def test_read_reviews_parses_and_is_in_the_schema():
     action = parse_action('{"action": {"type": "read_reviews", "agent_id": "b"}}')
     assert isinstance(action, ReadReviews) and isinstance(action, READ_ACTIONS)
     assert "read_reviews" in json.dumps(step_schema())
+
+
+async def test_take_step_with_a_think_shape_and_no_opening_rule():
+    note = json.dumps({"action": {"type": "note", "text": "where I stand"}})
+    outcome = await take_step(client=FakeModel([note]), system="SYS", view="VIEW", round=1, max_reads=0,
+                              reader=no_reads, validate=allow, shape=THINK, opening_rule=False)
+    assert outcome.failure is None and outcome.action.text == "where I stand"
+
+
+def test_private_message_recipient_must_be_another_member():
+    validate = make_validator(entries(), ["a", "b", "c"], "a")
+    validate(PrivateMessage(type="private_message", to="b", text="hi"))
+    for to in ("a", "zed"):
+        with pytest.raises(ActionError, match=r"another member: \['b', 'c'\]"):
+            validate(PrivateMessage(type="private_message", to=to, text="hi"))
+
+
+def test_system_prompt_template_can_be_chosen():
+    assert system_prompt("Wren (a)", "Calm.", 3) == system_prompt("Wren (a)", "Calm.", 3, "agent_system.md")

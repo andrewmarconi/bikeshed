@@ -4,9 +4,11 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from pydantic import BaseModel
+
 from aiswarm.actions import (
-    READ_ACTIONS, ActionError, CallConsensus, ListFiles, Pass, Propose, ReadFile, ReadReviews, Vote, WriteFile,
-    parse_action, step_schema,
+    READ_ACTIONS, STEP, ActionError, CallConsensus, ListFiles, Pass, PrivateMessage, Propose, ReadFile, ReadReviews,
+    Vote, WriteFile, parse_action, step_schema,
 )
 from aiswarm.board import Entry
 from aiswarm.models.base import Message, ModelClient, ModelError
@@ -27,16 +29,16 @@ class StepOutcome:
     model: str | None = None
 
 
-def system_prompt(display: str, temperament: str, max_reads: int) -> str:
-    return render("agent_system.md", display=display, temperament=temperament.strip(), max_reads=max_reads)
+def system_prompt(display: str, temperament: str, max_reads: int, template: str = "agent_system.md") -> str:
+    return render(template, display=display, temperament=temperament.strip(), max_reads=max_reads)
 
 
 async def take_step(
     *, client: ModelClient, system: str, view: str, round: int, max_reads: int,
-    reader: Reader, validate: Validator,
+    reader: Reader, validate: Validator, shape: type[BaseModel] = STEP, opening_rule: bool = True,
 ) -> StepOutcome:
     messages: list[Message] = [{"role": "user", "content": view}]
-    schema = step_schema()
+    schema = step_schema(shape)
     reads = 0
     corrected = False
     reasoning: list[str] = []
@@ -54,7 +56,7 @@ async def take_step(
         if result.reasoning:
             reasoning.append(result.reasoning)
         try:
-            action = parse_action(result.text)
+            action = parse_action(result.text, shape)
             if isinstance(action, READ_ACTIONS):
                 if reads >= max_reads:
                     raise ActionError(f"You have used all {max_reads} reads; choose a posting action.")
@@ -64,7 +66,7 @@ async def take_step(
                     {"role": "user", "content": "Read result:\n" + reader(action)},
                 ]
                 continue
-            if round == 1 and not isinstance(action, Propose):
+            if opening_rule and round == 1 and not isinstance(action, Propose):
                 raise ActionError("In the opening round your action must be `propose`.")
             validate(action)
             return outcome(action)
@@ -78,7 +80,7 @@ async def take_step(
             ]
 
 
-def make_validator(entries: Sequence[Entry], agent_ids: Sequence[str]) -> Validator:
+def make_validator(entries: Sequence[Entry], agent_ids: Sequence[str], agent_id: str | None = None) -> Validator:
     by_id = {e.id: e for e in entries}
 
     def validate(action: Any) -> None:
@@ -99,6 +101,10 @@ def make_validator(entries: Sequence[Entry], agent_ids: Sequence[str]) -> Valida
                 normalise_path(action.path)
             except InvalidPath as exc:
                 raise ActionError(str(exc)) from exc
+        if isinstance(action, PrivateMessage):
+            others = [a for a in agent_ids if a != agent_id]
+            if action.to not in others:
+                raise ActionError(f"private_message.to must be another member: {others}")
 
     return validate
 
