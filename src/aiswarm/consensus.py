@@ -19,7 +19,7 @@ class CallStatus:
 
 @dataclass(frozen=True)
 class StopDecision:
-    reason: Literal["consensus", "stagnation", "budget"]
+    reason: Literal["consensus", "stagnation", "budget", "abandoned"]  # abandoned: closed by hand, never by a rule
     call_id: int | None = None
 
 

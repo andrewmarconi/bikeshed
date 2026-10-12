@@ -366,3 +366,33 @@ def test_run_with_process_2_records_it_and_resume_keeps_it(project):
     rejected = invoke("run", "--resume", run_id, "--process", "1", "-c", config)
     assert rejected.exit_code != 0 and "keeps its process" in rejected.output
     assert invoke("run", "G", "--process", "3", "-c", config).exit_code != 0
+
+
+def test_abandon_closes_a_dead_run_and_keeps_its_record(project):
+    from aiswarm.db import connect
+
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    conn = connect(tmp_path / "community" / "community.db")
+    conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES "
+                 "('r1', 'Pick a colour', 'running', '[\"a\", \"b\"]', '2026-10-10T00:00:00+00:00')")
+    conn.execute("INSERT INTO entries (run_id, round, author, type, payload, created_at) VALUES "
+                 "('r1', 3, 'a', 'propose', '{\"answer_summary\": \"Blue\", \"method\": \"m\"}', 't')")
+    conn.commit()
+    declined = runner.invoke(cli.app, ["abandon", "r1", "-c", str(config)], input="n\n")
+    assert declined.exit_code != 0
+    assert conn.execute("SELECT status FROM runs WHERE id = 'r1'").fetchone()[0] == "running"
+    result = invoke("abandon", "r1", "--yes", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert "r1 closed: abandoned" in result.output
+    assert tuple(conn.execute("SELECT status, ended_reason FROM runs WHERE id = 'r1'").fetchone()) == \
+        ("closed", "abandoned")
+    rows = conn.execute("SELECT round, author, type, payload FROM entries WHERE run_id = 'r1' ORDER BY id").fetchall()
+    assert [r["type"] for r in rows] == ["propose", "run_closed"]  # nothing is deleted
+    assert rows[1]["round"] == 3 and json.loads(rows[1]["payload"]) == {"reason": "abandoned", "call_id": None}
+    last = json.loads((tmp_path / "runs" / "r1" / "events.jsonl").read_text().splitlines()[-1])
+    assert (last["event"], last["reason"]) == ("run_closed", "abandoned")
+    assert "abandoned" in (tmp_path / "runs" / "r1" / "report" / "answer.md").read_text()
+    again = invoke("abandon", "r1", "--yes", "-c", config)
+    assert again.exit_code != 0 and "already closed" in again.output
+    assert invoke("abandon", "nope", "--yes", "-c", config).exit_code != 0

@@ -301,6 +301,17 @@ class Runner:
         self._trace(entry.id, ctx.run_id, agent_id, outcome)
         return {"round": ctx.round, "agent": agent_id, "entry": entry.id, "type": entry.type, "failure": None}
 
+    def abandon(self, run_id: str) -> RunResult:
+        """Close a run that will not be finished. Every entry is kept, including a partial last round."""
+        row = self.conn.execute("SELECT goal, status FROM runs WHERE id = ?", (run_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"no run {run_id!r}")
+        if row["status"] == "closed":
+            raise ValueError(f"run {run_id} is already closed")
+        last = self.conn.execute("SELECT MAX(round) FROM entries WHERE run_id = ?", (run_id,)).fetchone()[0]
+        return self._close(run_id, row["goal"], Board(self.conn, run_id), self._events(run_id), last or 0,
+                           StopDecision("abandoned"))
+
     def _close(
         self, run_id: str, goal: str, board: Board, events: EventLog, rnd: int, decision: StopDecision
     ) -> RunResult:

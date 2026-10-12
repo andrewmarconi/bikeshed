@@ -406,6 +406,32 @@ def postrun(run_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
 
 
 @app.command()
+def abandon(
+    run_id: str,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Do not ask for confirmation.")] = False,
+    config: ConfigOpt = DEFAULT_PATH,
+) -> None:
+    """Close a run that will not be finished (killed or paused for good). Its entries are kept; no post-run."""
+    cfg = _load(config)
+    conn = connect(cfg.db_path)
+    row = conn.execute("SELECT status FROM runs WHERE id = ?", (run_id,)).fetchone()
+    if row is None:
+        _fail(f"no run {run_id!r}")
+    if row["status"] == "closed":
+        _fail(f"run {run_id} is already closed")
+    if not yes:
+        typer.confirm(f"Close run {run_id} ({row['status']}) as abandoned? Make sure it is not still running. "
+                      "This cannot be undone", abort=True)
+    runner = Runner(settings=cfg.run, conn=conn, store=ProfileStore(cfg.community_dir), runs_dir=cfg.runs_dir,
+                    clients={})
+    try:
+        result = runner.abandon(run_id)
+    except ValueError as exc:
+        _fail(str(exc))
+    typer.echo(f"run {run_id} closed: {result.reason}")
+
+
+@app.command()
 def show(run_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
     """Print a run's answer and minority report, noting any harness change since the previous run."""
     cfg = _load(config)
