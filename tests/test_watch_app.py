@@ -52,7 +52,8 @@ async def test_process_1_run_has_a_full_width_table_and_a_status_bar(tmp_path, c
         assert app.query_one("#table", RichLog).border_title == "Table — Pick a fruit."
         assert not shown(app, "right")
         assert app.query_one("#table").region.width > 130
-        assert text(app, "status").startswith("round 1/12 · rounds │ Alpha ★– idle · Bea ★– idle")
+        assert text(app, "status") == ("round 1/12 · rounds │ no call yet │ Scorer: no ruling yet\n"
+                                       "Alpha ★ – ◆ 0 idle   ·   Bea ★ – ◆ 0 idle")
         assert "Mango [ripe]" in pane(app, "table")
         add_entry(conn, "r1", "b", "critique", {"target": 1, "about": "answer", "points": "Too sweet."})
         app.tick()
@@ -172,3 +173,16 @@ async def test_q_quits_from_the_pop_up(tmp_path, community):
         await pilot.press("q")
         await pilot.pause()
         assert app.return_code == 0
+
+
+async def test_status_bar_wraps_on_a_narrow_terminal_and_shows_rejections(tmp_path, community):
+    conn, events, watcher = setup(tmp_path, community)
+    call = add_entry(conn, "r1", "b", "call_consensus", {"synthesis": "Fruit", "credits": []})
+    add_entry(conn, "r1", "system", "scorer_rejected", {"call_id": call, "feedback": "Which [b]fruit[/b]?"},
+              refs=[call])
+    app = WatchApp(watcher, interval=3600)
+    async with app.run_test(size=(40, 30)) as pilot:
+        await pilot.pause()
+        assert "Bea ★ – ◆ 0 idle" in text(app, "status") and f"Scorer: rejected #{call}" in text(app, "status")
+        assert app.query_one("#status").region.height > 2  # wrapped, not cut
+        assert "Which [b]fruit[/b]?" in pane(app, "table")

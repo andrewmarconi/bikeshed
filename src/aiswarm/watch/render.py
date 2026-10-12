@@ -33,7 +33,7 @@ def styled(line: FeedLine, colours: Mapping[str, str]) -> Text:
     """The line's text, coloured by part. `styled(line, c).plain == line.text`."""
     out = Text()
     if line.author == SYSTEM:
-        return out.append(line.text, style="dim italic")
+        return out.append(line.text, style="red italic" if line.kind == "scorer_rejected" else "dim italic")
     if line.kind == "think":
         out.append("💭 ")
     elif line.kind == "private_message":
@@ -71,24 +71,38 @@ def short(name: str) -> str:
     return name if len(name) <= SHORT_NAME else name[: SHORT_NAME - 1] + "…"
 
 
+RULING_STYLES = {"accepted": "green", "rejected": "red"}
+AGENT_SEPARATOR = "   ·   "
+
+
+def ruling(s: RunState) -> Text:
+    out = Text("Scorer: ")
+    if s.ruling is None:
+        return out.append("no ruling yet")
+    return out.append(f"{s.ruling.verdict} #{s.ruling.call_id}", style=RULING_STYLES.get(s.ruling.verdict, ""))
+
+
 def status(s: RunState, colours: Mapping[str, str]) -> Text:
+    """Two lines: the run (round, phase, newest call, Scorer) and the agents. The agents line wraps, never cuts."""
     out = Text(f"round {s.round}/{s.max_rounds} · {phase_label(s)} │ ")
-    for i, card in enumerate(s.cards.values()):
-        if i:
-            out.append(" · ")
-        out.append_text(_agent(short(card.name), card.agent_id, colours))
-        if card.control:
-            out.append(" ctl", style="dim")
-        out.append(f" ★{'–' if card.reputation is None else f'{card.reputation:.1f}'} ")
-        out.append(card.state, style="red" if card.state.startswith("failed") else STATUS_STYLES.get(card.state, ""))
-    if not s.cards:
-        out.append("(no agents yet)")
-    out.append(" │ ")
     if s.calls:  # newest first; the poll treats the latest call as the open one
         c = s.calls[0]
         out.append(f"call #{c.entry_id}: {c.supporters} for, {c.objectors} against")
     else:
         out.append("no call yet")
+    out.append(" │ ")
+    out.append_text(ruling(s))
+    out.append("\n")
+    for i, card in enumerate(s.cards.values()):
+        if i:
+            out.append(AGENT_SEPARATOR)
+        out.append_text(_agent(short(card.name), card.agent_id, colours))
+        if card.control:
+            out.append(" ctl", style="dim")
+        out.append(f" ★ {'–' if card.reputation is None else f'{card.reputation:.1f}'} ◆ {card.points} ")
+        out.append(card.state, style="red" if card.state.startswith("failed") else STATUS_STYLES.get(card.state, ""))
+    if not s.cards:
+        out.append("(no agents yet)")
     return out
 
 

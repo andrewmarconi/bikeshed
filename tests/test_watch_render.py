@@ -2,7 +2,7 @@ from rich.text import Text
 
 from aiswarm.board import Entry
 from aiswarm.watch import render
-from aiswarm.watch.state import AgentCard, CallLine, FeedLine, FileLine, PostRunRow, RunState, feed_line
+from aiswarm.watch.state import AgentCard, CallLine, FeedLine, FileLine, PostRunRow, RulingLine, RunState, feed_line
 
 COLOURS = render.agent_colours(["a", "b"])
 PINK, TEAL = render.AGENT_COLOURS[0], render.AGENT_COLOURS[1]
@@ -71,17 +71,34 @@ def test_agent_colours_follow_id_order_and_repeat():
     assert colours["f"] == render.AGENT_COLOURS[0]
 
 
-def test_status_bar():
+def test_status_bar_has_a_run_line_and_an_agents_line():
     s = state(process=2, phase="rounds", step_phase="react", round=7,
-              cards={"a": AgentCard("a", "Ash", control=True, reputation=4.25, state="speaking…"),
+              cards={"a": AgentCard("a", "Ash", control=True, reputation=4.25, points=2, state="speaking…"),
                      "b": AgentCard("b", "Bartholomew-the-long", state="failed: model_error")},
-              calls=[CallLine(40, "Bea (b)", 3, 1), CallLine(12, "Ash (a)", 1, 0)])
+              calls=[CallLine(40, "Bea (b)", 3, 1), CallLine(12, "Ash (a)", 1, 0)],
+              ruling=RulingLine("rejected", 31))
     bar = render.status(s, COLOURS)
-    assert bar.plain == ("round 7/12 · react │ Ash ctl ★4.2 speaking… · Bartholomew… ★– failed: model_error"
-                         " │ call #40: 3 for, 1 against")
+    assert bar.plain == ("round 7/12 · react │ call #40: 3 for, 1 against │ Scorer: rejected #31\n"
+                         "Ash ctl ★ 4.2 ◆ 2 speaking…   ·   Bartholomew… ★ – ◆ 0 failed: model_error")
     assert "bold" in style_of(bar, "speaking…") and "red" in style_of(bar, "failed: model_error")
+    assert "red" in style_of(bar, "rejected #31")
     assert f"bold {PINK}" in style_of(bar, "Ash")
-    assert render.status(state(), COLOURS).plain == "round 0/12 · waiting │ (no agents yet) │ no call yet"
+    assert render.status(state(), COLOURS).plain == (
+        "round 0/12 · waiting │ no call yet │ Scorer: no ruling yet\n(no agents yet)")
+
+
+def test_ruling_words_are_coloured():
+    assert "green" in style_of(render.ruling(state(ruling=RulingLine("accepted", 40))), "accepted #40")
+    assert render.ruling(state(ruling=RulingLine("accepted", 40))).plain == "Scorer: accepted #40"
+
+
+def test_scorer_entries_are_system_lines_and_rejections_are_red():
+    rejected = line("scorer_rejected", {"call_id": 3, "feedback": "Name [bold]one[/] topping."}, "system")
+    accepted = line("scorer_accepted", {"call_id": 3}, "system")
+    text = render.styled(rejected, COLOURS)
+    assert text.plain == rejected.text and "Name [bold]one[/] topping." in text.plain
+    assert "red" in style_of(text, "scorer_rejected")
+    assert "dim italic" in style_of(render.styled(accepted, COLOURS), "scorer_accepted")
 
 
 def test_phase_label():
