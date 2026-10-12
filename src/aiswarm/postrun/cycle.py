@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from aiswarm.board import Board, Entry
+from aiswarm.board import Board, Entry, public, visible
 from aiswarm.consensus import StopDecision
 from aiswarm.db import now_iso, transaction
 from aiswarm.events import EventLog
@@ -118,7 +118,7 @@ class PostRun:
         if step == "review":
             files = [(r["path"], r["author"]) for r in self.conn.execute(
                 "SELECT path, author FROM files WHERE run_id = ?", (ctx.run_id,))]
-            pairs = interactions(ctx.entries, files, ctx.agent_ids)
+            pairs = interactions(public(ctx.entries), files, ctx.agent_ids)
             return [
                 _Call(step, reviewer, reviewee, lambda r=reviewer, e=reviewee: self._review(ctx, r, e))
                 for reviewer in ctx.agent_ids for reviewee in [*sorted(pairs[reviewer]), reviewer]
@@ -204,12 +204,16 @@ class PostRun:
         return render("postrun_system.md", display=ctx.who(agent_id), temperament=private["temperament.md"].strip(),
                       private_notes=block)
 
+    def _seen(self, ctx: _Context, agent_id: str) -> list[Entry]:
+        """What this agent may be shown about the run: no one else's private entries, and no think notes."""
+        return [e for e in visible(ctx.entries, agent_id) if e.type != "think"]
+
     def _packet(self, ctx: _Context, agent_id: str) -> str:
         failures = [(r["round"], r["kind"], r["detail"]) for r in self.conn.execute(
             "SELECT round, kind, detail FROM failures WHERE run_id = ? AND agent_id = ? AND round > 0 ORDER BY id",
             (ctx.run_id, agent_id))]
-        return feedback_packet(agent_id, run_id=ctx.run_id, goal=ctx.goal, entries=ctx.entries, who=ctx.who,
-                               answer=ctx.answer, failures=failures)
+        return feedback_packet(agent_id, run_id=ctx.run_id, goal=ctx.goal, entries=self._seen(ctx, agent_id),
+                               who=ctx.who, answer=ctx.answer, failures=failures)
 
     # --- steps -------------------------------------------------------------------------------
 
@@ -234,7 +238,7 @@ class PostRun:
             heading="yourself" if own else name,
             run_id=ctx.run_id, goal=ctx.goal,
             authors="you" if own else f"you and {name}",
-            transcript=transcript(ctx.entries, ctx.who, {reviewer, reviewee}, max(2_000, int(client.context_window * 1.5))),
+            transcript=transcript(self._seen(ctx, reviewer), ctx.who, {reviewer, reviewee}, max(2_000, int(client.context_window * 1.5))),
             instruction="Review your own work in this run." if own else f"Review the work of {name} in this run.",
             subject="you" if own else "this colleague",
             object="yourself" if own else "them",
@@ -245,7 +249,7 @@ class PostRun:
             ),
             dimension_block=dimension_block, dimension_json=dimension_json,
         )
-        valid = {entry.id for entry in ctx.entries}
+        valid = {entry.id for entry in visible(ctx.entries, reviewer)}
 
         def check(reply: ReviewReply) -> None:
             unknown = [i for i in reply.evidence if i not in valid]
@@ -400,7 +404,7 @@ class PostRun:
                             rejected=[p.id for p in decided if p.status == "rejected"])
 
     async def _library(self, ctx: _Context) -> None:
-        record_methods(self.conn, ctx.run_id, ctx.goal, ctx.entries)
+        record_methods(self.conn, ctx.run_id, ctx.goal, public(ctx.entries))
         if self.embedder is None:
             return
         try:

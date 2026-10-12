@@ -63,7 +63,7 @@ def collect_inputs(
     *, agent_id: str, goal: str, round: int, board: Board, store: ProfileStore,
     workspace: Workspace, view_entries: int, half_life: float = 5.0, library: Sequence[str] = (),
 ) -> ViewInputs:
-    entries = board.entries()
+    entries = board.entries_for(agent_id)
     if round == 1:
         entries = [e for e in entries if not (e.round == 1 and e.author != agent_id)]
     private = store.private(agent_id)

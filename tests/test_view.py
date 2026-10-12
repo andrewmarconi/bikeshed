@@ -1,5 +1,9 @@
 from dataclasses import replace
 
+import pytest
+
+from aiswarm.actions import ActionError, Critique, ReadEntry
+from aiswarm.agent import make_reader, make_validator
 from aiswarm.board import SYSTEM, Board, Entry
 from aiswarm.view import METHODS_HEADER, NOTES_HEADER, build_view, collect_inputs, make_who, render_entry
 from aiswarm.workspace import Workspace
@@ -191,3 +195,21 @@ def test_control_agents_see_no_earlier_journals_and_never_their_status(tmp_path,
     view = view_for("d", 2, store, board, ws)
     assert "JOURNAL-D-OLD" not in view and "control" not in view.lower()
     assert "JOURNAL-A-OLD" in view_for("a", 2, store, board, ws)
+
+
+def test_views_reads_and_targets_hide_other_agents_private_entries(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    message = board.append(2, "a", "private_message", {"to": "b", "text": "SECRET-A-TO-B"}, to="b", visible_to=["a", "b"])
+    board.append(2, "a", "think", {"text": "SECRET-THOUGHT-A"}, visible_to=["a"])
+    assert "SECRET-A-TO-B" in view_for("a", 3, store, board, ws)
+    assert "SECRET-A-TO-B" in view_for("b", 3, store, board, ws)
+    view_c = view_for("c", 3, store, board, ws)
+    assert "SECRET-A-TO-B" not in view_c and "SECRET-THOUGHT-A" not in view_c
+    assert "SECRET-THOUGHT-A" not in view_for("b", 3, store, board, ws)
+    inputs = collect_inputs(agent_id="c", goal="Pick a colour", round=3, board=board, store=store,
+                            workspace=ws, view_entries=15)
+    read = make_reader(ws, inputs.entries, make_who(inputs.profiles))
+    assert "SECRET" not in read(ReadEntry(type="read_entry", id=message.id))
+    with pytest.raises(ActionError, match="does not exist"):
+        make_validator(inputs.entries, ["a", "b", "c"])(
+            Critique(type="critique", target=message.id, about="answer", points="p"))

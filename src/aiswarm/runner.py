@@ -13,7 +13,7 @@ from typing import Any
 
 from aiswarm.actions import Pass, WriteFile, target_refs
 from aiswarm.agent import StepOutcome, make_reader, make_validator, system_prompt, take_step
-from aiswarm.board import SYSTEM, Board
+from aiswarm.board import SYSTEM, Board, public
 from aiswarm.config import RunSettings
 from aiswarm.consensus import StopDecision, stop_decision
 from aiswarm.db import now_iso, transaction
@@ -242,6 +242,6 @@ class Runner:
                 "UPDATE runs SET status = 'closed', ended_reason = ? WHERE id = ?", (decision.reason, run_id)
             )
         who = make_who({i: self.store.public(i) for i in self.store.ids()})
-        write_report(self.runs_dir / run_id, goal, board.entries(), decision, who)
+        write_report(self.runs_dir / run_id, goal, public(board.entries()), decision, who)
         events.emit("run_closed", reason=decision.reason, call_id=decision.call_id)
         return RunResult(run_id, "closed", decision.reason, decision.call_id)

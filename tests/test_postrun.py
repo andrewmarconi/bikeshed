@@ -544,3 +544,39 @@ async def test_postrun_requests_never_include_earlier_journals(tmp_path, communi
     await cycle(store, conn, tmp_path, clients).run(run_id)
     sent = json.dumps([call[:2] for client in clients.values() for call in client.calls])
     assert "EARLIER-JOURNAL" not in sent
+
+
+def private_run(conn, tmp_path, make_run):
+    run_id = finished_run(conn, tmp_path, make_run)
+    board = Board(conn, run_id)
+    board.append(2, "a", "private_message", {"to": "b", "text": "SECRET-A-TO-B"}, to="b", visible_to=["a", "b"])  # 7
+    board.append(2, "a", "think", {"text": "SECRET-THOUGHT-A"}, visible_to=["a"])                              # 8
+    return run_id
+
+
+async def test_post_run_inputs_never_carry_private_entries_to_others(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = private_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+
+    def seen(agent):
+        return "".join(system + "".join(m["content"] for m in messages) for system, messages, _ in clients[agent].calls)
+
+    assert "SECRET-A-TO-B" not in seen("c") and "SECRET-THOUGHT-A" not in seen("c")
+    assert "SECRET-THOUGHT-A" not in seen("b")
+    assert "SECRET-A-TO-B" in seen("b")
+    texts = [r["text"] for r in conn.execute("SELECT text FROM methods")]
+    assert all("SECRET" not in t for t in texts)
+
+
+async def test_review_evidence_must_be_visible_to_the_reviewer(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = private_run(conn, tmp_path, make_run)
+    cites_secret = lambda request: json.dumps({"more_of": "M", "less_of": "L", "private_note": "N", "evidence": [7],
+                                               "overall": 3, "overall_reason": "R"})
+    clients = {"a": FakeModel(responder(postrun_reply)), "b": FakeModel(responder(postrun_reply)),
+               "c": FakeModel(responder(postrun_reply, review=cites_secret))}
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    assert steps(conn)[("review", "c", "c")] == "failed"
+    assert steps(conn)[("review", "a", "a")] == "done"
