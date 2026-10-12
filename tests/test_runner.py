@@ -341,3 +341,31 @@ def test_a_failed_control_reset_leaves_no_run_behind(community, runner_factory, 
     with pytest.raises(GitError):
         runner.start("G", [*AGENTS, "d"], goal_id="best-fruit")
     assert conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
+
+
+async def test_start_records_the_process(community, runner_factory):
+    store, conn = community
+    runner = runner_factory(store, conn, {})
+    assert conn.execute("SELECT process FROM runs WHERE id = ?", (runner.start("G", AGENTS),)).fetchone()[0] == 1
+    assert conn.execute("SELECT process FROM runs WHERE id = ?",
+                        (runner.start("G", AGENTS, process=2),)).fetchone()[0] == 2
+    with pytest.raises(ValueError, match="process must be 1 or 2"):
+        runner.start("G", AGENTS, process=3)
+
+
+async def test_resume_discards_what_an_interrupted_round_left_behind(tmp_path, community, scripted, runner_factory):
+    store, conn = community
+    run_id = runner_factory(store, conn, {}).start("G", AGENTS)
+    board = Board(conn, run_id)
+    stray = board.append(1, "a", "propose", {"answer_summary": "Half", "method": "M"})
+    conn.execute("INSERT INTO traces (entry_id, run_id, agent_id, model, reasoning) VALUES (?, ?, 'a', 'm', 'r')",
+                 (stray.id, run_id))
+    conn.execute("INSERT INTO failures (run_id, round, agent_id, kind, detail, created_at) "
+                 "VALUES (?, 1, 'b', 'invalid_action', 'x', 't')", (run_id,))
+    result = await runner_factory(store, conn, {a: scripted({1: propose}) for a in AGENTS}).run(run_id)
+    assert result.status == "closed"
+    assert entry_types(conn, run_id).count("propose") == 3
+    assert conn.execute("SELECT COUNT(*) FROM failures WHERE run_id = ?", (run_id,)).fetchone()[0] == 0
+    events = read_events(tmp_path / "runs" / run_id / "events.jsonl")
+    assert {"event": "round_discarded", "round": 1, "entries": 1}.items() <= next(
+        e for e in events if e["event"] == "round_discarded").items()
