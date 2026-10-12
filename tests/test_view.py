@@ -213,3 +213,20 @@ def test_views_reads_and_targets_hide_other_agents_private_entries(tmp_path, com
     with pytest.raises(ActionError, match="does not exist"):
         make_validator(inputs.entries, ["a", "b", "c"])(
             Critique(type="critique", target=message.id, about="answer", points="p"))
+
+
+def test_process2_view_counts_rounds_and_shows_own_think_notes_only(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    board.append(1, "a", "think", {"text": "FIRST-THOUGHT"}, visible_to=["a"])
+    board.append(2, "a", "think", {"text": "SECOND-THOUGHT"}, visible_to=["a"])
+    board.append(2, "b", "think", {"text": "B-THOUGHT"}, visible_to=["b"])
+    inputs = collect_inputs(agent_id="a", goal="Pick a colour", round=3, board=board, store=store, workspace=ws,
+                            view_entries=15, max_rounds=12)
+    view = build_view(inputs, budget_chars=50_000)
+    assert "# Round 3 of 12" in view
+    assert ("# Your private notes this run (only you can see these)\n## round 1\nFIRST-THOUGHT\n\n"
+            "## round 2\nSECOND-THOUGHT") in view
+    assert view.index("Your private notes this run") < view.index("# Community members")
+    assert "B-THOUGHT" not in view
+    assert "think" not in [e.type for e in inputs.entries]
+    assert "# Round 3\n" in view_for("a", 3, store, board, ws)  # Process 1 header unchanged

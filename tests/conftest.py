@@ -108,3 +108,27 @@ def _postrun_reply(request):
 @pytest.fixture
 def postrun_reply():
     return _postrun_reply
+
+
+def _process2(react=None, think=None, poll=None, **kwargs):
+    """A FakeModel for Process 2. Each plan maps round -> (request text -> action dict).
+
+    Defaults: think writes "note rN", react passes, poll abstains.
+    """
+    def respond(system, messages):
+        content = messages[0]["content"]
+        rnd = int(re.search(r"^# Round (\d+)", content, re.M).group(1))
+        if "\n# Think\n" in content:
+            plan, default = think or {}, lambda v: {"type": "note", "text": f"note r{rnd}"}
+        elif "\n# Poll\n" in content:
+            plan, default = poll or {}, lambda v: {"type": "poll_answer", "stance": "abstain", "reason": "Unsure."}
+        else:
+            plan, default = react or {}, lambda v: {"type": "pass"}
+        return json.dumps({"action": plan.get(rnd, default)(content)})
+
+    return FakeModel(respond, **kwargs)
+
+
+@pytest.fixture
+def process2():
+    return _process2

@@ -52,6 +52,8 @@ class ViewInputs:
     reputations: Mapping[str, Reputation] = field(default_factory=dict)
     library: tuple[str, ...] = ()
     dimension_scores: Mapping[str, list[tuple[str, Reputation]]] = field(default_factory=dict)
+    max_rounds: int | None = None  # Process 2 shows "Round N of M"; Process 1 shows no limit
+    think_notes: tuple[tuple[int, str], ...] = ()  # own think notes this run, (round, text)
 
 
 def _norms(store: ProfileStore) -> str:
@@ -62,8 +64,11 @@ def _norms(store: ProfileStore) -> str:
 def collect_inputs(
     *, agent_id: str, goal: str, round: int, board: Board, store: ProfileStore,
     workspace: Workspace, view_entries: int, half_life: float = 5.0, library: Sequence[str] = (),
+    max_rounds: int | None = None,
 ) -> ViewInputs:
     entries = board.entries_for(agent_id)
+    notes = tuple((e.round, e.payload.get("text", "")) for e in entries if e.type == "think" and e.author == agent_id)
+    entries = [e for e in entries if e.type != "think"]  # shown in their own section, not as board entries
     if round == 1:
         entries = [e for e in entries if not (e.round == 1 and e.author != agent_id)]
     private = store.private(agent_id)
@@ -77,6 +82,7 @@ def collect_inputs(
         reputations={i: reputation(board.conn, i, half_life) for i in store.ids()},
         library=tuple(library),
         dimension_scores={i: dimension_reputations(board.conn, i, half_life) for i in store.ids()},
+        max_rounds=max_rounds, think_notes=notes,
     )
 
 
@@ -101,13 +107,17 @@ METHODS_HEADER = "# Methods from earlier runs (each is shown with its own goal, 
 
 def build_view(inputs: ViewInputs, budget_chars: int) -> str:
     who = make_who(inputs.profiles)
-    header = f"# Goal\n{inputs.goal}\n\n# Round {inputs.round}\nYou are {who(inputs.agent_id)}."
+    rounds = f"# Round {inputs.round}" + (f" of {inputs.max_rounds}" if inputs.max_rounds else "")
+    header = f"# Goal\n{inputs.goal}\n\n{rounds}\nYou are {who(inputs.agent_id)}."
     if inputs.round == 1:
         header += (
             "\nThis is the opening round. Propose your own position (action `propose`). "
             "Other members' opening proposals are hidden until the round ends."
         )
     fixed = [header]
+    if inputs.think_notes:
+        fixed.append("# Your private notes this run (only you can see these)\n"
+                     + "\n\n".join(f"## round {r}\n{text.strip()}" for r, text in inputs.think_notes))
     notes = [f"## {name}\n{text.strip()}" for name, text in inputs.own_notes.items() if text.strip()]
     notes += [f"## journal/{run_id}.md\n{text.strip()}" for run_id, text in inputs.journals if text.strip()]
     if notes:

@@ -169,7 +169,8 @@ class Runner:
         try:
             inputs = collect_inputs(agent_id=agent_id, goal=ctx.goal, round=ctx.round, board=ctx.board,
                                     store=self.store, workspace=ctx.ws, view_entries=self.settings.view_entries,
-                                    half_life=self.settings.reputation_half_life_runs, library=ctx.library)
+                                    half_life=self.settings.reputation_half_life_runs, library=ctx.library,
+                                    max_rounds=self.settings.max_rounds if ctx.process == 2 else None)
             who = make_who(inputs.profiles)
             template = "agent_system.md" if ctx.process == 1 else "process2_agent_system.md"
             system = system_prompt(
