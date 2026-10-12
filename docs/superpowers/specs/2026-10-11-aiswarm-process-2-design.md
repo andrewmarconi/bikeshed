@@ -3,7 +3,7 @@
 - **Date:** 2026-10-11
 - **Status:** Approved; Plan 4a (engine) implemented; 4b (Observer) and 4c (TUI) pending
 - **Author:** Andrew Marconi (with Claude)
-- **Source:** `docs/process-02-concept.md` (Andrew's concept). This design keeps its dynamics and drops what breaks the principles; §2 maps each concept feature.
+- **Source:** Andrew's concept for Process 2. This design keeps its dynamics and drops what breaks the principles; §2 maps each concept feature.
 - **Extends:** `2026-10-10-aiswarm-design.md` (§2 principles, §4.2 View), the Plan 2a/2b post-run, Plan 3b Observer and Plan 3c TUI specs. Where this document is more specific, it governs.
 
 ## 1. Purpose and scope

@@ -82,4 +82,4 @@ Templates are flat files in `src/bikeshed/prompts/` (`string.Template`, `$name`)
 
 ### Docs and workflow
 
-Each feature has a spec in `docs/superpowers/specs/` and a plan in `docs/superpowers/plans/`. Work follows TDD. `docs/process-02-concept.md` is Andrew's original concept for Process 2; the spec maps it onto the principles, deliberately dropping seeded agendas, chairs, urgency and forced votes.
+Each feature has a spec in `docs/superpowers/specs/` and a plan in `docs/superpowers/plans/`. Work follows TDD. The Process 2 spec maps Andrew's original concept onto the principles, deliberately dropping seeded agendas, chairs, urgency and forced votes.
