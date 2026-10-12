@@ -7,14 +7,18 @@ from typing import Any
 
 from aiswarm.board import Board, Entry
 from aiswarm.consensus import call_status
+from aiswarm.db import has_table
 from aiswarm.postrun import STEPS
 from aiswarm.profiles import ProfileStore
 from aiswarm.reviews import reputation
+from aiswarm.scorer import points as scorer_points
 from aiswarm.view import Who, make_who
 
 FEED_MAX = 2000  # the feed wraps, so only a runaway entry (e.g. raw JSON) is cut
 _SUMMARY = {"propose": "answer_summary", "critique": "points", "adopt": "reason", "refine": "change",
-            "call_consensus": "synthesis", "think": "text", "private_message": "text", "abstain": "reason"}
+            "call_consensus": "synthesis", "think": "text", "private_message": "text", "abstain": "reason",
+            "scorer_rejected": "feedback"}
+SCORER = ("scorer_accepted", "scorer_rejected")  # system entries; they point at the call by call_id
 
 
 @dataclass
@@ -24,6 +28,7 @@ class AgentCard:
     headline: str = ""
     control: bool = False
     reputation: float | None = None
+    points: int = 0  # lifetime Scorer points
     state: str = "idle"
     last: str = ""
 
@@ -77,6 +82,12 @@ class CallLine:
 
 
 @dataclass(frozen=True)
+class RulingLine:
+    verdict: str  # "accepted" | "rejected"
+    call_id: int
+
+
+@dataclass(frozen=True)
 class FileLine:
     path: str
     version: int
@@ -98,7 +109,8 @@ def _one_line(text: str) -> str:
 
 def feed_line(entry: Entry, who: Who) -> FeedLine:
     p = entry.payload
-    target = f" → #{p['target']}" if p.get("target") is not None else ""
+    ref = p.get("call_id") if entry.type in SCORER else p.get("target")
+    target = f" → #{ref}" if ref is not None else ""
     body, stance, failure, to = "", "", "", ""
     if entry.type == "pass":
         failure = str(p.get("failure") or "")
@@ -106,6 +118,8 @@ def feed_line(entry: Entry, who: Who) -> FeedLine:
         stance, body = str(p.get("stance", "")), str(p.get("reason", ""))
     elif entry.type == "write_file":
         body = f"{p.get('path', '')} v{p.get('version', '')}: {p.get('note', '')}"
+    elif entry.type == "scorer_accepted":
+        body = ""
     elif entry.type in _SUMMARY:
         body = str(p.get(_SUMMARY[entry.type], ""))
     else:
@@ -138,6 +152,7 @@ class RunState:
     cards: dict[str, AgentCard] = field(default_factory=dict)
     feed: list[FeedLine] = field(default_factory=list)
     calls: list[CallLine] = field(default_factory=list)
+    ruling: RulingLine | None = None  # the Scorer's newest ruling in this run
     files: list[FileLine] = field(default_factory=list)
     postrun: list[PostRunRow] = field(default_factory=list)
     last_entry: int = 0
@@ -203,12 +218,14 @@ class RunState:
         for agent_id in agent_ids:
             cards.setdefault(agent_id, AgentCard(agent_id, agent_id))
         if self.profiles_stale:
+            earned = scorer_points(conn) if has_table(conn, "scorer_points") else {}  # older stores: none
             for agent_id, card in cards.items():
                 profile = store.public(agent_id) if agent_id in known else None
                 card.name = profile.name if profile else agent_id
                 card.headline = profile.headline if profile else ""
                 card.control = store.record(agent_id).control if agent_id in known else False
                 card.reputation = reputation(conn, agent_id, half_life).score
+                card.points = earned.get(agent_id, 0)
         who = make_who({a: store.public(a) for a in cards if a in known})
         new = [feed_line(e, who) for e in entries if e.id > self.last_entry]
         calls = []
@@ -216,6 +233,10 @@ class RunState:
             if e.type == "call_consensus":
                 status = call_status(entries, e.id)
                 calls.append(CallLine(e.id, who(e.author), len(status.supporters), len(status.objectors)))
+        ruling = None
+        for e in entries:
+            if e.type in SCORER and isinstance(e.payload.get("call_id"), int):
+                ruling = RulingLine(e.type.removeprefix("scorer_"), e.payload["call_id"])
         latest: dict[str, FileLine] = {}
         for e in entries:
             if e.type == "write_file":
@@ -234,6 +255,7 @@ class RunState:
         self.feed = self.feed + new
         self.last_entry = max([self.last_entry, *(line.entry_id for line in new)])
         self.calls = calls
+        self.ruling = ruling
         self.files = sorted(latest.values(), key=lambda f: f.path)
         self.postrun = postrun
         self.postrun_seen = self.postrun_seen or bool(rows)

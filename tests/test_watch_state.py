@@ -1,5 +1,5 @@
 from aiswarm.board import Entry
-from aiswarm.watch.state import FEED_MAX, RunState, feed_line, feed_text
+from aiswarm.watch.state import FEED_MAX, RulingLine, RunState, feed_line, feed_text
 
 
 def state():
@@ -190,3 +190,59 @@ def test_a_failed_refresh_keeps_the_previous_state(community):
     except sqlite3.OperationalError:
         pass
     assert (s.feed, s.calls, s.cards) == before
+
+
+def test_feed_text_for_scorer_rulings():
+    rejected = entry(45, "scorer_rejected", {"call_id": 31, "feedback": "Name one\ntopping."}, author="system")
+    accepted = entry(46, "scorer_accepted", {"call_id": 40}, author="system")
+    sys_who = lambda a: "system" if a == "system" else who(a)  # noqa: E731
+    assert feed_text(rejected, sys_who) == "#45 r2 system scorer_rejected → #31: Name one topping."
+    assert feed_text(accepted, sys_who) == "#46 r2 system scorer_accepted → #40"
+    assert feed_line(rejected, sys_who).pane == "table"
+
+
+def _points(conn, *rows):
+    conn.executemany("INSERT INTO scorer_points (run_id, agent_id, call_id, contribution, created_at) "
+                     "VALUES (?, ?, ?, ?, 't')", rows)
+
+
+def test_refresh_reads_lifetime_points_and_the_newest_ruling(community):
+    store, conn = community
+    add_run(conn, "r0", agents=("a", "b"))
+    _points(conn, ("r0", "a", 1, "idea"))
+    add_run(conn, "r1", agents=("a", "b"), status="running")
+    first = add_entry(conn, "r1", "a", "call_consensus", {"synthesis": "Fruit", "credits": []})
+    add_entry(conn, "r1", "system", "scorer_rejected", {"call_id": first, "feedback": "Which fruit?"}, refs=[first])
+    second = add_entry(conn, "r1", "b", "call_consensus", {"synthesis": "Kiwi", "credits": []})
+    add_entry(conn, "r1", "system", "scorer_rejected", {"call_id": second, "feedback": "Say why."}, refs=[second])
+    s = refreshed(community)
+    assert s.cards["a"].points == 1 and s.cards["b"].points == 0
+    assert s.ruling == RulingLine("rejected", second)
+    third = add_entry(conn, "r1", "a", "call_consensus", {"synthesis": "Kiwi, sweet", "credits": []})
+    add_entry(conn, "r1", "system", "scorer_accepted", {"call_id": third}, refs=[third])
+    _points(conn, ("r1", "a", third, "me"), ("r1", "b", third, "kiwi"))
+    s.apply({"event": "run_closed", "reason": "consensus", "call_id": third})  # points are reloaded on close
+    s.refresh(conn, store, 5.0)
+    assert s.cards["a"].points == 2 and s.cards["b"].points == 1
+    assert s.ruling == RulingLine("accepted", third)
+
+
+def test_refresh_without_a_ruling(community):
+    store, conn = community
+    add_run(conn, "r1", agents=("a", "b"), status="running")
+    assert refreshed(community).ruling is None
+
+
+def test_refresh_works_on_a_store_from_before_the_scorer(community):
+    store, conn = community
+    conn.execute("DROP TABLE scorer_points")  # an older store: read-only readers never migrate it
+    add_run(conn, "r1", agents=("a", "b"), status="running")
+    add_entry(conn, "r1", "a", "propose", {"answer_summary": "Mango", "method": "m"})
+    s = refreshed(community)
+    assert s.feed and s.cards["a"].points == 0 and not s.profiles_stale
+
+
+def test_has_table(community):
+    from aiswarm.db import has_table
+    store, conn = community
+    assert has_table(conn, "scorer_points") and not has_table(conn, "nope")

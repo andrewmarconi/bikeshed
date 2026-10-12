@@ -228,6 +228,11 @@ def connect_readonly(path: Path) -> sqlite3.Connection:
     return conn
 
 
+def has_table(conn: sqlite3.Connection, name: str) -> bool:
+    """For read-only readers: a store from before a migration lacks its tables, and they never migrate it."""
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)).fetchone() is not None
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     current = conn.execute("PRAGMA user_version").fetchone()[0]
     for number, sql in enumerate(MIGRATIONS[current:], start=current + 1):
