@@ -187,6 +187,10 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX run_provenance_by_run ON run_provenance (run_id, id);
     """,
+    """
+    ALTER TABLE runs ADD COLUMN process INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE entries ADD COLUMN visible_to TEXT;
+    """,
 ]
 
 
