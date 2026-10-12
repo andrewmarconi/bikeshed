@@ -1,15 +1,15 @@
 from collections import Counter
 from dataclasses import replace
 
-from aiswarm.observer.charts import marker_positions, network_chart, trend_chart
-from aiswarm.observer.metrics import BenchmarkAnswer, CategoryStats, Credits, Influence, RunInfo
-from aiswarm.observer.process2 import OrderStat, Participation, RecurringPair
-from aiswarm.observer.report import (
+from bikeshed.observer.charts import marker_positions, network_chart, trend_chart
+from bikeshed.observer.metrics import BenchmarkAnswer, CategoryStats, Credits, Influence, RunInfo
+from bikeshed.observer.process2 import OrderStat, Participation, RecurringPair
+from bikeshed.observer.report import (
     Process2Section, Process2Summary, RunSection, SummarySection, render_run, render_summary,
 )
-from aiswarm.observer.store import Judgment
-from aiswarm.observer.report import ScorerSummary
-from aiswarm.observer.scoring import Award, RulingRow, SelfCredit
+from bikeshed.observer.store import Judgment
+from bikeshed.observer.report import ScorerSummary
+from bikeshed.observer.scoring import Award, RulingRow, SelfCredit
 
 RUN = RunInfo("r1", "Pick a fruit.", "best-fruit", "contested", False, "budget", ("a", "b"), "t", "t")
 

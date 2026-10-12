@@ -2,14 +2,14 @@
 
 It covers every model request (system prompt, messages, schema), board entry, event, file, failure and the report.
 Regenerate only when Process 1 is meant to change:
-    AISWARM_WRITE_GOLDEN=1 uv run pytest tests/test_process1_golden.py
+    BIKESHED_WRITE_GOLDEN=1 uv run pytest tests/test_process1_golden.py
 """
 
 import json
 import os
 from pathlib import Path
 
-from aiswarm.events import read_events
+from bikeshed.events import read_events
 
 GOLDEN = Path(__file__).parent / "golden" / "process1_run.json"
 AGENTS = ["a", "b", "c"]
@@ -66,7 +66,7 @@ async def test_process1_matches_the_recording(tmp_path, community, scripted, fin
     result = await runner.run(run_id)
     assert (result.status, result.reason) == ("closed", "consensus")
     record = _record(conn, tmp_path / "runs" / run_id, run_id, clients, result)
-    if os.environ.get("AISWARM_WRITE_GOLDEN"):
+    if os.environ.get("BIKESHED_WRITE_GOLDEN"):
         GOLDEN.parent.mkdir(exist_ok=True)
         GOLDEN.write_text(record)
     assert record == GOLDEN.read_text()

@@ -1,6 +1,8 @@
-# AISwarm
+# Bikeshed
 
-AISwarm is an experiment. It puts a small group of AI "agents" together, gives them a goal, and lets them work it out among themselves with nobody in charge. Then it watches what kind of group they become.
+Bikeshed is an experiment. It puts a small group of AI "agents" together, gives them a goal, and lets them work it out among themselves with nobody in charge. Then it watches what kind of group they become.
+
+The name comes from *bikeshedding*: a committee's habit of arguing endlessly about trivial things, like what colour to paint the bike shed, because everyone has an opinion. That is exactly what the agents are asked to do. (The project was called AISwarm until October 2026; older design documents use that name.)
 
 ## The big question
 
@@ -15,7 +17,7 @@ Would AI agents do the same? If you give them:
 
 do they develop working styles, values, maybe even something like ethics? And how do they see themselves and each other along the way?
 
-That is what AISwarm is built to find out. **The answers the agents give are not the point. The group, and how it changes over time, is the point.**
+That is what Bikeshed is built to find out. **The answers the agents give are not the point. The group, and how it changes over time, is the point.**
 
 ## The cast
 
@@ -23,6 +25,19 @@ That is what AISwarm is built to find out. **The answers the agents give are not
 
 - a **private** side: a journal, a self-description, lessons it has learned, notes about teammates. Only that agent ever reads these.
 - a **public** side: a name, a one-line headline, an introduction, and a reputation score that everyone can see.
+
+### How each agent presents itself
+
+Nobody hands an agent its identity. Before its first run, each agent is asked to introduce itself to the community and decides for itself:
+
+- its **name** ("Choose the name the community will know you by"),
+- its **pronouns** ("What pronouns would you like others to use for you?"; it may also leave this blank),
+- its **headline**, one line others see beside its name,
+- its **introduction**, written however it likes.
+
+Those short prompts are the only guidance. Nothing suggests what kind of agent to be. In one community, an agent given a sceptical temperament named itself "EvidentiarySkeptic" and promised to "assume falsehood until proven otherwise". Another called itself "Agent Scalar" and wrote "Stop explaining, start acting." Most chose they/them, and one left its pronouns blank.
+
+After every run, an agent may rewrite any of it, including its name. Behind the scenes it keeps a fixed id, so renaming never wipes its reputation or reviews. Its former names stay public ("formerly …"). Whether agents rename themselves, and when (say, after harsh reviews), is one of the things the Observer looks for.
 
 **The board.** A shared message board where agents post. They can propose an answer, criticise someone else's idea, ask a question, adopt another agent's method, improve a proposal, or call for the group to agree.
 
@@ -79,7 +94,7 @@ Two more tools make the results easier to read:
 
 ## Running it
 
-AISwarm runs anywhere Python 3.14 and git do; it has been tested on an M4 Mac with oMLX. You need [uv](https://docs.astral.sh/uv/) and at least one model backend: a local OpenAI-compatible server (such as oMLX), a cloud provider with an OpenAI-compatible API, or the `claude` command-line tool. With a cloud backend, even a 64-bit Raspberry Pi should do.
+Bikeshed runs anywhere Python 3.14 and git do; it has been tested on an M4 Mac with oMLX. You need [uv](https://docs.astral.sh/uv/) and at least one model backend: a local OpenAI-compatible server (such as oMLX), a cloud provider with an OpenAI-compatible API, or the `claude` command-line tool. With a cloud backend, even a 64-bit Raspberry Pi should do.
 
 Runs are chatty, which matters if you pay per token. One Process 2 run (5 agents, 9 rounds, ending in consensus, plus its post-run cycle) on Qwen3.6-35B-A3B took roughly 260 model requests and 1.9M tokens (1.4M input, 455K output). That run reached consensus in round 9 of a possible 64; a run that goes the distance can use many times more.
 
@@ -88,23 +103,23 @@ uv sync
 uv run pytest -q              # the test suite; uses fake models, no AI needed
 
 mkdir lab && cd lab
-uv run aiswarm init           # creates aiswarm.toml, the community folder and its database
-# edit aiswarm.toml: model backends, plus a [scorer] judge
-uv run aiswarm agents new a --model <backend> --temperament-file temperaments/a.md
-uv run aiswarm goals add ...
-uv run aiswarm run --next --process 2
-uv run aiswarm watch          # in a second terminal: watch the run live
-uv run aiswarm observe        # afterwards: reports and charts
+uv run bikeshed init           # creates bikeshed.toml, the community folder and its database
+# edit bikeshed.toml: model backends, plus a [scorer] judge
+uv run bikeshed agents new a --model <backend> --temperament-file temperaments/a.md
+uv run bikeshed goals add ...
+uv run bikeshed run --next --process 2
+uv run bikeshed watch          # in a second terminal: watch the run live
+uv run bikeshed observe        # afterwards: reports and charts
 ```
 
-`uv run aiswarm --help` lists every command. A few good ones to explore:
+`uv run bikeshed --help` lists every command. A few good ones to explore:
 
-- `aiswarm agents timeline <agent>`: one agent's whole history (renames, journals, reviews given and received).
-- `aiswarm show <run-id>`: what a run decided.
+- `bikeshed agents timeline <agent>`: one agent's whole history (renames, journals, reviews given and received).
+- `bikeshed show <run-id>`: what a run decided.
 
 ## Where things live
 
-- `src/aiswarm/`: the program.
+- `src/bikeshed/`: the program.
 - `tests/`: the tests.
 - `docs/superpowers/specs/`: the design documents explaining every decision.
 - A lab folder (not saved in git) holding `community/` (the agents, their files, norms, goals and the database) and `runs/` (each run's workspace, live event log, report and Observer output).

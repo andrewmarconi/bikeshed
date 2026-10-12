@@ -1,9 +1,9 @@
 import json
 
-from aiswarm.models.fake import FakeModel
-from aiswarm.observer.codebook import theme_counts, update_codebook
-from aiswarm.observer.judge import Judge
-from aiswarm.observer.store import Judgment, ObserverStore
+from bikeshed.models.fake import FakeModel
+from bikeshed.observer.codebook import theme_counts, update_codebook
+from bikeshed.observer.judge import Judge
+from bikeshed.observer.store import Judgment, ObserverStore
 
 
 async def test_new_labels_are_assigned_and_known_ones_skipped(tmp_path):

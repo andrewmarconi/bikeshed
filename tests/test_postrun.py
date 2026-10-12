@@ -3,13 +3,13 @@ import re
 
 import pytest
 
-from aiswarm.board import SYSTEM, Board
-from aiswarm.events import read_events
-from aiswarm.journal import journal_section
-from aiswarm.models.base import ModelError
-from aiswarm.models.fake import FakeModel
-from aiswarm.postrun import PostRun
-from aiswarm.reviews import responses_for, reviews_of
+from bikeshed.board import SYSTEM, Board
+from bikeshed.events import read_events
+from bikeshed.journal import journal_section
+from bikeshed.models.base import ModelError
+from bikeshed.models.fake import FakeModel
+from bikeshed.postrun import PostRun
+from bikeshed.reviews import responses_for, reviews_of
 
 
 def finished_run(conn, tmp_path, make_run, reason="budget"):
@@ -275,7 +275,7 @@ async def test_update_can_set_pronouns_and_omitting_them_keeps_them(tmp_path, co
 
 
 async def test_cycle_records_and_embeds_methods(tmp_path, community, make_run, postrun_reply):
-    from aiswarm.models.fake import FakeEmbedder
+    from bikeshed.models.fake import FakeEmbedder
 
     store, conn = community
     run_id = finished_run(conn, tmp_path, make_run)
@@ -295,7 +295,7 @@ async def test_methods_are_recorded_without_an_embedder(tmp_path, community, mak
 
 
 async def test_an_embeddings_outage_is_recorded_without_pausing_the_cycle(tmp_path, community, make_run, postrun_reply):
-    from aiswarm.models.fake import FakeEmbedder
+    from bikeshed.models.fake import FakeEmbedder
 
     store, conn = community
     run_id = finished_run(conn, tmp_path, make_run)
@@ -304,12 +304,12 @@ async def test_an_embeddings_outage_is_recorded_without_pausing_the_cycle(tmp_pa
     assert (await post.run(run_id)).status == "done"
     assert conn.execute("SELECT COUNT(*) FROM failures WHERE kind = 'postrun:library:embed_error'").fetchone()[0] == 1
     assert conn.execute("SELECT COUNT(*) FROM methods").fetchone()[0] == 3
-    from aiswarm.library import embed_missing
+    from bikeshed.library import embed_missing
     assert await embed_missing(conn, FakeEmbedder()) == 3            # the next cycle's library step picks them up
 
 
 async def test_update_can_make_one_proposal_and_sees_current_norms(tmp_path, community, make_run, postrun_reply):
-    from aiswarm.norms import proposals
+    from bikeshed.norms import proposals
 
     store, conn = community
     run_id = finished_run(conn, tmp_path, make_run)
@@ -324,7 +324,7 @@ async def test_update_can_make_one_proposal_and_sees_current_norms(tmp_path, com
 
 
 async def test_an_amendment_must_target_an_existing_norm(tmp_path, community, make_run, postrun_reply):
-    from aiswarm.norms import proposals
+    from bikeshed.norms import proposals
 
     store, conn = community
     run_id = finished_run(conn, tmp_path, make_run)
@@ -337,7 +337,7 @@ async def test_an_amendment_must_target_an_existing_norm(tmp_path, community, ma
 
 
 async def test_a_dimension_must_not_reuse_a_name(tmp_path, community, make_run, postrun_reply):
-    from aiswarm.norms import proposals
+    from bikeshed.norms import proposals
 
     store, conn = community
     conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES ('old', 'g', 'closed', '[]', 't')")
@@ -358,7 +358,7 @@ def proposing(postrun_reply, kind="norm", **fields):
 
 
 async def test_a_critiqued_proposal_with_quorum_is_adopted_into_norms_md(tmp_path, community, make_run, postrun_reply):
-    from aiswarm.norms import critiques_of, proposals
+    from bikeshed.norms import critiques_of, proposals
 
     store, conn = community
     run_id = finished_run(conn, tmp_path, make_run)
@@ -377,7 +377,7 @@ async def test_a_critiqued_proposal_with_quorum_is_adopted_into_norms_md(tmp_pat
 
 
 async def test_a_proposal_nobody_else_critiques_is_rejected(tmp_path, community, make_run, postrun_reply):
-    from aiswarm.norms import proposals
+    from bikeshed.norms import proposals
 
     store, conn = community
     run_id = finished_run(conn, tmp_path, make_run)
@@ -427,7 +427,7 @@ async def test_critiques_must_name_open_proposals_and_votes_cover_each(tmp_path,
 
 
 async def test_reviews_rate_dimensions_adopted_in_earlier_runs_only(tmp_path, community, make_run, postrun_reply):
-    from aiswarm.reviews import ratings_for
+    from bikeshed.reviews import ratings_for
 
     store, conn = community
     conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES ('old', 'g', 'closed', '[]', 't')")
@@ -495,7 +495,7 @@ async def test_dimensions_adopted_after_this_run_are_never_rated_in_it(tmp_path,
 
 
 async def test_a_proposal_made_after_deliberation_is_declined_and_noted(tmp_path, community, make_run, postrun_reply):
-    from aiswarm.norms import proposals
+    from bikeshed.norms import proposals
 
     store, conn = community
     run_id = finished_run(conn, tmp_path, make_run)
@@ -511,7 +511,7 @@ async def test_a_proposal_made_after_deliberation_is_declined_and_noted(tmp_path
 
 
 async def test_votes_lost_to_a_model_error_defer_the_decision(tmp_path, community, make_run, postrun_reply):
-    from aiswarm.norms import proposals
+    from bikeshed.norms import proposals
 
     store, conn = community
     run_id = finished_run(conn, tmp_path, make_run)

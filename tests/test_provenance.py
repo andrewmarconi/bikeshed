@@ -4,10 +4,10 @@ from importlib.resources import files
 
 import pytest
 
-import aiswarm.provenance as provenance
-from aiswarm.config import Config
-from aiswarm.gitrepo import GitRepo
-from aiswarm.provenance import capture, code_state, probe_server, prompt_snapshot, provenance_rows
+import bikeshed.provenance as provenance
+from bikeshed.config import Config
+from bikeshed.gitrepo import GitRepo
+from bikeshed.provenance import capture, code_state, probe_server, prompt_snapshot, provenance_rows
 
 
 def make_config(**run):
@@ -45,9 +45,9 @@ async def test_capture_stores_a_row_without_api_keys(run_row):
 
 def test_prompt_snapshot_hashes_every_template():
     snapshot = prompt_snapshot()
-    names = sorted(p.name for p in files("aiswarm.prompts").iterdir() if p.name.endswith(".md"))
+    names = sorted(p.name for p in files("bikeshed.prompts").iterdir() if p.name.endswith(".md"))
     assert sorted(snapshot) == names
-    text = files("aiswarm.prompts").joinpath("journal_request.md").read_text()
+    text = files("bikeshed.prompts").joinpath("journal_request.md").read_text()
     assert snapshot["journal_request.md"] == {"sha256": hashlib.sha256(text.encode()).hexdigest(), "text": text}
 
 
@@ -92,7 +92,7 @@ def test_code_state_in_a_checkout(tmp_path):
     assert code_state(repo.path) == (sha, True)
 
 
-from aiswarm.provenance import provenance_changes  # noqa: E402
+from bikeshed.provenance import provenance_changes  # noqa: E402
 
 
 async def test_changes_name_what_differs_from_the_previous_run(community, make_run, monkeypatch):
@@ -133,7 +133,7 @@ def test_code_state_ignores_an_enclosing_repo_that_does_not_track_the_package(tm
     host = GitRepo.init(tmp_path / "project")
     (host.path / ".gitignore").write_text(".venv/\n")
     host.commit([".gitignore"], "host", author="dev")
-    package = host.path / ".venv" / "site-packages" / "aiswarm"
+    package = host.path / ".venv" / "site-packages" / "bikeshed"
     package.mkdir(parents=True)
     (package / "__init__.py").write_text("")
     assert code_state(package) == (None, None)
@@ -150,7 +150,7 @@ async def test_observer_settings_are_not_part_of_provenance(run_row):
 
 
 async def test_backends_no_agent_uses_are_not_part_of_provenance(run_row):
-    from aiswarm.config import ClaudeCliBackend
+    from bikeshed.config import ClaudeCliBackend
 
     conn, run_id = run_row
     plain = await capture(conn, run_id, "start", make_config(), {"a": "local"}, probe=fake_probe)

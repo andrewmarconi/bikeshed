@@ -4,11 +4,11 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from aiswarm.config import DEFAULT_CONFIG, ClaudeCliBackend, OpenAIBackend, load_config
+from bikeshed.config import DEFAULT_CONFIG, ClaudeCliBackend, OpenAIBackend, load_config
 
 
 def write(tmp_path: Path, text: str) -> Path:
-    path = tmp_path / "aiswarm.toml"
+    path = tmp_path / "bikeshed.toml"
     path.write_text(text)
     return path
 
@@ -106,7 +106,7 @@ def test_observer_judge_must_name_a_backend(tmp_path):
 def test_scorer_judge_must_name_a_backend():
     import pytest
 
-    from aiswarm.config import Config
+    from bikeshed.config import Config
 
     with pytest.raises(ValueError, match="scorer.judge"):
         Config.model_validate({"models": {}, "scorer": {"judge": "nope"}})

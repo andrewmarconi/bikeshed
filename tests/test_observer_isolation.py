@@ -4,11 +4,11 @@ from pathlib import Path
 
 from observer_helpers import add_entry, add_run
 
-import aiswarm
-from aiswarm.gitrepo import GitRepo
-from aiswarm.provenance import prompt_snapshot
+import bikeshed
+from bikeshed.gitrepo import GitRepo
+from bikeshed.provenance import prompt_snapshot
 
-SRC = Path(aiswarm.__file__).parent
+SRC = Path(bikeshed.__file__).parent
 AGENT_PATH = ["view.py", "agent.py", "runner.py", "board.py", "consensus.py", "actions.py", "introduce.py",
               "checkin.py", "journal.py", "library.py", "norms.py", "reviews.py", "profiles.py", "prompts/__init__.py",
               *[f"postrun/{p.name}" for p in (SRC / "postrun").glob("*.py")]]
@@ -27,7 +27,7 @@ def imports(path: Path) -> set[str]:
 
 def test_no_agent_path_module_imports_the_observer():
     for rel in AGENT_PATH:
-        assert not any(name.startswith("aiswarm.observer") for name in imports(SRC / rel)), rel
+        assert not any(name.startswith("bikeshed.observer") for name in imports(SRC / rel)), rel
 
 
 def test_judge_prompts_are_not_part_of_agent_prompt_provenance():
@@ -45,8 +45,8 @@ def _fingerprint(community_dir: Path) -> tuple[str | None, str]:
 
 
 async def test_observe_leaves_the_community_untouched(tmp_path, community):
-    from aiswarm.config import Config
-    from aiswarm.observer.observe import observe
+    from bikeshed.config import Config
+    from bikeshed.observer.observe import observe
 
     store, conn = community
     add_run(conn, "r1", created="2099-01-01T00:00:00+00:00")
@@ -64,8 +64,8 @@ async def test_observe_leaves_the_community_untouched(tmp_path, community):
 async def test_observe_never_initialises_or_commits_to_the_community_repo(tmp_path, community):
     import pytest
 
-    from aiswarm.config import Config
-    from aiswarm.observer.observe import observe
+    from bikeshed.config import Config
+    from bikeshed.observer.observe import observe
 
     store, conn = community
     add_run(conn, "r1", created="2099-01-01T00:00:00+00:00")

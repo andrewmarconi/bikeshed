@@ -3,9 +3,9 @@ import subprocess
 
 import pytest
 
-from aiswarm.introduce import introduce
-from aiswarm.models.fake import FakeModel
-from aiswarm.profiles import PRIVATE_MAX, ProfileError, ProfileStore
+from bikeshed.introduce import introduce
+from bikeshed.models.fake import FakeModel
+from bikeshed.profiles import PRIVATE_MAX, ProfileError, ProfileStore
 
 
 @pytest.fixture

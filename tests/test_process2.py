@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from aiswarm.events import read_events
-from aiswarm.runner import Runner
+from bikeshed.events import read_events
+from bikeshed.runner import Runner
 
 AGENTS = ["a", "b", "c"]
 
@@ -200,7 +200,7 @@ async def test_a_poll_outage_pauses_without_inventing_votes(community, process2,
 
         async def chat(self, system, messages, json_schema=None):
             if "\n# Poll\n" in messages[0]["content"]:
-                from aiswarm.models.base import ModelError
+                from bikeshed.models.base import ModelError
                 raise ModelError("down")
             return await self.inner.chat(system, messages, json_schema)
 
@@ -219,7 +219,7 @@ class Down:
 
     async def chat(self, system, messages, json_schema=None):
         if self.when(messages[0]["content"]):
-            from aiswarm.models.base import ModelError
+            from bikeshed.models.base import ModelError
             raise ModelError("down")
         return await self.inner.chat(system, messages, json_schema)
 
@@ -302,8 +302,8 @@ async def test_process2_header_counts_rounds_and_process1_does_not(community, pr
 async def test_the_poll_skips_a_call_the_scorer_rejected():
     from types import SimpleNamespace
 
-    from aiswarm.board import Entry
-    from aiswarm.phases import poll
+    from bikeshed.board import Entry
+    from bikeshed.phases import poll
 
     def entry(id_, author, type_, payload):
         return Entry(id_, "r1", 2, author, type_, payload, [], "all", "t")

@@ -1,7 +1,7 @@
 from observer_helpers import add_entry, add_run
 
-from aiswarm.observer.metrics import closed_runs
-from aiswarm.observer.scoring import (
+from bikeshed.observer.metrics import closed_runs
+from bikeshed.observer.scoring import (
     Award, RulingRow, SelfCredit, awards, combine_self_credit, rulings, self_credit,
 )
 

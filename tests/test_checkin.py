@@ -1,7 +1,7 @@
 import json
 
-from aiswarm.checkin import checkin
-from aiswarm.models.fake import FakeModel
+from bikeshed.checkin import checkin
+from bikeshed.models.fake import FakeModel
 
 
 async def test_checkin_can_rename_and_records_pronouns(community):

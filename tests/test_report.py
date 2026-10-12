@@ -1,6 +1,6 @@
-from aiswarm.board import SYSTEM, Entry
-from aiswarm.consensus import StopDecision
-from aiswarm.report import account, write_report
+from bikeshed.board import SYSTEM, Entry
+from bikeshed.consensus import StopDecision
+from bikeshed.report import account, write_report
 
 
 def e(id, round, author, type, **payload):

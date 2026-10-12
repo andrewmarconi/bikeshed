@@ -1,5 +1,5 @@
-from aiswarm.board import SYSTEM, Entry
-from aiswarm.postrun.feedback import feedback_packet, interactions, transcript
+from bikeshed.board import SYSTEM, Entry
+from bikeshed.postrun.feedback import feedback_packet, interactions, transcript
 
 WHO = {"a": "Alpha (a)", "b": "Bea (b)", "c": "Cyd (c)", "d": "Dee (d)", SYSTEM: "system"}.get
 AGENTS = ["a", "b", "c", "d"]

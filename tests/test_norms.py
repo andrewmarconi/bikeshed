@@ -1,4 +1,4 @@
-from aiswarm.norms import (
+from bikeshed.norms import (
     add_norm_critique, add_norm_vote, add_proposal, critiques_of, current_norms, decide, dimensions, proposals,
     render_norms, render_proposal,
 )

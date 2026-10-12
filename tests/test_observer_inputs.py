@@ -1,10 +1,10 @@
 from observer_helpers import add_entry, add_journal, add_review, add_run
 
-from aiswarm.observer.inputs import (
+from bikeshed.observer.inputs import (
     benchmark_inputs, private_public_inputs, self_image_inputs, themes_inputs, think_vs_act_inputs,
 )
-from aiswarm.observer.metrics import BenchmarkAnswer, closed_runs
-from aiswarm.view import make_who
+from bikeshed.observer.metrics import BenchmarkAnswer, closed_runs
+from bikeshed.view import make_who
 
 FUTURE = "2099-01-01T00:00:00+00:00"  # after every fixture commit; git cannot parse far-future dates like 2999
 

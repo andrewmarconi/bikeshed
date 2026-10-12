@@ -1,10 +1,10 @@
 import pytest
 
-from aiswarm.models.base import ModelError
-from aiswarm.models.fake import FakeModel
-from aiswarm.postrun.ask import ReplyError, ask
-from aiswarm.postrun.replies import JournalReply, ReviewReply, UpdateReply
-from aiswarm.prompts import render
+from bikeshed.models.base import ModelError
+from bikeshed.models.fake import FakeModel
+from bikeshed.postrun.ask import ReplyError, ask
+from bikeshed.postrun.replies import JournalReply, ReviewReply, UpdateReply
+from bikeshed.prompts import render
 
 
 async def test_ask_returns_the_validated_reply_and_reasoning():

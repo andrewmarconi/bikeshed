@@ -1,8 +1,8 @@
 import pytest
 
-from aiswarm.board import SYSTEM, Board
-from aiswarm.library import embed_missing, reception_of, record_methods, render_methods, retrieve
-from aiswarm.models.fake import FakeEmbedder
+from bikeshed.board import SYSTEM, Board
+from bikeshed.library import embed_missing, reception_of, record_methods, render_methods, retrieve
+from bikeshed.models.fake import FakeEmbedder
 
 WHO = {"a": "Alpha (a)", "b": "Bea (b)", "c": "Cyd (c)"}.get
 
@@ -83,7 +83,7 @@ class _Picky(FakeEmbedder):
     async def embed(self, texts):
         if any("POISON" in t for t in texts):
             self.calls.append(list(texts))
-            from aiswarm.models.base import ModelError
+            from bikeshed.models.base import ModelError
             raise ModelError("400: input too long")
         return await super().embed(texts)
 
@@ -97,7 +97,7 @@ async def test_one_bad_row_does_not_block_the_rest(community, make_run):
 
 
 async def test_a_total_outage_raises_so_it_can_be_recorded(community, make_run):
-    from aiswarm.models.base import ModelError
+    from bikeshed.models.base import ModelError
 
     store, conn = community
     entries, *_ = board_run(conn, make_run, "r1")

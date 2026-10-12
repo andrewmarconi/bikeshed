@@ -1,6 +1,6 @@
-from aiswarm.board import Entry
-from aiswarm.config import RunSettings
-from aiswarm.consensus import StopDecision, call_status, spent_calls, stop_decision
+from bikeshed.board import Entry
+from bikeshed.config import RunSettings
+from bikeshed.consensus import StopDecision, call_status, spent_calls, stop_decision
 
 AGENTS = ["a", "b", "c"]
 

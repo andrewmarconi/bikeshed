@@ -5,8 +5,8 @@ import re
 import pytest
 from typer.testing import CliRunner
 
-import aiswarm.cli as cli
-from aiswarm.models.fake import FakeEmbedder, FakeModel
+import bikeshed.cli as cli
+from bikeshed.models.fake import FakeEmbedder, FakeModel
 
 runner = CliRunner()
 
@@ -37,7 +37,7 @@ def project(tmp_path, monkeypatch, postrun_reply):
         return {"models": [backend.model], "health": None, "error": None}
 
     monkeypatch.setattr(cli, "probe_server", fake_probe)
-    config = tmp_path / "aiswarm.toml"
+    config = tmp_path / "bikeshed.toml"
     result = runner.invoke(cli.app, ["init", "-c", str(config)])
     assert result.exit_code == 0, result.output
     return tmp_path, config
@@ -87,7 +87,7 @@ def test_run_then_show(project):
 
 def test_run_refuses_agents_without_public_profile(project):
     tmp_path, config = project
-    from aiswarm.profiles import ProfileStore
+    from bikeshed.profiles import ProfileStore
     ProfileStore(tmp_path / "community").create("z", "local", "T.")
     result = invoke("run", "G", "-c", config)
     assert result.exit_code != 0
@@ -97,11 +97,11 @@ def test_run_refuses_agents_without_public_profile(project):
 def test_missing_config_is_reported(tmp_path):
     result = invoke("agents", "list", "-c", tmp_path / "missing.toml")
     assert result.exit_code != 0
-    assert "aiswarm init" in result.output
+    assert "bikeshed init" in result.output
 
 
 def test_doctor_warns_that_subscription_mode_is_not_fully_isolated(tmp_path, monkeypatch):
-    config = tmp_path / "aiswarm.toml"
+    config = tmp_path / "bikeshed.toml"
     config.write_text('[models.claude]\nkind = "claude_cli"\n')
 
     async def fake_leak_check(client):
@@ -206,7 +206,7 @@ def test_runs_record_provenance_and_show_reports_changes(project):
     first_id = re.search(r"run (\S+) closed", first.output).group(1)
     second = invoke("run", "Pick a colour", "--max-rounds", "3", "-c", config)
     second_id = re.search(r"run (\S+) closed", second.output).group(1)
-    from aiswarm.db import connect
+    from bikeshed.db import connect
     conn = connect(tmp_path / "community" / "community.db")
     phases = [r["phase"] for r in conn.execute("SELECT phase FROM run_provenance WHERE run_id = ? ORDER BY id", (first_id,))]
     assert phases == ["start", "postrun"]
@@ -296,7 +296,7 @@ def test_agents_set_model(project):
 
 
 def test_agents_set_model_refuses_during_an_unclosed_run(project):
-    from aiswarm.db import connect
+    from bikeshed.db import connect
 
     tmp_path, config = project
     assert invoke("agents", "new", "a", "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
@@ -371,7 +371,7 @@ def test_run_with_process_2_records_it_and_resume_keeps_it(project):
 
 
 def test_abandon_closes_a_dead_run_and_keeps_its_record(project):
-    from aiswarm.db import connect
+    from bikeshed.db import connect
 
     tmp_path, config = project
     make_agents(config, "a", "b")

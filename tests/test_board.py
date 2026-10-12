@@ -1,8 +1,8 @@
 import sqlite3
 
-from aiswarm.board import SYSTEM, Board, public, visible
-from aiswarm.db import connect
-from aiswarm.events import EventLog, read_events
+from bikeshed.board import SYSTEM, Board, public, visible
+from bikeshed.db import connect
+from bikeshed.events import EventLog, read_events
 
 
 def test_private_entries_are_visible_only_to_their_parties(tmp_path, make_run):

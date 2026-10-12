@@ -2,15 +2,15 @@ import json
 
 import pytest
 
-from aiswarm.actions import (
+from bikeshed.actions import (
     THINK, ActionError, CallConsensus, Credit, ListFiles, Pass, PrivateMessage, Propose, ReadEntry, ReadFile, Vote,
     WriteFile,
 )
-from aiswarm.agent import make_reader, make_validator, system_prompt, take_step
-from aiswarm.board import Entry
-from aiswarm.db import connect
-from aiswarm.models.fake import FakeModel
-from aiswarm.workspace import Workspace
+from bikeshed.agent import make_reader, make_validator, system_prompt, take_step
+from bikeshed.board import Entry
+from bikeshed.db import connect
+from bikeshed.models.fake import FakeModel
+from bikeshed.workspace import Workspace
 
 PROPOSE = json.dumps({"action": {"type": "propose", "answer_summary": "Blue", "method": "Gut"}})
 CRITIQUE = json.dumps({"action": {"type": "critique", "target": 2, "about": "method", "points": "p"}})
@@ -146,7 +146,7 @@ def test_reader_truncates_large_files(tmp_path, make_run):
 
 
 def test_reader_answers_read_reviews():
-    from aiswarm.actions import ReadReviews
+    from bikeshed.actions import ReadReviews
 
     read = make_reader(None, [], lambda a: a, reviews=lambda agent_id: f"REVIEWS-OF-{agent_id}")
     assert read(ReadReviews(type="read_reviews", agent_id="b")) == "REVIEWS-OF-b"
@@ -154,7 +154,7 @@ def test_reader_answers_read_reviews():
 
 
 def test_read_reviews_parses_and_is_in_the_schema():
-    from aiswarm.actions import READ_ACTIONS, ReadReviews, parse_action, step_schema
+    from bikeshed.actions import READ_ACTIONS, ReadReviews, parse_action, step_schema
 
     action = parse_action('{"action": {"type": "read_reviews", "agent_id": "b"}}')
     assert isinstance(action, ReadReviews) and isinstance(action, READ_ACTIONS)
@@ -188,7 +188,7 @@ def test_system_prompts_say_how_the_workspace_works(template):
 
 
 def test_the_think_request_says_notes_are_kept():
-    from aiswarm.prompts import render
+    from bikeshed.prompts import render
 
     assert "shown to you on every turn" in render("process2_think_request.md", note_max="4,000")
 
@@ -204,7 +204,7 @@ def test_system_prompts_explain_the_scorer(template):
 
 @pytest.mark.parametrize("path", ["scorer_feedback.md", "Scorer_Feedback.md", "workspace/scorer_feedback.md"])
 def test_only_the_scorer_writes_its_feedback_file(path):
-    from aiswarm.actions import WriteFile
+    from bikeshed.actions import WriteFile
 
     validate = make_validator([], ["a", "b"], "a")
     with pytest.raises(ActionError, match="only by the Scorer"):

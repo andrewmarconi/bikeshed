@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-AISwarm is a research harness: a local community of persistent LLM agents that work on goals together with no orchestrator, review each other by name, and evolve their own profiles, reputations and norms across runs. The answer to a goal is secondary; the subject of study is whether working styles and values emerge. `README.md` explains the idea in plain language; the authoritative design is in `docs/superpowers/specs/` (start with `2026-10-10-aiswarm-design.md`; later specs govern where they are more specific).
+Bikeshed is a research harness: a local community of persistent LLM agents that work on goals together with no orchestrator, review each other by name, and evolve their own profiles, reputations and norms across runs. The answer to a goal is secondary; the subject of study is whether working styles and values emerge. `README.md` explains the idea in plain language; the authoritative design is in `docs/superpowers/specs/` (start with `2026-10-10-aiswarm-design.md`; later specs govern where they are more specific). The project was called AISwarm until 2026-10-12; dated specs and plans keep the old name and `aiswarm` paths, and so does the provenance of earlier runs.
 
 ## Commands
 
@@ -13,24 +13,24 @@ uv sync                                         # install
 uv run pytest -q                                # full suite (smoke tests excluded by default)
 uv run pytest tests/test_runner.py::test_name   # one test
 uv run pytest -m smoke                          # live tests: need oMLX or the claude CLI
-AISWARM_WRITE_GOLDEN=1 uv run pytest tests/test_process1_golden.py   # regenerate the Process 1 recording
+BIKESHED_WRITE_GOLDEN=1 uv run pytest tests/test_process1_golden.py   # regenerate the Process 1 recording
 ```
 
 Regenerate the golden file only when Process 1 behaviour (prompts, requests, entries, events) is *meant* to change; otherwise a diff there is a regression.
 
-The CLI reads `aiswarm.toml` from the current directory (`-c` to override). The live lab is `lab/` (gitignored: its config holds the oMLX API key, plus `community/` and `runs/`), so run commands from there:
+The CLI reads `bikeshed.toml` from the current directory (`-c` to override). The live lab is `lab/` (gitignored: its config holds the oMLX API key, plus `community/` and `runs/`), so run commands from there:
 
 ```bash
 cd lab
-uv run aiswarm run --next --process 2   # next goal from the queue; 1 = everyone at once (default), 2 = think → react → poll
-uv run aiswarm run --resume <run-id>
-uv run aiswarm watch [run-id]           # read-only Textual TUI
-uv run aiswarm postrun <run-id>         # start/resume/retry the post-run cycle
-uv run aiswarm observe [--run <id>] [--no-judge]
-uv run aiswarm abandon <run-id>
-uv run aiswarm doctor                   # backend reachability + claude -p leak check
-uv run aiswarm agents list|show|timeline|new|introduce|set-model|checkin
-uv run aiswarm goals list|add
+uv run bikeshed run --next --process 2   # next goal from the queue; 1 = everyone at once (default), 2 = think → react → poll
+uv run bikeshed run --resume <run-id>
+uv run bikeshed watch [run-id]           # read-only Textual TUI
+uv run bikeshed postrun <run-id>         # start/resume/retry the post-run cycle
+uv run bikeshed observe [--run <id>] [--no-judge]
+uv run bikeshed abandon <run-id>
+uv run bikeshed doctor                   # backend reachability + claude -p leak check
+uv run bikeshed agents list|show|timeline|new|introduce|set-model|checkin
+uv run bikeshed goals list|add
 ```
 
 `lab/init-agents.sh [backend]` creates one agent per `lab/temperaments/<id>.md` (`e` is the control agent).
@@ -39,9 +39,9 @@ uv run aiswarm goals list|add
 
 A run records code provenance (git HEAD and whether the tree is dirty, untracked files included), and `prompts.render()` reads prompt files from disk on every turn. So while a run is in progress:
 
-- Check `pgrep -fl "aiswarm (run|postrun)"` before committing, merging, or editing anything in the main checkout.
-- If a run is live, work in a sibling worktree (`../AISwarm-<name>`), not under the repo (`.worktrees/` is not gitignored).
-- Editing `lab/aiswarm.toml` is safe; it is re-read at the next start/resume and recorded then.
+- Check `pgrep -fl "bikeshed (run|postrun)"` before committing, merging, or editing anything in the main checkout.
+- If a run is live, work in a sibling worktree (`../Bikeshed-<name>`), not under the repo (`.worktrees/` is not gitignored).
+- Editing `lab/bikeshed.toml` is safe; it is re-read at the next start/resume and recorded then.
 - Don't run `omlx restart`; Andrew restarts oMLX from its app.
 
 `develop` is the working branch; there is no remote.
@@ -78,7 +78,7 @@ The Scorer (`scorer.py`) is the one judge agents know about: it rules only wheth
 
 ### Prompts
 
-Templates are flat files in `src/aiswarm/prompts/` (`string.Template`, `$name`), so provenance can hash each one. Process 2 has its own `process2_*.md`. Changing a prompt that Process 1 uses changes the golden recording.
+Templates are flat files in `src/bikeshed/prompts/` (`string.Template`, `$name`), so provenance can hash each one. Process 2 has its own `process2_*.md`. Changing a prompt that Process 1 uses changes the golden recording.
 
 ### Docs and workflow
 

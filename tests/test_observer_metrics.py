@@ -2,7 +2,7 @@ import sqlite3
 
 from observer_helpers import add_entry, add_run
 
-from aiswarm.observer.metrics import (
+from bikeshed.observer.metrics import (
     Influence, action_mix, by_category, closed_runs, credit_pairs, credits, harness_changes, influence, open_runs,
 )
 
@@ -68,11 +68,11 @@ def test_credits_and_pairs(community):
 
 from observer_helpers import add_review  # noqa: E402
 
-from aiswarm.observer.metrics import (  # noqa: E402
+from bikeshed.observer.metrics import (  # noqa: E402
     BenchmarkAnswer, benchmark_answers, by_category, dimension_scores, harness_changes, identity_events,
     norm_events, peer_scores, self_peer_gap, twins,
 )
-from aiswarm.view import make_who  # noqa: E402
+from bikeshed.view import make_who  # noqa: E402
 
 
 def test_peer_scores_and_self_gap(community):
@@ -113,7 +113,7 @@ def test_identity_events_with_prior_peer_score(community):
 
 
 def test_twins_match_the_controls_seed_temperament(tmp_path):
-    from aiswarm.profiles import ProfileStore
+    from bikeshed.profiles import ProfileStore
 
     store = ProfileStore(tmp_path / "community")
     store.create("d", "fake", "Wants evidence.")
@@ -167,7 +167,7 @@ def test_norm_events(community):
 
 
 def test_harness_changes_marks_runs_whose_provenance_changed(community, monkeypatch):
-    import aiswarm.observer.metrics as metrics
+    import bikeshed.observer.metrics as metrics
 
     store, conn = community
     add_run(conn, "r1")

@@ -1,4 +1,4 @@
-from aiswarm.watch.source import EventTail
+from bikeshed.watch.source import EventTail
 
 
 def test_reads_only_new_complete_lines(tmp_path):
@@ -27,8 +27,8 @@ import json  # noqa: E402
 import pytest  # noqa: E402
 from observer_helpers import add_entry, add_run  # noqa: E402
 
-from aiswarm.config import Config  # noqa: E402
-from aiswarm.watch.source import open_watcher  # noqa: E402
+from bikeshed.config import Config  # noqa: E402
+from bikeshed.watch.source import open_watcher  # noqa: E402
 
 
 def cfg_for(tmp_path):

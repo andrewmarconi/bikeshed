@@ -4,12 +4,12 @@ from pathlib import Path
 
 from observer_helpers import add_entry, add_run
 
-import aiswarm
-from aiswarm.config import Config
-from aiswarm.gitrepo import GitRepo
-from aiswarm.watch.source import open_watcher
+import bikeshed
+from bikeshed.config import Config
+from bikeshed.gitrepo import GitRepo
+from bikeshed.watch.source import open_watcher
 
-SRC = Path(aiswarm.__file__).parent
+SRC = Path(bikeshed.__file__).parent
 AGENT_PATH = ["view.py", "agent.py", "runner.py", "board.py", "consensus.py", "actions.py", "introduce.py",
               "checkin.py", "journal.py", "library.py", "norms.py", "reviews.py", "profiles.py", "prompts/__init__.py",
               *[f"postrun/{p.name}" for p in (SRC / "postrun").glob("*.py")]]
@@ -20,7 +20,7 @@ def test_no_agent_path_module_imports_the_watcher():
         tree = ast.parse((SRC / rel).read_text())
         names = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
         names |= {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
-        assert not any(name.startswith("aiswarm.watch") for name in names), rel
+        assert not any(name.startswith("bikeshed.watch") for name in names), rel
 
 
 def test_watching_leaves_the_community_untouched(tmp_path, community):

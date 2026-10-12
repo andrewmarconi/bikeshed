@@ -5,9 +5,9 @@ from rich.text import Text
 from textual.content import Content
 from textual.widgets import RichLog, Static
 
-from aiswarm.config import Config
-from aiswarm.watch.app import WatchApp, WorkspacePopup
-from aiswarm.watch.source import open_watcher
+from bikeshed.config import Config
+from bikeshed.watch.app import WatchApp, WorkspacePopup
+from bikeshed.watch.source import open_watcher
 
 
 def setup(tmp_path, community, process=1, goal="Pick a fruit."):

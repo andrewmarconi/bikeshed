@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-from aiswarm.models.base import ChatResult, ModelError, RetryingClient, limit_clients
-from aiswarm.models.fake import FakeModel
+from bikeshed.models.base import ChatResult, ModelError, RetryingClient, limit_clients
+from bikeshed.models.fake import FakeModel
 
 
 async def test_fake_returns_script_in_order_then_pass():
@@ -75,7 +75,7 @@ async def test_limit_clients_caps_simultaneous_calls_across_clients():
 
 
 async def test_fake_embedder_is_deterministic_and_can_fail():
-    from aiswarm.models.fake import FakeEmbedder
+    from bikeshed.models.fake import FakeEmbedder
 
     embedder = FakeEmbedder(dims=16, fail_times=1)
     with pytest.raises(ModelError):

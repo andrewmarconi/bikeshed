@@ -1,5 +1,5 @@
-from aiswarm.board import Entry
-from aiswarm.watch.state import FEED_MAX, RulingLine, RunState, feed_line, feed_text
+from bikeshed.board import Entry
+from bikeshed.watch.state import FEED_MAX, RulingLine, RunState, feed_line, feed_text
 
 
 def state():
@@ -31,14 +31,14 @@ def test_events_drive_round_phase_and_cards():
 def test_phases_through_pause_close_and_post_run():
     s = state()
     s.apply({"event": "run_paused", "round": 2})
-    assert s.phase == "paused — resume with aiswarm run --resume r1"
+    assert s.phase == "paused — resume with bikeshed run --resume r1"
     s.apply({"event": "run_closed", "reason": "budget", "call_id": None})
     assert s.phase == "closed: budget" and s.closed_reason == "budget" and not s.finished
     s.apply({"event": "postrun_started", "run_id": "r1"})
     s.apply({"event": "postrun_step_finished", "step": "review", "agent": "a", "status": "done"})
     assert s.phase == "post-run" and s.current_step == "review" and s.postrun_seen
     s.apply({"event": "postrun_paused", "step": "review"})
-    assert s.phase == "post-run paused — resume with aiswarm postrun r1"
+    assert s.phase == "post-run paused — resume with bikeshed postrun r1"
     s.apply({"event": "postrun_finished", "failed": 0})
     assert s.phase == "done" and s.finished and s.current_step is None
 
@@ -243,6 +243,6 @@ def test_refresh_works_on_a_store_from_before_the_scorer(community):
 
 
 def test_has_table(community):
-    from aiswarm.db import has_table
+    from bikeshed.db import has_table
     store, conn = community
     assert has_table(conn, "scorer_points") and not has_table(conn, "nope")

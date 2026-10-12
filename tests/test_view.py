@@ -2,11 +2,11 @@ from dataclasses import replace
 
 import pytest
 
-from aiswarm.actions import ActionError, Critique, ReadEntry
-from aiswarm.agent import make_reader, make_validator
-from aiswarm.board import SYSTEM, Board, Entry
-from aiswarm.view import METHODS_HEADER, NOTES_HEADER, build_view, collect_inputs, make_who, render_entry
-from aiswarm.workspace import Workspace
+from bikeshed.actions import ActionError, Critique, ReadEntry
+from bikeshed.agent import make_reader, make_validator
+from bikeshed.board import SYSTEM, Board, Entry
+from bikeshed.view import METHODS_HEADER, NOTES_HEADER, build_view, collect_inputs, make_who, render_entry
+from bikeshed.workspace import Workspace
 
 
 def setup(tmp_path, community, make_run):
@@ -146,7 +146,7 @@ def test_view_shows_norms_when_present(tmp_path, community, make_run):
 
 
 def test_member_lines_show_reputation(tmp_path, community, make_run):
-    from aiswarm.reviews import add_review
+    from bikeshed.reviews import add_review
 
     store, conn, board, ws = setup(tmp_path, community, make_run)
     conn.execute("UPDATE runs SET status = 'closed' WHERE id = 'r1'")
@@ -176,7 +176,7 @@ def test_view_shows_methods_from_earlier_runs(tmp_path, community, make_run):
 
 
 def test_member_lines_show_dimension_scores(tmp_path, community, make_run):
-    from aiswarm.reviews import Reputation
+    from bikeshed.reviews import Reputation
 
     store, conn, board, ws = setup(tmp_path, community, make_run)
     inputs = collect_inputs(agent_id="a", goal="Pick a colour", round=2, board=board, store=store, workspace=ws,

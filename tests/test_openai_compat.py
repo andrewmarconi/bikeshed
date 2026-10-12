@@ -5,9 +5,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from aiswarm.config import OpenAIBackend
-from aiswarm.models.base import ModelError
-from aiswarm.models.openai_compat import OpenAICompatClient
+from bikeshed.config import OpenAIBackend
+from bikeshed.models.base import ModelError
+from bikeshed.models.openai_compat import OpenAICompatClient
 
 CHAT_REPLY = {
     "id": "x", "object": "chat.completion", "created": 0, "model": "qwen-test",

@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from aiswarm.config import ClaudeCliBackend, OpenAIBackend
-from aiswarm.models.base import ModelError, RetryingClient
-from aiswarm.models.claude_cli import ClaudeCliClient, build_argv, leak_check, parse_output, render_prompt
-from aiswarm.models.factory import make_client
-from aiswarm.models.openai_compat import OpenAICompatClient
+from bikeshed.config import ClaudeCliBackend, OpenAIBackend
+from bikeshed.models.base import ModelError, RetryingClient
+from bikeshed.models.claude_cli import ClaudeCliClient, build_argv, leak_check, parse_output, render_prompt
+from bikeshed.models.factory import make_client
+from bikeshed.models.openai_compat import OpenAICompatClient
 
 
 def sample(input_tokens=2, cache_creation=1193, **overrides):

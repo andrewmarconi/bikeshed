@@ -1,4 +1,4 @@
-from aiswarm.journal import journal_section, write_journal
+from bikeshed.journal import journal_section, write_journal
 
 
 def test_journal_sections_render_to_one_file_and_replace_on_rewrite(community):

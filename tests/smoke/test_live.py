@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from aiswarm.actions import parse_action, step_schema
-from aiswarm.config import ClaudeCliBackend, OpenAIBackend
-from aiswarm.models.claude_cli import ClaudeCliClient, leak_check
-from aiswarm.models.openai_compat import OpenAICompatClient
+from bikeshed.actions import parse_action, step_schema
+from bikeshed.config import ClaudeCliBackend, OpenAIBackend
+from bikeshed.models.claude_cli import ClaudeCliClient, leak_check
+from bikeshed.models.openai_compat import OpenAICompatClient
 
 pytestmark = pytest.mark.smoke
 VIEW = "# Goal\nName a colour.\n\n# Round 1\nThis is the opening round. Propose your own position (action `propose`)."
@@ -16,22 +16,22 @@ SYSTEM = 'You are Test (t). Reply with JSON only, in the form {"action": {...}}.
 
 
 def claude_client():
-    return ClaudeCliClient(ClaudeCliBackend(kind="claude_cli"), workdir=Path(tempfile.mkdtemp(prefix="aiswarm-claude-")))
+    return ClaudeCliClient(ClaudeCliBackend(kind="claude_cli"), workdir=Path(tempfile.mkdtemp(prefix="bikeshed-claude-")))
 
 
 def omlx_backend():
     return OpenAIBackend(
         kind="openai",
-        model=os.environ["AISWARM_SMOKE_MODEL"],
-        base_url=os.environ.get("AISWARM_SMOKE_BASE_URL", "http://localhost:8000/v1"),
-        api_key=os.environ.get("AISWARM_SMOKE_API_KEY", "omlx"),
+        model=os.environ["BIKESHED_SMOKE_MODEL"],
+        base_url=os.environ.get("BIKESHED_SMOKE_BASE_URL", "http://localhost:8000/v1"),
+        api_key=os.environ.get("BIKESHED_SMOKE_API_KEY", "omlx"),
     )
 
 
-@pytest.mark.skipif(not os.environ.get("AISWARM_SMOKE_MODEL"), reason="set AISWARM_SMOKE_MODEL to an oMLX model id")
+@pytest.mark.skipif(not os.environ.get("BIKESHED_SMOKE_MODEL"), reason="set BIKESHED_SMOKE_MODEL to an oMLX model id")
 async def test_omlx_returns_a_parseable_action():
     client = OpenAICompatClient(omlx_backend())
-    assert os.environ["AISWARM_SMOKE_MODEL"] in await client.list_models()
+    assert os.environ["BIKESHED_SMOKE_MODEL"] in await client.list_models()
     result = await client.chat(SYSTEM, [{"role": "user", "content": VIEW}], step_schema())
     assert parse_action(result.text).type == "propose"
 

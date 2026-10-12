@@ -2,8 +2,8 @@ import subprocess
 
 import pytest
 
-from aiswarm.db import MIGRATIONS, connect, transaction
-from aiswarm.gitrepo import GitRepo
+from bikeshed.db import MIGRATIONS, connect, transaction
+from bikeshed.gitrepo import GitRepo
 
 
 def git_log(path, fmt):
@@ -20,7 +20,7 @@ def test_commit_records_author_and_returns_sha(tmp_path):
     sha = repo.commit(["a.txt"], "add a", author="wren")
     assert len(sha) == 40
     assert repo.head() == sha
-    assert git_log(repo.path, "%an <%ae>|%s") == "wren <wren@aiswarm.local>|add a"
+    assert git_log(repo.path, "%an <%ae>|%s") == "wren <wren@bikeshed.local>|add a"
 
 
 def test_init_is_idempotent(tmp_path):
@@ -88,7 +88,7 @@ def test_transaction_commits(tmp_path, make_run):
 
 import sqlite3  # noqa: E402
 
-from aiswarm.gitrepo import Commit  # noqa: E402
+from bikeshed.gitrepo import Commit  # noqa: E402
 
 
 def test_migration_4_keeps_existing_runs(tmp_path):
@@ -135,7 +135,7 @@ def test_is_dirty(tmp_path):
 def test_connect_readonly_reads_but_cannot_write(tmp_path):
     import sqlite3
 
-    from aiswarm.db import connect_readonly
+    from bikeshed.db import connect_readonly
 
     path = tmp_path / "c.db"
     connect(path).execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES ('r', 'g', 'closed', '[]', 't')")
@@ -148,7 +148,7 @@ def test_connect_readonly_reads_but_cannot_write(tmp_path):
 def test_connect_readonly_reports_a_missing_database(tmp_path):
     import sqlite3
 
-    from aiswarm.db import connect_readonly
+    from bikeshed.db import connect_readonly
 
     with pytest.raises(sqlite3.OperationalError):
         connect_readonly(tmp_path / "missing.db")

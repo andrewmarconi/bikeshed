@@ -1,5 +1,5 @@
 [project]
-name = "aiswarm"
+name = "bikeshed"
 version = "0.1.0"
 description = "A self-organising community of LLM agents"
 authors = [
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-aiswarm = "aiswarm.cli:app"
+bikeshed = "bikeshed.cli:app"
 
 [build-system]
 requires = ["uv_build>=0.11.19,<0.12.0"]

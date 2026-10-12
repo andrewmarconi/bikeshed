@@ -1,8 +1,8 @@
 import json
 
-from aiswarm.models.fake import FakeModel
-from aiswarm.observer.judge import ANALYSES, Judge, normalise
-from aiswarm.observer.store import ObserverStore
+from bikeshed.models.fake import FakeModel
+from bikeshed.observer.judge import ANALYSES, Judge, normalise
+from bikeshed.observer.store import ObserverStore
 
 INPUTS = {"journal": "I value   honest\nfeedback above all.", "reviews written": "Bea was careless."}
 GOOD = json.dumps({"themes": [{"label": "honesty", "polarity": "expressed",

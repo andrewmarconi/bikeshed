@@ -2,8 +2,8 @@ import subprocess
 
 import pytest
 
-from aiswarm.db import connect
-from aiswarm.workspace import InvalidPath, Workspace, WriteConflict, normalise_path
+from bikeshed.db import connect
+from bikeshed.workspace import InvalidPath, Workspace, WriteConflict, normalise_path
 
 
 @pytest.fixture

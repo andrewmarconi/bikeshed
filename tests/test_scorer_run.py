@@ -1,9 +1,9 @@
 import json
 
-from aiswarm.board import Board, Entry
-from aiswarm.events import read_events
-from aiswarm.models.fake import FakeModel
-from aiswarm.scorer import scorer_request
+from bikeshed.board import Board, Entry
+from bikeshed.events import read_events
+from bikeshed.models.fake import FakeModel
+from bikeshed.scorer import scorer_request
 
 AGENTS = ["a", "b", "c"]
 ACCEPT = json.dumps({"accepted": True, "feedback": ""})
@@ -135,5 +135,5 @@ def test_points_go_once_to_each_credited_member(tmp_path, community, runner_fact
         {"agent_id": "zz", "contribution": "ghost"}, {"agent_id": "c", "contribution": "data"}]}, [], "all", "t")
     runner_factory(store, conn, {})._accept(board, 3, call, AGENTS)
     assert points_rows(conn, "r1") == [("a", 9, "me"), ("c", 9, "data")]
-    from aiswarm.scorer import points
+    from bikeshed.scorer import points
     assert points(conn) == {"a": 1, "c": 1}

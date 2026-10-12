@@ -15,8 +15,8 @@ def make_run():
     return _make_run
 
 
-from aiswarm.db import connect  # noqa: E402
-from aiswarm.profiles import ProfileStore  # noqa: E402
+from bikeshed.db import connect  # noqa: E402
+from bikeshed.profiles import ProfileStore  # noqa: E402
 
 
 @pytest.fixture
@@ -32,9 +32,9 @@ def community(tmp_path):
 import random  # noqa: E402
 import re  # noqa: E402
 
-from aiswarm.config import RunSettings  # noqa: E402
-from aiswarm.models.fake import FakeModel  # noqa: E402
-from aiswarm.runner import Runner  # noqa: E402
+from bikeshed.config import RunSettings  # noqa: E402
+from bikeshed.models.fake import FakeModel  # noqa: E402
+from bikeshed.runner import Runner  # noqa: E402
 
 
 def _scripted(plan, **kwargs):

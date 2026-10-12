@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from aiswarm.actions import (
+from bikeshed.actions import (
     MESSAGE_MAX, NOTE_MAX, POLL, STEP, STEP_P2, THINK, ActionError, CallConsensus, Critique, ListFiles, Note, Pass,
     PollAnswer, PrivateMessage, Propose, extract_json, parse_action, simplify_schema, step_schema, target_refs,
 )
@@ -124,7 +124,7 @@ def test_write_file_content_is_capped():
 def test_summary_omits_empty_location():
     from pydantic import BaseModel, ValidationError, model_validator
 
-    from aiswarm.actions import summarise_validation
+    from bikeshed.actions import summarise_validation
 
     class M(BaseModel):
         @model_validator(mode="after")
@@ -139,7 +139,7 @@ def test_summary_omits_empty_location():
 def test_summary_reports_length_of_too_long_text():
     from pydantic import BaseModel, Field, ValidationError
 
-    from aiswarm.actions import summarise_validation
+    from bikeshed.actions import summarise_validation
 
     class M(BaseModel):
         lessons: str = Field(max_length=10)
@@ -152,8 +152,8 @@ def test_summary_reports_length_of_too_long_text():
 def test_summary_reports_length_for_custom_character_limits():
     from pydantic import ValidationError
 
-    from aiswarm.actions import summarise_validation
-    from aiswarm.profiles import PublicProfile
+    from bikeshed.actions import summarise_validation
+    from bikeshed.profiles import PublicProfile
 
     with pytest.raises(ValidationError) as info:
         PublicProfile(name="N", headline="H", introduction="y" * 700)
@@ -163,7 +163,7 @@ def test_summary_reports_length_for_custom_character_limits():
 def test_summary_leaves_other_errors_alone():
     from pydantic import BaseModel, ValidationError
 
-    from aiswarm.actions import summarise_validation
+    from bikeshed.actions import summarise_validation
 
     class M(BaseModel):
         n: int
@@ -174,7 +174,7 @@ def test_summary_leaves_other_errors_alone():
 
 
 def test_correction_request_has_a_single_full_stop():
-    from aiswarm.actions import correction_request
+    from bikeshed.actions import correction_request
 
     text = correction_request("No JSON object found in the reply.")
     assert text == "That could not be accepted: No JSON object found in the reply. Reply again with JSON only."

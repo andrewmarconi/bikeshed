@@ -1,4 +1,4 @@
-from aiswarm.observer.store import Judgment, ObserverStore
+from bikeshed.observer.store import Judgment, ObserverStore
 
 
 def judgment(status="ok", **kw):

@@ -3,10 +3,10 @@ import tomllib
 
 import pytest
 
-from aiswarm.goals import (
+from bikeshed.goals import (
     DEFAULT_GOALS, GOALS_FILE, Benchmark, Goal, GoalError, GoalFile, add_goal, load_goals, render_goals, seed_goals,
 )
-from aiswarm.profiles import ProfileStore
+from bikeshed.profiles import ProfileStore
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ def test_load_goals_reports_problems(tmp_path, content, problem):
 
 
 def test_load_goals_reports_a_missing_file(tmp_path):
-    with pytest.raises(GoalError, match="aiswarm init"):
+    with pytest.raises(GoalError, match="bikeshed init"):
         load_goals(tmp_path / GOALS_FILE)
 
 
@@ -68,7 +68,7 @@ def test_add_goal_derives_unique_ids_and_commits(store):
     assert (first.id, second.id) == ("rank-the-best-sandwiches", "rank-the-best-sandwiches-2")
     assert load_goals(store.root / GOALS_FILE).goals[-1] == second
     log = subprocess.run(["git", "log", "-1", "--format=%an|%s"], cwd=store.root, capture_output=True, text=True)
-    assert log.stdout.strip() == "aiswarm|add goal rank-the-best-sandwiches-2"
+    assert log.stdout.strip() == "bikeshed|add goal rank-the-best-sandwiches-2"
 
 
 def test_add_goal_rejects_bad_input(store):
@@ -81,8 +81,8 @@ def test_add_goal_rejects_bad_input(store):
         add_goal(store, "two\nlines", "neutral")
 
 
-from aiswarm.db import connect  # noqa: E402
-from aiswarm.goals import BENCHMARK_ID, benchmark_due, next_goal, runs_since_benchmark, used_goals  # noqa: E402
+from bikeshed.db import connect  # noqa: E402
+from bikeshed.goals import BENCHMARK_ID, benchmark_due, next_goal, runs_since_benchmark, used_goals  # noqa: E402
 
 
 @pytest.fixture

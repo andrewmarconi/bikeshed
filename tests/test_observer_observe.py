@@ -3,9 +3,9 @@ import json
 import pytest
 from observer_helpers import add_entry, add_journal, add_review, add_run
 
-from aiswarm.config import Config
-from aiswarm.models.fake import FakeModel
-from aiswarm.observer.observe import observe
+from bikeshed.config import Config
+from bikeshed.models.fake import FakeModel
+from bikeshed.observer.observe import observe
 
 FUTURE = "2099-01-01T00:00:00+00:00"  # after every fixture commit; git cannot parse far-future dates like 2999
 

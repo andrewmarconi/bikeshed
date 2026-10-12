@@ -2,10 +2,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from aiswarm.board import SYSTEM, Board
-from aiswarm.journal import write_journal
-from aiswarm.reviews import add_response, add_review
-from aiswarm.timeline import resolve_agent, timeline
+from bikeshed.board import SYSTEM, Board
+from bikeshed.journal import write_journal
+from bikeshed.reviews import add_response, add_review
+from bikeshed.timeline import resolve_agent, timeline
 
 
 def iso(delta_hours):

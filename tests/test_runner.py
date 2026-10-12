@@ -2,10 +2,10 @@ import json
 
 import pytest
 
-from aiswarm.board import SYSTEM, Board
-from aiswarm.events import read_events
-from aiswarm.models.fake import FakeModel
-from aiswarm.runner import Runner
+from bikeshed.board import SYSTEM, Board
+from bikeshed.events import read_events
+from bikeshed.models.fake import FakeModel
+from bikeshed.runner import Runner
 
 AGENTS = ["a", "b", "c"]
 
@@ -180,7 +180,7 @@ async def test_unexpected_step_exception_becomes_failed_pass(community, scripted
 
 
 async def test_agents_can_read_peer_reviews_but_not_private_notes(tmp_path, community, runner_factory):
-    from aiswarm.reviews import add_review
+    from bikeshed.reviews import add_review
 
     store, conn = community
     conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES ('old', 'g', 'closed', '[]', 't')")
@@ -200,9 +200,9 @@ async def test_agents_can_read_peer_reviews_but_not_private_notes(tmp_path, comm
 
 
 async def test_runs_show_relevant_methods_from_earlier_runs(tmp_path, community, runner_factory, make_run):
-    from aiswarm.events import read_events
-    from aiswarm.library import embed_missing, record_methods
-    from aiswarm.models.fake import FakeEmbedder
+    from bikeshed.events import read_events
+    from bikeshed.library import embed_missing, record_methods
+    from bikeshed.models.fake import FakeEmbedder
 
     store, conn = community
     make_run(conn, "old", ("a", "b"))
@@ -225,8 +225,8 @@ async def test_runs_show_relevant_methods_from_earlier_runs(tmp_path, community,
 
 
 async def test_a_run_proceeds_without_the_library_when_embeddings_fail(tmp_path, community, runner_factory):
-    from aiswarm.events import read_events
-    from aiswarm.models.fake import FakeEmbedder
+    from bikeshed.events import read_events
+    from bikeshed.models.fake import FakeEmbedder
 
     store, conn = community
     conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES ('old', 'g', 'closed', '[]', 't')")
@@ -246,7 +246,7 @@ async def test_a_run_proceeds_without_the_library_when_embeddings_fail(tmp_path,
 
 
 async def test_an_empty_embeddings_response_never_fails_the_run(tmp_path, community, runner_factory):
-    from aiswarm.events import read_events
+    from bikeshed.events import read_events
 
     class Empty:
         async def embed(self, texts):
@@ -266,7 +266,7 @@ async def test_an_empty_embeddings_response_never_fails_the_run(tmp_path, commun
     assert any(e["event"] == "library_unavailable" for e in read_events(tmp_path / "runs" / run_id / "events.jsonl"))
 
 
-from aiswarm.config import RunSettings  # noqa: E402
+from bikeshed.config import RunSettings  # noqa: E402
 
 
 async def test_seed_is_recorded_and_fixes_post_order(tmp_path, community, scripted):
@@ -329,7 +329,7 @@ async def test_start_records_goal_metadata_and_never_shows_it_to_agents(communit
 
 
 def test_a_failed_control_reset_leaves_no_run_behind(community, runner_factory, monkeypatch):
-    from aiswarm.gitrepo import GitError
+    from bikeshed.gitrepo import GitError
     store, conn = community
     add_control(store)
 

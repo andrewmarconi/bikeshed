@@ -1,8 +1,8 @@
 from rich.text import Text
 
-from aiswarm.board import Entry
-from aiswarm.watch import render
-from aiswarm.watch.state import AgentCard, CallLine, FeedLine, FileLine, PostRunRow, RulingLine, RunState, feed_line
+from bikeshed.board import Entry
+from bikeshed.watch import render
+from bikeshed.watch.state import AgentCard, CallLine, FeedLine, FileLine, PostRunRow, RulingLine, RunState, feed_line
 
 COLOURS = render.agent_colours(["a", "b"])
 PINK, TEAL = render.AGENT_COLOURS[0], render.AGENT_COLOURS[1]

@@ -1,7 +1,7 @@
 from observer_helpers import add_entry, add_run
 
-from aiswarm.observer.metrics import closed_runs
-from aiswarm.observer.process2 import (
+from bikeshed.observer.metrics import closed_runs
+from bikeshed.observer.process2 import (
     OrderStat, Participation, RecurringPair, combine_order, combine_participation, pm_network, poll_participation,
     recurring_pairs, speaking_order,
 )

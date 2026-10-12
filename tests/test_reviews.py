@@ -1,6 +1,6 @@
 import pytest
 
-from aiswarm.reviews import (
+from bikeshed.reviews import (
     Reputation, add_response, add_review, render_public_reviews, reputation, responses_for, reviews_of,
 )
 
@@ -104,7 +104,7 @@ def adopt_dimension(conn, name="Care", run_id="r0"):
 
 
 def test_dimension_ratings_store_render_and_feed_reputation(community):
-    from aiswarm.reviews import dimension_reputations, ratings_for, render_review, set_ratings
+    from bikeshed.reviews import dimension_reputations, ratings_for, render_review, set_ratings
 
     store, conn = community
     care = adopt_dimension(conn)
