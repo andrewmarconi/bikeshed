@@ -74,6 +74,12 @@ def test_feed_text_truncates_only_runaway_entries():
     assert len(text) == FEED_MAX and text.endswith("…")
 
 
+def test_feed_text_summarises_process2_entries():
+    assert feed_text(entry(7, "think", {"text": "where I stand"}), who).endswith("think: where I stand")
+    assert feed_text(entry(8, "private_message", {"to": "b", "text": "psst"}), who).endswith("private_message: psst")
+    assert feed_text(entry(9, "abstain", {"target": 4, "reason": "unsure"}), who).endswith("abstain → #4: unsure")
+
+
 from observer_helpers import add_entry, add_review, add_run  # noqa: E402
 
 

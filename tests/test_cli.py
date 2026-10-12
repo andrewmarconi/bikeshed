@@ -349,3 +349,20 @@ def test_watch_opens_the_latest_run(project, monkeypatch):
     result = invoke("watch", "-c", config)
     assert result.exit_code == 0, result.output
     assert len(opened) == 1
+
+
+def test_run_with_process_2_records_it_and_resume_keeps_it(project):
+    import sqlite3
+
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    result = invoke("run", "Pick a colour", "--process", "2", "--max-rounds", "2", "--no-postrun", "-c", config)
+    assert result.exit_code == 0, result.output
+    run_id = run_id_from(result.output)
+    conn = sqlite3.connect(tmp_path / "community" / "community.db")
+    assert conn.execute("SELECT process FROM runs WHERE id = ?", (run_id,)).fetchone()[0] == 2
+    provenance = json.loads(conn.execute("SELECT config FROM run_provenance WHERE run_id = ?", (run_id,)).fetchone()[0])
+    assert provenance["run"]["process"] == 2
+    rejected = invoke("run", "--resume", run_id, "--process", "1", "-c", config)
+    assert rejected.exit_code != 0 and "keeps its process" in rejected.output
+    assert invoke("run", "G", "--process", "3", "-c", config).exit_code != 0

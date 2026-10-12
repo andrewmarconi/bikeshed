@@ -259,6 +259,7 @@ def run(
     resume: Annotated[str | None, typer.Option(help="Resume a paused or interrupted run.")] = None,
     agent: Annotated[list[str] | None, typer.Option("--agent", help="Agent ids to include (default: all).")] = None,
     max_rounds: Annotated[int | None, typer.Option(help="Override the round budget.")] = None,
+    process: Annotated[int | None, typer.Option("--process", help="1: everyone acts at once (default). 2: think, then react in turn, with a poll.")] = None,
     no_postrun: Annotated[bool, typer.Option("--no-postrun", help="Skip the post-run cycle.")] = False,
     config: ConfigOpt = DEFAULT_PATH,
 ) -> None:
@@ -266,17 +267,24 @@ def run(
     cfg = _load(config)
     if max_rounds is not None:
         cfg.run.max_rounds = max_rounds
+    if process is not None and process not in (1, 2):
+        _fail("--process must be 1 or 2")
     store = ProfileStore(cfg.community_dir)
     conn = connect(cfg.db_path)
     selected = None
     if resume:
         if goal or next_:
             _fail("give --resume or a goal/--next, not both")
-        row = conn.execute("SELECT agent_ids FROM runs WHERE id = ?", (resume,)).fetchone()
+        row = conn.execute("SELECT agent_ids, process FROM runs WHERE id = ?", (resume,)).fetchone()
         if row is None:
             _fail(f"no run {resume!r}")
+        if process is not None:
+            _fail("a resumed run keeps its process; drop --process")
+        cfg.run.process = row["process"]
         agent_ids = json.loads(row["agent_ids"])
     else:
+        if process is not None:
+            cfg.run.process = process
         if next_ and goal:
             _fail("give a goal or --next, not both")
         if next_:
@@ -306,6 +314,7 @@ def run(
                 goal_id=selected.id if selected else None,
                 goal_category=selected.category if selected else None,
                 is_benchmark=bool(selected and selected.is_benchmark),
+                process=cfg.run.process,
             )
         except ValueError as exc:
             _fail(str(exc))

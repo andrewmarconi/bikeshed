@@ -14,7 +14,7 @@ from aiswarm.view import Who, make_who
 
 FEED_MAX = 2000  # the feed wraps, so only a runaway entry (e.g. raw JSON) is cut
 _SUMMARY = {"propose": "answer_summary", "critique": "points", "adopt": "reason", "refine": "change",
-            "call_consensus": "synthesis"}
+            "call_consensus": "synthesis", "think": "text", "private_message": "text", "abstain": "reason"}
 
 
 @dataclass

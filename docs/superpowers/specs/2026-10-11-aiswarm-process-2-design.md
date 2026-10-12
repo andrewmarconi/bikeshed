@@ -1,7 +1,7 @@
 # AISwarm — Process 2 Design (think, then react)
 
 - **Date:** 2026-10-11
-- **Status:** Draft, awaiting review
+- **Status:** Approved; Plan 4a (engine) implemented; 4b (Observer) and 4c (TUI) pending
 - **Author:** Andrew Marconi (with Claude)
 - **Source:** `docs/process-02-concept.md` (Andrew's concept). This design keeps its dynamics and drops what breaks the principles; §2 maps each concept feature.
 - **Extends:** `2026-10-10-aiswarm-design.md` (§2 principles, §4.2 View), the Plan 2a/2b post-run, Plan 3b Observer and Plan 3c TUI specs. Where this document is more specific, it governs.
@@ -25,6 +25,8 @@ Out of scope: seeded agendas, risk tolerance or affinities; a chair; injected ur
 | Round limit | Shown in Process 2 ("Round 7 of 12"); recorded as part of Process 2 |
 | Think notes | Kept in the run's record; given to the agent's post-run journal step; not carried into later runs |
 | TUI | Three panes (Table, Thinking, Private messages) plus a status bar; colour by action and by agent |
+
+**Settled in Plan 4a:** prompt files are flat (`prompts/process2_*.md`) so provenance records them; think and poll replies use the action envelope (`{"action": {"type": "note", ...}}`, `{"action": {"type": "poll_answer", ...}}`); think entries store `{"text": ...}`; a failed think or poll is an `agent_step_finished` event with `phase` and a `failures` row of kind `think:<failure>` / `poll:<failure>`; an agent's own think notes appear in one section, after the header, in every Process 2 turn.
 
 **Concept features mapped to the principles** (`2026-10-10-aiswarm-design.md` §2):
 
