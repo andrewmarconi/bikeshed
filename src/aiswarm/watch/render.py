@@ -16,7 +16,6 @@ ACTION_STYLES = {"propose": "green", "refine": "blue", "adopt": "blue", "critiqu
                  "pass": "dim grey50"}
 STANCE_STYLES = {"support": "green", "object": "red"}
 STATUS_STYLES = {"speaking…": "bold", "thinking…": "dim", "polling…": "dim"}
-SHORT_NAME = 12
 
 
 def agent_colours(agent_ids: Iterable[str]) -> dict[str, str]:
@@ -67,10 +66,6 @@ def phase_label(s: RunState) -> str:
     return s.step_phase if s.phase == "rounds" and s.step_phase else s.phase
 
 
-def short(name: str) -> str:
-    return name if len(name) <= SHORT_NAME else name[: SHORT_NAME - 1] + "…"
-
-
 RULING_STYLES = {"accepted": "green", "rejected": "red"}
 AGENT_SEPARATOR = "   ·   "
 AGENTS_PER_LINE = 3  # a hard break, so five agents read 3 + 2 instead of wrapping mid-agent
@@ -97,7 +92,7 @@ def status(s: RunState, colours: Mapping[str, str]) -> Text:
     for i, card in enumerate(s.cards.values()):
         if i:
             out.append("\n" if i % AGENTS_PER_LINE == 0 else AGENT_SEPARATOR)
-        out.append_text(_agent(short(card.name), card.agent_id, colours))
+        out.append_text(_agent(card.name, card.agent_id, colours))
         if card.control:
             out.append(" ctl", style="dim")
         out.append(f" ★ {'–' if card.reputation is None else f'{card.reputation:.1f}'} ◆ {card.points} ")

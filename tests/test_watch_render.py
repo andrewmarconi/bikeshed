@@ -79,7 +79,7 @@ def test_status_bar_has_a_run_line_and_an_agents_line():
               ruling=RulingLine("rejected", 31))
     bar = render.status(s, COLOURS)
     assert bar.plain == ("round 7/12 · react │ call #40: 3 for, 1 against │ Scorer: rejected #31\n"
-                         "Ash ctl ★ 4.2 ◆ 2 speaking…   ·   Bartholomew… ★ – ◆ 0 failed: model_error")
+                         "Ash ctl ★ 4.2 ◆ 2 speaking…   ·   Bartholomew-the-long ★ – ◆ 0 failed: model_error")
     assert "bold" in style_of(bar, "speaking…") and "red" in style_of(bar, "failed: model_error")
     assert "red" in style_of(bar, "rejected #31")
     assert f"bold {PINK}" in style_of(bar, "Ash")
