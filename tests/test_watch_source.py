@@ -80,6 +80,18 @@ def test_max_rounds_comes_from_the_runs_start_provenance(tmp_path, community):
     assert open_watcher(cfg, "r1").state.max_rounds == 6
 
 
+def test_max_rounds_follows_a_resume_that_changed_the_budget(tmp_path, community):
+    cfg = cfg_for(tmp_path)
+    store, conn = community
+    add_run(conn, "r1")
+    for phase, rounds in (("start", 64), ("resume", 64), ("resume", 52), ("postrun", 12)):
+        conn.execute("INSERT INTO run_provenance (run_id, phase, config, prompts, models, servers, fingerprint, "
+                     "captured_at) VALUES ('r1', ?, ?, '{}', '{}', '{}', 'f', 't')",
+                     (phase, json.dumps({"run": {"max_rounds": rounds}})))
+    # postrun records bikeshed.toml without the CLI's --max-rounds, so it never sets the budget
+    assert open_watcher(cfg, "r1").state.max_rounds == 52
+
+
 def test_a_half_written_profile_or_odd_event_never_crashes_the_watcher(tmp_path, community):
     cfg = cfg_for(tmp_path)
     store, conn = community

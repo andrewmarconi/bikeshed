@@ -68,8 +68,9 @@ class Watcher:
 
 
 def _max_rounds(conn: sqlite3.Connection, run_id: str, default: int) -> int:
-    row = conn.execute("SELECT config FROM run_provenance WHERE run_id = ? AND phase = 'start' ORDER BY id LIMIT 1",
-                       (run_id,)).fetchone()
+    # The latest start or resume: a resume may change the budget, and postrun records bikeshed.toml without it
+    row = conn.execute("SELECT config FROM run_provenance WHERE run_id = ? AND phase IN ('start', 'resume') "
+                       "ORDER BY id DESC LIMIT 1", (run_id,)).fetchone()
     try:
         return int(json.loads(row["config"])["run"]["max_rounds"]) if row else default
     except (KeyError, TypeError, ValueError):
