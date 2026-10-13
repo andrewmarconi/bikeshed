@@ -340,6 +340,12 @@ async def test_a_turn_writes_messages_and_then_acts(tmp_path, community, process
     assert (tmp_path / "runs" / run_id / "workspace" / "plan.md").read_text() == "PLAN"
     replies = [m[-1]["content"] for _, m, _ in clients["a"].calls if len(m) > 1]
     assert "Write result:\nplan.md is now v1." in replies and "Write result:\nMessage sent to c." in replies
+    steps = [e for e in read_events(tmp_path / "runs" / run_id / "events.jsonl")
+             if e["event"] == "agent_step_finished" and e["agent"] == "a" and e["round"] == 2]
+    assert [(e.get("phase"), e["pre_actions"], e["calls"]) for e in steps] == [
+        ("think", [], 1),
+        (None, [{"type": "write_file", "ok": True}, {"type": "private_message", "ok": True}], 3),
+    ]
 
 
 async def test_a_conflicting_pre_action_write_does_not_cost_the_turn(community, process2, find, runner_factory):

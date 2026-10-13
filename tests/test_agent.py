@@ -287,6 +287,28 @@ async def test_reads_and_writes_have_separate_caps():
     assert done == ["private_message"]
 
 
+async def test_pre_actions_and_model_calls_are_recorded():
+    done, writer = recording_writer()
+    model = FakeModel([LIST, WRITE, DM, CRITIQUE])
+    outcome = await take_step(client=model, system="SYS", view="VIEW", round=2, max_reads=3,
+                              reader=lambda a: "x", validate=allow, writer=writer, max_writes=1, shape=STEP_P2)
+    assert outcome.action.type == "critique"
+    assert outcome.pre_actions == ({"type": "list_files", "ok": True}, {"type": "write_file", "ok": True},
+                                   {"type": "private_message", "ok": False})  # over the write cap
+    assert outcome.calls == 4
+
+
+async def test_a_refused_opening_round_write_is_recorded():
+    done, writer = recording_writer()
+    outcome = await wstep(FakeModel([DM, PROPOSE]), writer, round=1)
+    assert outcome.pre_actions == ({"type": "private_message", "ok": False},) and outcome.calls == 2
+
+
+async def test_a_step_with_no_pre_actions_records_none():
+    outcome = await step(FakeModel([CRITIQUE]))
+    assert outcome.pre_actions == () and outcome.calls == 1
+
+
 def test_system_prompt_fills_in_max_writes():
     text = system_prompt("Ash (a)", "Calm.", 3, "process2_agent_system.md", max_writes=2)
     assert "up to 3 reads and up to 2 writes" in text

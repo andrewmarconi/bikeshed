@@ -5228,8 +5228,10 @@
   {
    "action": "propose",
    "agent": "a",
+   "calls": 1,
    "event": "agent_step_finished",
    "failure": null,
+   "pre_actions": [],
    "round": 1
   },
   {
@@ -5240,8 +5242,10 @@
   {
    "action": "propose",
    "agent": "b",
+   "calls": 1,
    "event": "agent_step_finished",
    "failure": null,
+   "pre_actions": [],
    "round": 1
   },
   {
@@ -5252,8 +5256,10 @@
   {
    "action": "propose",
    "agent": "c",
+   "calls": 1,
    "event": "agent_step_finished",
    "failure": null,
+   "pre_actions": [],
    "round": 1
   },
   {
@@ -5296,8 +5302,10 @@
   {
    "action": "write_file",
    "agent": "a",
+   "calls": 1,
    "event": "agent_step_finished",
    "failure": null,
+   "pre_actions": [],
    "round": 2
   },
   {
@@ -5308,8 +5316,10 @@
   {
    "action": "write_file",
    "agent": "b",
+   "calls": 1,
    "event": "agent_step_finished",
    "failure": null,
+   "pre_actions": [],
    "round": 2
   },
   {
@@ -5320,8 +5330,10 @@
   {
    "action": "critique",
    "agent": "c",
+   "calls": 1,
    "event": "agent_step_finished",
    "failure": null,
+   "pre_actions": [],
    "round": 2
   },
   {
@@ -5364,8 +5376,10 @@
   {
    "action": "call_consensus",
    "agent": "a",
+   "calls": 1,
    "event": "agent_step_finished",
    "failure": null,
+   "pre_actions": [],
    "round": 3
   },
   {
@@ -5376,8 +5390,10 @@
   {
    "action": "pass",
    "agent": "b",
+   "calls": 1,
    "event": "agent_step_finished",
    "failure": null,
+   "pre_actions": [],
    "round": 3
   },
   {
@@ -5388,8 +5404,10 @@
   {
    "action": "pass",
    "agent": "c",
+   "calls": 2,
    "event": "agent_step_finished",
    "failure": "invalid_action",
+   "pre_actions": [],
    "round": 3
   },
   {
@@ -5432,8 +5450,10 @@
   {
    "action": "pass",
    "agent": "a",
+   "calls": 1,
    "event": "agent_step_finished",
    "failure": null,
+   "pre_actions": [],
    "round": 4
   },
   {
@@ -5444,8 +5464,10 @@
   {
    "action": "critique",
    "agent": "b",
+   "calls": 1,
    "event": "agent_step_finished",
    "failure": null,
+   "pre_actions": [],
    "round": 4
   },
   {
@@ -5456,8 +5478,10 @@
   {
    "action": "vote",
    "agent": "c",
+   "calls": 1,
    "event": "agent_step_finished",
    "failure": null,
+   "pre_actions": [],
    "round": 4
   },
   {

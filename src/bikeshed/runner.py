@@ -203,7 +203,7 @@ class Runner:
         except Exception as exc:  # one agent's bad step must never take down the run
             outcome = StepOutcome(Pass(type="pass"), "step_error", f"{type(exc).__name__}: {exc}")
         ctx.events.emit("agent_step_finished", round=ctx.round, agent=agent_id, action=outcome.action.type,
-                        failure=outcome.failure, **extra)
+                        failure=outcome.failure, pre_actions=list(outcome.pre_actions), calls=outcome.calls, **extra)
         return outcome
 
     async def _step(self, agent_id: str, ctx: RoundContext) -> StepOutcome:

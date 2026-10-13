@@ -29,6 +29,8 @@ class StepOutcome:
     detail: str = ""
     reasoning: str | None = None
     model: str | None = None
+    pre_actions: tuple[dict[str, Any], ...] = ()  # reads and writes before the action; ok is False if refused
+    calls: int = 0  # model calls the step took, corrections included
 
 
 def system_prompt(
@@ -50,11 +52,14 @@ async def take_step(
     corrected = False
     reasoning: list[str] = []
     model: str | None = None
+    pre_actions: list[dict[str, Any]] = []
+    calls = 0
 
     def outcome(action: Any, failure: str | None = None, detail: str = "") -> StepOutcome:
-        return StepOutcome(action, failure, detail, "\n\n".join(reasoning) or None, model)
+        return StepOutcome(action, failure, detail, "\n\n".join(reasoning) or None, model, tuple(pre_actions), calls)
 
     while True:
+        calls += 1
         try:
             result = await client.chat(system, messages, schema)
         except ModelError as exc:
@@ -64,10 +69,13 @@ async def take_step(
             reasoning.append(result.reasoning)
         try:
             action = parse_action(result.text, shape)
+            if isinstance(action, READ_ACTIONS) or (writer is not None and isinstance(action, WRITE_ACTIONS)):
+                pre_actions.append({"type": action.type, "ok": False})  # set to True once it is carried out
             if isinstance(action, READ_ACTIONS):
                 if reads >= max_reads:
                     raise ActionError(f"You have used all {max_reads} reads; choose a posting action.")
                 reads += 1
+                pre_actions[-1]["ok"] = True
                 messages += [
                     {"role": "assistant", "content": result.text},
                     {"role": "user", "content": "Read result:\n" + reader(action)},
@@ -80,6 +88,7 @@ async def take_step(
                     raise ActionError(f"You have used all {max_writes} writes; choose a posting action.")
                 validate(action)
                 writes += 1
+                pre_actions[-1]["ok"] = True
                 messages += [
                     {"role": "assistant", "content": result.text},
                     {"role": "user", "content": "Write result:\n" + writer(action)},
