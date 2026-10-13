@@ -11,7 +11,7 @@ from bikeshed.observer.store import Judgment
 from bikeshed.observer.report import ScorerSummary
 from bikeshed.observer.scoring import Award, RulingRow, SelfCredit
 
-RUN = RunInfo("r1", "Pick a fruit.", "best-fruit", "contested", False, "budget", ("a", "b"), "t", "t")
+RUN = RunInfo("r1", "Pick a fruit.", "best-fruit", "unsettled", False, "budget", ("a", "b"), "t", "t")
 
 
 def who(agent_id):
@@ -45,7 +45,7 @@ def test_trend_chart_writes_a_png(tmp_path):
 def test_run_report_sections():
     text = render_run(section())
     assert text.startswith("# r1 — Pick a fruit.")
-    assert "contested" in text and "budget" in text
+    assert "unsettled" in text and "budget" in text
     assert "| Alpha (a) |" in text
     assert "honesty" in text and "I say it straight" in text
     assert "No closing call yet" in text
@@ -79,7 +79,7 @@ def test_summary_sections(tmp_path):
     s = SummarySection(
         runs=[RUN], who=who, charts={"Peer score": "charts/peer.png"}, identity=[], norms=[],
         codebook=[("honesty", "Says what it thinks.")], twins={"e": []},
-        categories={"contested": CategoryStats(1, Counter(budget=1), Counter(propose=2))},
+        categories={"unsettled": CategoryStats(1, Counter(budget=1), Counter(propose=2))},
         failed=[], benchmark=[BenchmarkAnswer("r1", False, "- Alpha (a): Pepperoni")], reciprocity=[],
         in_progress=["r9"], judge_note=None)
     text = render_summary(s)

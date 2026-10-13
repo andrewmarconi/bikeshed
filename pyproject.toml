@@ -1,7 +1,7 @@
 [project]
 name = "bikeshed"
-version = "0.1.0"
-description = "A self-organising community of LLM agents"
+version = "1.4.0"
+description = "An anthropomorphized, self-organising community of LLM agents"
 authors = [
     { name = "Andrew Marconi", email = "andrew@559labs.com" }
 ]

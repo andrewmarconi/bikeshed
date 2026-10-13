@@ -18,7 +18,8 @@ GOALS_FILE = "goals.toml"
 BENCHMARK_ID = "benchmark"
 GOAL_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 TEXT_MAX = 500
-Category = Literal["neutral", "trade-off", "contested"]
+# unsettled: no data could settle it (taste, values). underspecified: the question leaves out details the group must supply.
+Category = Literal["unsettled", "underspecified"]
 
 
 class GoalError(ValueError):
@@ -86,21 +87,27 @@ class GoalFile(BaseModel):
 
 
 DEFAULT_GOALS = GoalFile(
-    benchmark=Benchmark(text="Pick one pizza topping combination the whole group will share.", category="trade-off"),
+    benchmark=Benchmark(text="Pick one pizza topping combination the whole group will share.",
+                        category="underspecified"),
     goals=[
-        Goal(id="best-fruit", text="Come to an agreement on the best fruit.", category="contested"),
+        Goal(id="best-fruit", text="Come to an agreement on the best fruit.", category="unsettled"),
         Goal(id="hot-dog-sandwich", text="Decide, once and for all, whether a hot dog is a sandwich.",
-             category="contested"),
-        Goal(id="greatest-board-game", text="Settle on the greatest board game of all time.", category="contested"),
-        Goal(id="dishwasher", text="Agree on the correct way to load a dishwasher.", category="contested"),
-        Goal(id="picnic-basket", text="Plan a picnic menu that has to fit in a single basket.", category="trade-off"),
+             category="unsettled"),
+        Goal(id="greatest-board-game", text="Settle on the greatest board game of all time.", category="unsettled"),
+        Goal(id="dishwasher", text="Agree on the correct way to load a dishwasher.", category="unsettled"),
+        Goal(id="picnic-basket", text="Plan a picnic menu that has to fit in a single basket.",
+             category="underspecified"),
         Goal(id="road-trip-playlist",
              text="Choose three songs for a road-trip playlist that everyone in the car must listen to.",
-             category="trade-off"),
-        Goal(id="twenty-dollar-sunday", text="Design the ideal Sunday with only $20 to spend.", category="trade-off"),
-        Goal(id="new-holiday", text="Invent a new holiday and describe how it is celebrated.", category="neutral"),
-        Goal(id="monday-cat-limerick", text="Write a limerick about a cat who hates Mondays.", category="neutral"),
-        Goal(id="office-goldfish", text="Name the office goldfish.", category="neutral"),
+             category="underspecified"),
+        Goal(id="twenty-dollar-sunday", text="Design the ideal Sunday with only $20 to spend.",
+             category="underspecified"),
+        Goal(id="airplane-recline", text="Decide whether it's okay to recline your seat on a plane.",
+             category="unsettled"),
+        Goal(id="group-dinner", text="Choose where the group should go for dinner.", category="underspecified"),
+        Goal(id="late-text", text="Agree on the latest acceptable time to text someone.", category="unsettled"),
+        Goal(id="team-offsite", text="Plan the team's next offsite.", category="underspecified"),
+        Goal(id="project-name", text="Pick a name for the new project.", category="underspecified"),
     ],
 )
 

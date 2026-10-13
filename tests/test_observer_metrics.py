@@ -9,13 +9,13 @@ from bikeshed.observer.metrics import (
 
 def test_closed_runs_in_order_with_labels(community):
     store, conn = community
-    add_run(conn, "r1", goal_id="best-fruit", category="contested", created="2026-10-01T00:00:00+00:00")
+    add_run(conn, "r1", goal_id="best-fruit", category="unsettled", created="2026-10-01T00:00:00+00:00")
     add_run(conn, "r2", created="2026-10-02T00:00:00+00:00")
     add_run(conn, "r3", status="running", created="2026-10-03T00:00:00+00:00")
     add_entry(conn, "r1", "a", "pass", {}, created="2026-10-01T00:05:00+00:00")
     runs = closed_runs(conn)
     assert [r.id for r in runs] == ["r1", "r2"]
-    assert runs[0].label == "best-fruit" and runs[0].category == "contested"
+    assert runs[0].label == "best-fruit" and runs[0].category == "unsettled"
     assert runs[1].label == "r2" and runs[1].category == "ad hoc"
     assert runs[0].end == "2026-10-01T00:05:00+00:00"
     assert open_runs(conn) == ["r3"]
@@ -125,13 +125,13 @@ def test_twins_match_the_controls_seed_temperament(tmp_path):
 
 def test_by_category_counts_endings_and_actions(community):
     store, conn = community
-    add_run(conn, "r1", category="contested", ended="budget")
-    add_run(conn, "r2", category="contested", ended="consensus")
+    add_run(conn, "r1", category="unsettled", ended="budget")
+    add_run(conn, "r2", category="unsettled", ended="consensus")
     add_run(conn, "r3")
     add_entry(conn, "r1", "a", "vote", {"target": 1, "stance": "support", "reason": "r"})
     stats = by_category(conn, closed_runs(conn))
-    assert stats["contested"].runs == 2 and stats["contested"].endings == {"budget": 1, "consensus": 1}
-    assert stats["contested"].actions["vote"] == 1
+    assert stats["unsettled"].runs == 2 and stats["unsettled"].endings == {"budget": 1, "consensus": 1}
+    assert stats["unsettled"].actions["vote"] == 1
     assert stats["ad hoc"].runs == 1
 
 
@@ -196,10 +196,10 @@ def test_a_change_of_process_is_a_harness_marker(community):
 
 def test_by_category_splits_by_process(community):
     store, conn = community
-    add_run(conn, "r1", category="contested")
-    add_run(conn, "r2", category="contested", process=2)
+    add_run(conn, "r1", category="unsettled")
+    add_run(conn, "r2", category="unsettled", process=2)
     stats = by_category(conn, closed_runs(conn))
-    assert stats["contested"].runs == 1 and stats["contested (P2)"].runs == 1
+    assert stats["unsettled"].runs == 1 and stats["unsettled (P2)"].runs == 1
 
 
 def test_action_mix_counts_private_messages(community):

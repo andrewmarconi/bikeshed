@@ -54,7 +54,7 @@ def test_open_watcher_errors(tmp_path, community):
 def test_watcher_waits_then_follows_events_and_entries(tmp_path, community):
     cfg = cfg_for(tmp_path)
     store, conn = community
-    add_run(conn, "r1", status="running", goal_id="best-fruit", category="contested")
+    add_run(conn, "r1", status="running", goal_id="best-fruit", category="unsettled")
     add_run(conn, "r2", status="running")
     watcher = open_watcher(cfg, "r1")
     watcher.poll()

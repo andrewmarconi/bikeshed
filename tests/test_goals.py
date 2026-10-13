@@ -14,13 +14,13 @@ def store(tmp_path):
     return ProfileStore(tmp_path / "community")
 
 
-def test_default_goals_are_frivolous_and_tagged():
+def test_default_goals_are_open_and_tagged():
     assert DEFAULT_GOALS.benchmark == Benchmark(
-        text="Pick one pizza topping combination the whole group will share.", category="trade-off", every=5)
+        text="Pick one pizza topping combination the whole group will share.", category="underspecified", every=5)
     assert DEFAULT_GOALS.goals[0] == Goal(id="best-fruit", text="Come to an agreement on the best fruit.",
-                                          category="contested")
-    assert len(DEFAULT_GOALS.goals) == 10
-    assert {g.category for g in DEFAULT_GOALS.goals} == {"neutral", "trade-off", "contested"}
+                                          category="unsettled")
+    assert len(DEFAULT_GOALS.goals) == 12
+    assert {g.category for g in DEFAULT_GOALS.goals} == {"unsettled", "underspecified"}
 
 
 def test_render_round_trips_the_defaults():
@@ -29,16 +29,16 @@ def test_render_round_trips_the_defaults():
 
 def test_render_round_trips_quotes_and_unicode():
     gf = GoalFile(benchmark=DEFAULT_GOALS.benchmark,
-                  goals=[Goal(id="pastry", text='Is "pain au chocolat" better than a croissant? 🥐', category="contested")])
+                  goals=[Goal(id="pastry", text='Is "pain au chocolat" better than a croissant? 🥐', category="unsettled")])
     assert GoalFile.model_validate(tomllib.loads(render_goals(gf))) == gf
 
 
 @pytest.mark.parametrize("content, problem", [
     ("[benchmark\n", "goals.toml"),
     ('[benchmark]\ntext = "x"\ncategory = "silly"\n', "category"),
-    ('[benchmark]\ntext = "x"\ncategory = "neutral"\n[[goals]]\nid = "a"\ntext = "y"\ncategory = "neutral"\n'
-     '[[goals]]\nid = "a"\ntext = "z"\ncategory = "neutral"\n', "duplicate goal id"),
-    ('[benchmark]\ntext = "x"\ncategory = "neutral"\n[[goals]]\nid = "benchmark"\ntext = "y"\ncategory = "neutral"\n',
+    ('[benchmark]\ntext = "x"\ncategory = "unsettled"\n[[goals]]\nid = "a"\ntext = "y"\ncategory = "unsettled"\n'
+     '[[goals]]\nid = "a"\ntext = "z"\ncategory = "unsettled"\n', "duplicate goal id"),
+    ('[benchmark]\ntext = "x"\ncategory = "unsettled"\n[[goals]]\nid = "benchmark"\ntext = "y"\ncategory = "unsettled"\n',
      "reserved"),
 ])
 def test_load_goals_reports_problems(tmp_path, content, problem):
@@ -63,8 +63,8 @@ def test_seed_goals_writes_only_when_missing(store):
 
 def test_add_goal_derives_unique_ids_and_commits(store):
     seed_goals(store)
-    first = add_goal(store, "Rank the best sandwiches!", "contested")
-    second = add_goal(store, "Rank the best sandwiches!", "neutral")
+    first = add_goal(store, "Rank the best sandwiches!", "unsettled")
+    second = add_goal(store, "Rank the best sandwiches!", "unsettled")
     assert (first.id, second.id) == ("rank-the-best-sandwiches", "rank-the-best-sandwiches-2")
     assert load_goals(store.root / GOALS_FILE).goals[-1] == second
     log = subprocess.run(["git", "log", "-1", "--format=%an|%s"], cwd=store.root, capture_output=True, text=True)
@@ -76,9 +76,9 @@ def test_add_goal_rejects_bad_input(store):
     with pytest.raises(GoalError, match="category"):
         add_goal(store, "Fine text.", "serious")
     with pytest.raises(GoalError, match="duplicate goal id"):
-        add_goal(store, "Again.", "neutral", goal_id="best-fruit")
+        add_goal(store, "Again.", "unsettled", goal_id="best-fruit")
     with pytest.raises(GoalError, match="single line"):
-        add_goal(store, "two\nlines", "neutral")
+        add_goal(store, "two\nlines", "unsettled")
 
 
 from bikeshed.db import connect  # noqa: E402
@@ -120,13 +120,13 @@ def test_next_goal_takes_the_first_unused_queue_goal(conn):
     add_run(conn, "b1", BENCHMARK_ID, benchmark=True)
     add_run(conn, "r1", "best-fruit")
     selected = next_goal(conn, DEFAULT_GOALS)
-    assert (selected.id, selected.category, selected.is_benchmark) == ("hot-dog-sandwich", "contested", False)
+    assert (selected.id, selected.category, selected.is_benchmark) == ("hot-dog-sandwich", "unsettled", False)
     assert used_goals(conn) == {"best-fruit": "r1"}
 
 
 def test_next_goal_fails_when_the_queue_is_used_up(conn):
-    gf = GoalFile(benchmark=Benchmark(text="B.", category="neutral", every=100),
-                  goals=[Goal(id="only", text="Only.", category="neutral")])
+    gf = GoalFile(benchmark=Benchmark(text="B.", category="unsettled", every=100),
+                  goals=[Goal(id="only", text="Only.", category="unsettled")])
     add_run(conn, "b1", BENCHMARK_ID, benchmark=True)
     add_run(conn, "r1", "only")
     with pytest.raises(GoalError, match="goals add"):
@@ -138,16 +138,16 @@ def test_add_goal_rejects_control_characters_and_leaves_the_file_loadable(store)
     before = (store.root / GOALS_FILE).read_text()
     for text in ("del\x7fchar", "carriage\rreturn", "bell\x07"):
         with pytest.raises(GoalError, match="control characters"):
-            add_goal(store, text, "neutral")
+            add_goal(store, text, "unsettled")
     assert (store.root / GOALS_FILE).read_text() == before
     assert load_goals(store.root / GOALS_FILE) == DEFAULT_GOALS
 
 
 @pytest.mark.parametrize("content, key", [
-    ('[benchmark]\ntext = "x"\ncategory = "neutral"\nevry = 3\n', "evry"),
-    ('[benchmark]\ntext = "x"\ncategory = "neutral"\n[[goals]]\nid = "a"\ntext = "y"\ncatgory = "neutral"\n',
+    ('[benchmark]\ntext = "x"\ncategory = "unsettled"\nevry = 3\n', "evry"),
+    ('[benchmark]\ntext = "x"\ncategory = "unsettled"\n[[goals]]\nid = "a"\ntext = "y"\ncatgory = "unsettled"\n',
      "catgory"),
-    ('[benchmark]\ntext = "x"\ncategory = "neutral"\n[[goal]]\nid = "a"\ntext = "y"\ncategory = "neutral"\n', "goal"),
+    ('[benchmark]\ntext = "x"\ncategory = "unsettled"\n[[goal]]\nid = "a"\ntext = "y"\ncategory = "unsettled"\n', "goal"),
 ])
 def test_load_goals_rejects_unknown_keys(tmp_path, content, key):
     path = tmp_path / GOALS_FILE
@@ -158,8 +158,8 @@ def test_load_goals_rejects_unknown_keys(tmp_path, content, key):
 
 def test_load_goals_duplicate_message_has_no_empty_location(tmp_path):
     path = tmp_path / GOALS_FILE
-    path.write_text('[benchmark]\ntext = "x"\ncategory = "neutral"\n[[goals]]\nid = "a"\ntext = "y"\n'
-                    'category = "neutral"\n[[goals]]\nid = "a"\ntext = "z"\ncategory = "neutral"\n')
+    path.write_text('[benchmark]\ntext = "x"\ncategory = "unsettled"\n[[goals]]\nid = "a"\ntext = "y"\n'
+                    'category = "unsettled"\n[[goals]]\nid = "a"\ntext = "z"\ncategory = "unsettled"\n')
     with pytest.raises(GoalError) as info:
         load_goals(path)
     assert ": :" not in str(info.value)

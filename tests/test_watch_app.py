@@ -12,7 +12,7 @@ from bikeshed.watch.source import open_watcher
 
 def setup(tmp_path, community, process=1, goal="Pick a fruit."):
     store, conn = community
-    add_run(conn, "r1", agents=("a", "b"), status="running", goal_id="best-fruit", category="contested",
+    add_run(conn, "r1", agents=("a", "b"), status="running", goal_id="best-fruit", category="unsettled",
             process=process, goal=goal)
     add_entry(conn, "r1", "a", "propose", {"answer_summary": "Mango [ripe]", "method": "m"})
     cfg = Config.model_validate({"models": {"local": {"kind": "openai", "model": "m"}}})

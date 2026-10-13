@@ -3,7 +3,7 @@ from bikeshed.watch.state import FEED_MAX, RulingLine, RunState, feed_line, feed
 
 
 def state():
-    return RunState("r1", "Pick a fruit.", "best-fruit", "contested", 12)
+    return RunState("r1", "Pick a fruit.", "best-fruit", "unsettled", 12)
 
 
 def who(agent_id):

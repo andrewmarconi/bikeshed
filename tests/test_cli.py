@@ -235,11 +235,11 @@ def test_run_next_takes_the_benchmark_then_the_queue(project):
         assert invoke("agents", "new", agent_id, "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
     first = invoke("run", "--next", "--max-rounds", "2", "--no-postrun", "-c", config)
     assert first.exit_code == 0, first.output
-    assert "goal (benchmark, trade-off): Pick one pizza topping combination" in first.output
+    assert "goal (benchmark, underspecified): Pick one pizza topping combination" in first.output
     second = invoke("run", "--next", "--max-rounds", "2", "--no-postrun", "-c", config)
-    assert "goal (best-fruit, contested): Come to an agreement on the best fruit." in second.output
+    assert "goal (best-fruit, unsettled): Come to an agreement on the best fruit." in second.output
     listing = invoke("goals", "list", "-c", config).output
-    assert "best-fruit\tcontested\tused by" in listing and "next: hot-dog-sandwich" in listing
+    assert "best-fruit\tunsettled\tused by" in listing and "next: hot-dog-sandwich" in listing
     assert "due after 3 more runs" in listing
 
 
@@ -251,9 +251,9 @@ def test_run_rejects_a_goal_together_with_next(project):
 
 def test_goals_add(project):
     tmp_path, config = project
-    result = invoke("goals", "add", "Rank the best sandwiches.", "--category", "contested", "-c", config)
+    result = invoke("goals", "add", "Rank the best sandwiches.", "--category", "unsettled", "-c", config)
     assert result.exit_code == 0, result.output
-    assert "added rank-the-best-sandwiches (contested)" in result.output
+    assert "added rank-the-best-sandwiches (unsettled)" in result.output
     bad = invoke("goals", "add", "Fine.", "--category", "serious", "-c", config)
     assert bad.exit_code != 0 and "category" in bad.output
 

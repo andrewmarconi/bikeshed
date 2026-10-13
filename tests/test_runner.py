@@ -320,12 +320,12 @@ async def test_start_records_goal_metadata_and_never_shows_it_to_agents(communit
     store, conn = community
     clients = {a: scripted({1: propose}) for a in AGENTS}
     runner = runner_factory(store, conn, clients, max_rounds=2)
-    run_id = runner.start("Pick one pizza.", AGENTS, goal_id="benchmark", goal_category="trade-off", is_benchmark=True)
+    run_id = runner.start("Pick one pizza.", AGENTS, goal_id="benchmark", goal_category="underspecified", is_benchmark=True)
     await runner.run(run_id)
     row = conn.execute("SELECT goal_id, goal_category, is_benchmark FROM runs WHERE id = ?", (run_id,)).fetchone()
-    assert tuple(row) == ("benchmark", "trade-off", 1)
+    assert tuple(row) == ("benchmark", "underspecified", 1)
     sent = json.dumps([call[:2] for client in clients.values() for call in client.calls])
-    assert "trade-off" not in sent and "benchmark" not in sent.lower()
+    assert "underspecified" not in sent and "benchmark" not in sent.lower()
 
 
 def test_a_failed_control_reset_leaves_no_run_behind(community, runner_factory, monkeypatch):

@@ -42,7 +42,7 @@ def judge_reply(system, messages):
 @pytest.fixture
 def lab(tmp_path, community):
     store, conn = community
-    add_run(conn, "r1", created=FUTURE, goal_id="best-fruit", category="contested")
+    add_run(conn, "r1", created=FUTURE, goal_id="best-fruit", category="unsettled")
     add_entry(conn, "r1", "a", "propose", {"answer_summary": "Mango", "method": "m"})
     add_journal(conn, "r1", "a", "after", "Feeling sure.")
     add_review(conn, "r1", "a", "b", 4)

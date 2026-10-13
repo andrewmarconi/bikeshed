@@ -9,7 +9,7 @@ PINK, TEAL = render.AGENT_COLOURS[0], render.AGENT_COLOURS[1]
 
 
 def state(**kw):
-    s = RunState("r1", "Pick a fruit.", "best-fruit", "contested", 12)
+    s = RunState("r1", "Pick a fruit.", "best-fruit", "unsettled", 12)
     for k, v in kw.items():
         setattr(s, k, v)
     return s

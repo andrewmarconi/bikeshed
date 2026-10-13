@@ -369,7 +369,7 @@ def goals_list(config: ConfigOpt = DEFAULT_PATH) -> None:
 @goals_app.command("add")
 def goals_add(
     text: str,
-    category: Annotated[str, typer.Option(help="neutral, trade-off, or contested (Observer-only).")],
+    category: Annotated[str, typer.Option(help="unsettled or underspecified (Observer-only).")],
     goal_id: Annotated[str | None, typer.Option("--id", help="Goal id (default: derived from the text).")] = None,
     config: ConfigOpt = DEFAULT_PATH,
 ) -> None:
