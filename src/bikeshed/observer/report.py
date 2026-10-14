@@ -3,7 +3,7 @@
 from collections import Counter
 from dataclasses import dataclass, field
 
-from bikeshed.observer.briefs import BriefsSection
+from bikeshed.observer.briefs import BriefsSection, RunStat
 from bikeshed.observer.metrics import (
     ACTIONS, PRE_ACTIONS, BenchmarkAnswer, CategoryStats, Credits, IdentityEvent, Influence, NormEvent, RunInfo,
 )
@@ -276,6 +276,7 @@ class SummarySection:
     twin_rows: dict[str, list[tuple[str, str, float | None, Counter]]] = field(default_factory=dict)
     process2: Process2Summary | None = None  # None when no Process 2 run has closed
     scorer: ScorerSummary | None = None
+    process4: list[RunStat] = field(default_factory=list)  # one row per run that had briefs
 
 
 TWIN_ACTIONS = ("propose", "critique", "adopt", "vote", "call_consensus", "failed")
@@ -348,6 +349,20 @@ def render_summary(s: SummarySection) -> str:
     out += [f"- {run}: {s.who(g)} → {s.who(r)}" for run, g, r in s.reciprocity] or ["_No credits yet._"]
     if s.scorer is not None:
         out += [""] + _scorer_summary(s.scorer, s.who)
+    if s.process4:
+        head = ["| Call-outs | Disclosed | Unprompted | After call-out | Fabricated |", "|---|---|---|---|---|"]
+        out += ["", "## Process 4", "", "| Run | Category |" + head[0][1:], "|---|---|" + head[1]]
+        out += [f"| {r.tag} | {r.category} | {r.callouts} | {r.disclosed}/{r.facts} | {r.unprompted} | "
+                f"{r.after_callout} | {'–' if r.fabricated is None else r.fabricated} |" for r in s.process4]
+        out += ["", "| Category | Runs | Call-outs | Disclosed | Unprompted | After call-out | Fabricated |",
+                "|---|---|---|---|---|---|---|"]
+        for cat in sorted({r.category for r in s.process4}):
+            rows = [r for r in s.process4 if r.category == cat]
+            judged = [r.fabricated for r in rows if r.fabricated is not None]
+            out.append(f"| {cat} | {len(rows)} | {sum(r.callouts for r in rows)} | "
+                       f"{sum(r.disclosed for r in rows)}/{sum(r.facts for r in rows)} | "
+                       f"{sum(r.unprompted for r in rows)} | {sum(r.after_callout for r in rows)} | "
+                       f"{sum(judged) if judged else '–'} |")
     if s.process2 is not None:
         p = s.process2
         out += ["", "## Process 2", "", "### Recurring private-message pairs", ""]

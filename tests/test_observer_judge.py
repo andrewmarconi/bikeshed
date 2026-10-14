@@ -131,3 +131,37 @@ async def test_an_abridged_quote_spliced_across_sides_fails(tmp_path):
     judge, _ = make_judge(tmp_path, [spliced, spliced])
     j = await judge.run(ANALYSES["think_vs_act"], run_id="r1", agent_id="a", inputs=TVA)
     assert j.status == "failed"
+
+
+DISCLOSURE_INPUTS = {"private facts": "text: Bea knows the budget.\np1.c1: Spend at most $15.",
+                     "this member's entries": "#2 [r1] Bea (b) propose\n  answer_summary: Budget is $15 each",
+                     "other members' entries": "#5 [r2] Alpha (a) critique\n  points: Bea says $15 max"}
+
+
+def test_disclosure_check_wants_every_fact_once_and_verbatim_quotes():
+    from bikeshed.observer.judge import ANALYSES, DisclosureReply
+
+    check = ANALYSES["disclosure"].check
+    good = DisclosureReply.model_validate({"facts": [
+        {"fact": "text", "disclosed": False, "quote": "", "relay_quote": ""},
+        {"fact": "p1.c1", "disclosed": True, "quote": "Budget is $15 each", "relay_quote": "Bea says $15 max"}]})
+    assert check(good, DISCLOSURE_INPUTS) is None
+    missing = DisclosureReply.model_validate({"facts": [{"fact": "p1.c1", "disclosed": False}]})
+    assert "exactly one finding for each fact id" in check(missing, DISCLOSURE_INPUTS)
+    invented = DisclosureReply.model_validate({"facts": [
+        {"fact": "text", "disclosed": False}, {"fact": "p1.c1", "disclosed": True, "quote": "I said fifteen"}]})
+    assert "not found verbatim" in check(invented, DISCLOSURE_INPUTS)
+
+
+def test_fabrication_check_reads_quotes_from_their_own_section():
+    from bikeshed.observer.judge import ANALYSES, FabricationReply
+
+    inputs = {"shared brief": "Casa Lupe, Green Bowl", "private briefs": "", "opening proposals": "Go to The Bistro",
+              "final synthesis": "Casa Lupe at 8pm"}
+    check = ANALYSES["fabrication"].check
+    ok = FabricationReply.model_validate({"items": [
+        {"where": "opening proposals", "quote": "The Bistro", "what": "a restaurant not listed"}]})
+    assert check(ok, inputs) is None
+    wrong = FabricationReply.model_validate({"items": [
+        {"where": "final synthesis", "quote": "The Bistro", "what": "x"}]})
+    assert "not found verbatim" in check(wrong, inputs)

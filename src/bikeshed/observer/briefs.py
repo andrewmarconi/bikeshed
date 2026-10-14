@@ -9,8 +9,10 @@ import sqlite3
 from dataclasses import dataclass, field
 
 from bikeshed.board import SYSTEM, Board, Entry
+from bikeshed.briefs import RunBriefs, brief_body
 from bikeshed.briefs import load as load_briefs
 from bikeshed.briefs import load_conflicts
+from bikeshed.observer.judge import quoted_in
 from bikeshed.observer.metrics import RunInfo
 from bikeshed.observer.store import Judgment
 from bikeshed.view import Who, render_entry
@@ -102,9 +104,106 @@ class BriefsSection:
     closed_by_consensus: bool = False  # whether the run then closed by consensus
 
 
+TEXT_FACT = "text"  # a private brief's text, judged as one fact beside its constraints
+
+
+def _facts(briefs: RunBriefs, agent_id: str) -> list[tuple[str, str]]:
+    mine = briefs.for_agent(agent_id)
+    if mine is None:
+        return []
+    text = " ".join(mine.text.split())
+    return ([(TEXT_FACT, text)] if text else []) + [(c.id, c.text) for c in mine.constraints]
+
+
+def _said(conn: sqlite3.Connection, run_id: str) -> list[Entry]:
+    """What members said or wrote to each other; think notes are private and never count as disclosure."""
+    return [e for e in Board(conn, run_id).entries() if e.author != SYSTEM and e.type != "think"]
+
+
+def disclosure_inputs(conn: sqlite3.Connection, run: RunInfo, agent_id: str, who: Who) -> dict[str, str] | None:
+    facts = _facts(load_briefs(conn, run.id), agent_id)
+    if not facts:
+        return None
+    entries = _said(conn, run.id)
+    return {"private facts": "\n".join(f"{fid}: {text}" for fid, text in facts),
+            "this member's entries": "\n".join(render_entry(e, who) for e in entries if e.author == agent_id),
+            "other members' entries": "\n".join(render_entry(e, who) for e in entries if e.author != agent_id)}
+
+
+def fabrication_inputs(conn: sqlite3.Connection, run: RunInfo, who: Who) -> dict[str, str] | None:
+    briefs = load_briefs(conn, run.id)
+    if briefs.shared is None:
+        return None
+    entries = Board(conn, run.id).entries()
+    by_id = {e.id: e for e in entries}
+    closed = next((e for e in reversed(entries) if e.type == "run_closed"), None)
+    call = by_id.get(closed.payload.get("call_id")) if closed else None
+    return {"shared brief": brief_body(briefs.shared),
+            "private briefs": "\n\n".join(f"{who(b.agent_id)}:\n{brief_body(b)}" for b in briefs.private),
+            "opening proposals": "\n".join(render_entry(e, who) for e in entries
+                                           if e.type == "propose" and e.round == 1),
+            "final synthesis": str(call.payload.get("synthesis", "")) if call else ""}
+
+
+def fact_stats(conn: sqlite3.Connection, run: RunInfo, who: Who, judgments: list[Judgment]) -> list[FactStat]:
+    briefs = load_briefs(conn, run.id)
+    entries = _said(conn, run.id)
+    first: dict[str, int] = {}
+    for c in callouts(conn, run.id):
+        if c.holder is not None:
+            first[c.holder] = min(first.get(c.holder, c.round), c.round)
+    out = []
+    for j in judgments:
+        if j.analysis != "disclosure" or j.status != "ok" or j.agent_id is None:
+            continue
+        texts = dict(_facts(briefs, j.agent_id))
+        own = [e for e in entries if e.author == j.agent_id]
+        for f in j.result["facts"]:
+            rnd = next((e.round for e in own if quoted_in(f["quote"], render_entry(e, who))), None) \
+                if f["disclosed"] else None
+            seen = first.get(j.agent_id)
+            if not f["disclosed"]:
+                timing = "never"
+            elif rnd is None:
+                timing = "disclosed (round unknown)"
+            elif seen is not None and rnd > seen:
+                timing = "after call-out"
+            else:
+                timing = "unprompted"
+            out.append(FactStat(j.agent_id, f["fact"], texts.get(f["fact"], ""), f["disclosed"], rnd, timing,
+                                bool(f.get("relay_quote"))))
+    return out
+
+
 def section(conn: sqlite3.Connection, run: RunInfo, who: Who, judgments: list[Judgment]) -> BriefsSection | None:
     briefs = load_briefs(conn, run.id)
     if briefs.empty:
         return None
-    return BriefsSection(callouts(conn, run.id), reactions(conn, run, who), has_shared=briefs.shared is not None,
-                         closed_by_consensus=run.ended_reason == "consensus")
+    return BriefsSection(
+        callouts=callouts(conn, run.id), reactions=reactions(conn, run, who),
+        facts=fact_stats(conn, run, who, judgments),
+        fabrication=next((j for j in judgments if j.analysis == "fabrication"), None),
+        has_shared=briefs.shared is not None, closed_by_consensus=run.ended_reason == "consensus")
+
+
+@dataclass(frozen=True)
+class RunStat:
+    tag: str
+    category: str
+    callouts: int  # distinct calls the Scorer rejected over a constraint
+    facts: int
+    disclosed: int
+    unprompted: int
+    after_callout: int
+    fabricated: int | None  # None: no shared brief, or not judged
+
+
+def run_stat(conn: sqlite3.Connection, run: RunInfo, who: Who, judgments: list[Judgment]) -> RunStat | None:
+    s = section(conn, run, who, judgments)
+    if s is None:
+        return None
+    fab = s.fabrication
+    return RunStat(run.tag, run.category, len({c.call_id for c in s.callouts}), len(s.facts),
+                   sum(f.disclosed for f in s.facts), sum(f.timing == "unprompted" for f in s.facts),
+                   sum(f.timing == "after call-out" for f in s.facts),
+                   len(fab.result["items"]) if fab is not None and fab.status == "ok" else None)

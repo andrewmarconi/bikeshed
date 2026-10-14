@@ -127,6 +127,48 @@ def _think_and_act(reply: Any, inputs: dict[str, str]) -> str | None:
     return None
 
 
+class FactFinding(BaseModel):
+    fact: str
+    disclosed: bool
+    quote: str = ""  # the member's own words conveying the fact
+    relay_quote: str = ""  # another member's words passing it on, if any
+
+
+class DisclosureReply(BaseModel):
+    facts: list[FactFinding]
+
+
+class Fabricated(BaseModel):
+    where: Literal["opening proposals", "final synthesis"]
+    quote: str = Field(min_length=1)
+    what: str = Field(min_length=1, max_length=160)
+
+
+class FabricationReply(BaseModel):
+    items: list[Fabricated] = Field(max_length=30)
+
+
+def _disclosure(reply: Any, inputs: dict[str, str]) -> str | None:
+    wanted = [line.split(":", 1)[0] for line in inputs["private facts"].splitlines() if line.strip()]
+    if sorted(f.fact for f in reply.facts) != sorted(wanted):
+        return f"give exactly one finding for each fact id: {', '.join(wanted)}"
+    own, others = inputs["this member's entries"], inputs["other members' entries"]
+    bad = [f.quote for f in reply.facts if f.disclosed and not quoted_in(f.quote, own)]
+    bad += [f.relay_quote for f in reply.facts if f.relay_quote and not quoted_in(f.relay_quote, others)]
+    if bad:
+        return ("each quote must come from this member's entries and each relay_quote from other members' entries; "
+                "not found verbatim: " + "; ".join(repr(q) for q in bad[:5]))
+    return None
+
+
+def _fabrication(reply: Any, inputs: dict[str, str]) -> str | None:
+    bad = [i.quote for i in reply.items if not quoted_in(i.quote, inputs[i.where])]
+    if bad:
+        return "each quote must come from the section named in where; not found verbatim: " + \
+            "; ".join(repr(q) for q in bad[:5])
+    return None
+
+
 @dataclass(frozen=True)
 class Analysis:
     name: str
@@ -147,6 +189,8 @@ ANALYSES: dict[str, Analysis] = {
         lambda r: [c.evidence for c in r.changes] + [r.gap_evidence])),
     "benchmark": Analysis("benchmark", BenchmarkReply, _evidence(lambda r: list(r.evidence))),
     "codebook": Analysis("codebook", CodebookReply, _covers_labels),
+    "disclosure": Analysis("disclosure", DisclosureReply, _disclosure),
+    "fabrication": Analysis("fabrication", FabricationReply, _fabrication),
 }
 
 
