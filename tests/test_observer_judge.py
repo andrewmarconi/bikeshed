@@ -1,7 +1,7 @@
 import json
 
 from bikeshed.models.fake import FakeModel
-from bikeshed.observer.judge import ANALYSES, Judge, normalise
+from bikeshed.observer.judge import ANALYSES, Judge, normalise, quoted_in
 from bikeshed.observer.store import ObserverStore
 
 INPUTS = {"journal": "I value   honest\nfeedback above all.", "reviews written": "Bea was careless."}
@@ -108,3 +108,26 @@ async def test_think_vs_act_rejects_a_quote_from_the_wrong_side(tmp_path):
     j = await judge.run(ANALYSES["think_vs_act"], run_id="r1", agent_id="a", inputs=TVA)
     assert j.status == "failed" and "think notes" in j.error
     assert len(client.calls) == 2  # one correction round
+
+
+def test_an_abridged_quote_matches_when_its_pieces_appear_in_order():
+    text = "Go is great. It has depth. Crucially, it is cooperative."
+    assert quoted_in("Go is great. ... Crucially, it is cooperative.", text)
+    assert quoted_in("Go is great.… it is cooperative.", text)
+    assert quoted_in("Go is great. It has depth.", text)  # no ellipsis: one verbatim passage
+    assert not quoted_in("Crucially, it is cooperative. ... Go is great.", text)  # out of order
+    assert not quoted_in("Go is great. ... it is competitive.", text)  # a piece that is not there
+    assert not quoted_in("...", text)  # nothing quoted
+
+
+async def test_think_vs_act_accepts_an_abridged_quote_from_the_right_side(tmp_path):
+    judge, _ = make_judge(tmp_path, [tva_reply("I doubt ... plan.", "Mango ... fine.")])
+    j = await judge.run(ANALYSES["think_vs_act"], run_id="r1", agent_id="a", inputs=TVA)
+    assert j.status == "ok"
+
+
+async def test_an_abridged_quote_spliced_across_sides_fails(tmp_path):
+    spliced = tva_reply("I doubt the mango plan. ... Mango is fine.", "Mango is fine.")
+    judge, _ = make_judge(tmp_path, [spliced, spliced])
+    j = await judge.run(ANALYSES["think_vs_act"], run_id="r1", agent_id="a", inputs=TVA)
+    assert j.status == "failed"

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -78,13 +79,28 @@ def normalise(text: str) -> str:
     return " ".join(text.split())
 
 
+ELLIPSIS = re.compile(r"\.\.\.|…")
+
+
+def quoted_in(quote: str, text: str) -> bool:
+    """Whether `quote` is verbatim in `text`. A quote abridged with an ellipsis passes when every piece appears
+    verbatim, in order."""
+    pieces = [p for p in (normalise(piece) for piece in ELLIPSIS.split(quote)) if p]
+    corpus, start = normalise(text), 0
+    for piece in pieces:
+        if (found := corpus.find(piece, start)) < 0:
+            return False
+        start = found + len(piece)
+    return bool(pieces)
+
+
 Check = Callable[[Any, dict[str, str]], str | None]
 
 
 def _evidence(quotes: Callable[[Any], list[str]]) -> Check:
     def check(reply: Any, inputs: dict[str, str]) -> str | None:
-        corpus = normalise("\n".join(inputs.values()))
-        missing = [q for q in quotes(reply) if q and normalise(q) not in corpus]
+        corpus = "\n".join(inputs.values())
+        missing = [q for q in quotes(reply) if q and not quoted_in(q, corpus)]
         if missing:
             return "these quotes do not appear verbatim in the input: " + "; ".join(repr(q) for q in missing[:5])
         return None
@@ -101,10 +117,10 @@ def _covers_labels(reply: Any, inputs: dict[str, str]) -> str | None:
 
 def _think_and_act(reply: Any, inputs: dict[str, str]) -> str | None:
     """Each side is quoted from its own sections; a think note passed off as an action fails."""
-    thought = normalise(inputs["think notes"])
-    done = normalise(inputs["public actions"] + "\n" + inputs["private messages sent"])
-    missing = [p.think_quote for p in reply.points if normalise(p.think_quote) not in thought]
-    missing += [p.action_quote for p in reply.points if normalise(p.action_quote) not in done]
+    thought = inputs["think notes"]
+    done = inputs["public actions"] + "\n" + inputs["private messages sent"]
+    missing = [p.think_quote for p in reply.points if not quoted_in(p.think_quote, thought)]
+    missing += [p.action_quote for p in reply.points if not quoted_in(p.action_quote, done)]
     if missing:
         return ("each think_quote must be copied from the think notes and each action_quote from the public actions "
                 "or private messages sent; these are not found verbatim there: " + "; ".join(repr(q) for q in missing[:5]))
