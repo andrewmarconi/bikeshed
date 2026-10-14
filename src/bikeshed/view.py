@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from bikeshed.board import SYSTEM, Board, Entry
+from bikeshed.briefs import EMPTY, RunBriefs, view_sections
 from bikeshed.consensus import call_status, spent_calls
 from bikeshed.profiles import ProfileStore, PublicProfile
 from bikeshed.reviews import Reputation, dimension_reputations, reputation
@@ -60,6 +61,7 @@ class ViewInputs:
     think_notes: tuple[tuple[int, str], ...] = ()  # own think notes this run, (round, text)
     points: Mapping[str, int] = field(default_factory=dict)  # lifetime Scorer points per member
     close_rule: str = "critique"  # which readiness fact each open call shows
+    brief_sections: tuple[str, ...] = ()  # Process 4: the shared brief, this member's own, and the setup line
 
 
 def _norms(store: ProfileStore) -> str:
@@ -71,6 +73,7 @@ def collect_inputs(
     *, agent_id: str, goal: str, round: int, board: Board, store: ProfileStore,
     workspace: Workspace, view_entries: int, half_life: float = 5.0, library: Sequence[str] = (),
     max_rounds: int | None = None, close_rule: str = "critique",
+    briefs: RunBriefs = EMPTY,
 ) -> ViewInputs:
     entries = board.entries_for(agent_id)
     notes = tuple((e.round, e.payload.get("text", "")) for e in entries if e.type == "think" and e.author == agent_id)
@@ -89,6 +92,7 @@ def collect_inputs(
         library=tuple(library),
         dimension_scores={i: dimension_reputations(board.conn, i, half_life) for i in store.ids()},
         max_rounds=max_rounds, think_notes=notes, points=points(board.conn), close_rule=close_rule,
+        brief_sections=view_sections(briefs, agent_id),
     )
 
 
@@ -120,7 +124,7 @@ def build_view(inputs: ViewInputs, budget_chars: int, opening_hint: bool = True)
             "\nThis is the opening round. Propose your own position (action `propose`). "
             "Other members' opening proposals are hidden until the round ends."
         )
-    fixed = [header]
+    fixed = [header, *inputs.brief_sections]  # never trimmed: the facts are part of the goal
     if inputs.think_notes:
         fixed.append("# Your private notes this run (only you can see these)\n"
                      + "\n\n".join(f"## round {r}\n{text.strip()}" for r, text in inputs.think_notes))

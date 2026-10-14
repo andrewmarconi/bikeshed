@@ -1,7 +1,9 @@
 import pytest
 
+from bikeshed.agent import SCORER_BRIEFS
 from bikeshed.briefs import EMPTY, BriefSpec, assign
 from bikeshed.briefs import load as load_briefs
+from bikeshed.models.fake import FakeModel
 
 SPEC = BriefSpec("Shared facts.", ("Use the list.",),
                  (("SECRET-ONE text.", ("SECRET-ONE rule.",)), ("SECRET-TWO text.", ())))
@@ -37,3 +39,20 @@ def test_a_run_without_a_brief_stores_none(community, runner_factory):
     store, conn = community
     run_id = runner_factory(store, conn, {}).start("G", ["a", "b"])
     assert load_briefs(conn, run_id) == EMPTY
+
+
+@pytest.mark.parametrize("process", [1, 2])
+async def test_every_model_request_keeps_private_briefs_private(community, runner_factory, process):
+    store, conn = community
+    clients = {a: FakeModel() for a in "abc"}  # every reply is a pass; we only read what each was sent
+    runner = runner_factory(store, conn, clients, max_rounds=1)
+    run_id = runner.start("Plan a picnic.", ["a", "b", "c"], brief=SPEC, process=process)
+    await runner.run(run_id)
+    briefs = load_briefs(conn, run_id)
+    for agent, client in clients.items():
+        sent = "\n".join([system for system, _, _ in client.calls]
+                         + [m["content"] for _, messages, _ in client.calls for m in messages])
+        assert "Shared facts." in sent and SCORER_BRIEFS in client.calls[0][0]
+        for brief in briefs.private:
+            for secret in (brief.text, *(c.text for c in brief.constraints)):
+                assert (secret in sent) == (brief.agent_id == agent), (agent, secret)

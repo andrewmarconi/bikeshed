@@ -6,7 +6,7 @@ from bikeshed.actions import (
     STEP_P2, THINK, ActionError, CallConsensus, Credit, ListFiles, Pass, PrivateMessage, Propose, ReadEntry, ReadFile, Vote,
     WriteFile,
 )
-from bikeshed.agent import make_reader, make_validator, system_prompt, take_step
+from bikeshed.agent import SCORER_BRIEFS, make_reader, make_validator, system_prompt, take_step
 from bikeshed.board import Entry
 from bikeshed.db import connect
 from bikeshed.models.fake import FakeModel
@@ -334,3 +334,11 @@ def test_system_prompts_state_the_close_rule_in_use(template):
     assert "has been critiqued at least once" in default
     assert "has been critiqued" not in stood
     assert "has stood on the board through the round after the one it was made in" in stood
+
+
+@pytest.mark.parametrize("template", ["agent_system.md", "process2_agent_system.md"])
+def test_the_scorer_line_names_briefs_only_when_the_run_has_constraints(template):
+    plain = system_prompt("Ash (a)", "Calm.", 2, template)
+    briefed = system_prompt("Ash (a)", "Calm.", 2, template, scorer_briefs=True)
+    assert SCORER_BRIEFS not in plain
+    assert briefed == plain.replace("answer is good. If it rejects", f"answer is good. {SCORER_BRIEFS} If it rejects")

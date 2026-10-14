@@ -104,3 +104,26 @@ def load_conflicts(conn: sqlite3.Connection, run_id: str) -> list[tuple[int, str
         return []
     return [(r["call_id"], r["constraint_id"]) for r in conn.execute(
         "SELECT call_id, constraint_id FROM scorer_conflicts WHERE run_id = ? ORDER BY id", (run_id,))]
+
+
+SETUP = "Each member received their own private brief; you can see only yours. The Scorer can see all of them."
+SETUP_NONE = "Each member received their own private brief; you received none. The Scorer can see all of them."
+
+
+def brief_body(brief: Brief) -> str:
+    """A brief's text, then its constraints as plain bullets. Constraint ids are never shown to agents."""
+    lines = [brief.text.strip()] if brief.text.strip() else []
+    return "\n".join(lines + [f"- {c.text}" for c in brief.constraints])
+
+
+def view_sections(briefs: RunBriefs, agent_id: str) -> tuple[str, ...]:
+    """What one member's View shows of the briefs: the shared one, its own, and the setup. Nothing of anyone else's."""
+    out = []
+    if briefs.shared is not None:
+        out.append("# Shared brief (every member sees this)\n" + brief_body(briefs.shared))
+    if briefs.private:
+        mine = briefs.for_agent(agent_id)
+        if mine is not None:
+            out.append("# Your private brief (only you can see this)\n" + brief_body(mine))
+        out.append(SETUP if mine is not None else SETUP_NONE)
+    return tuple(out)

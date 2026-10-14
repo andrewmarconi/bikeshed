@@ -13,6 +13,7 @@ from bikeshed.actions import NOTE_MAX, POLL, STEP, STEP_P2, THINK, Pass, Private
 from bikeshed.agent import StepOutcome, make_reader, make_validator, system_prompt, take_step
 from bikeshed.board import SYSTEM, Board, Entry, public
 from bikeshed.briefs import BriefSpec, assign, too_many
+from bikeshed.briefs import load as load_briefs
 from bikeshed.briefs import save as save_briefs
 from bikeshed.config import RunSettings
 from bikeshed.consensus import StopDecision, stop_decision
@@ -127,6 +128,7 @@ class Runner:
         self._discard_after(run_id, completed, events)
         self.conn.execute("UPDATE runs SET status = 'running' WHERE id = ?", (run_id,))
         library = await self._library(run_id, goal, events)
+        briefs = load_briefs(self.conn, run_id)
         settled = await self._settle(run_id, goal, agent_ids, board, ws, events, completed,
                                      final=completed >= self.settings.max_rounds)
         if settled is not None:  # e.g. resumed after a pause at the Scorer: rule before any new round
@@ -134,7 +136,7 @@ class Runner:
 
         for rnd in range(completed + 1, self.settings.max_rounds + 1):
             events.emit("round_started", round=rnd)
-            ctx = RoundContext(run_id, rnd, goal, agent_ids, seed, row["process"], board, ws, events, library)
+            ctx = RoundContext(run_id, rnd, goal, agent_ids, seed, row["process"], board, ws, events, library, briefs)
             for phase in phases(row["process"], rnd):
                 detail = await phase(self, ctx)
                 if detail is not None:
@@ -187,12 +189,13 @@ class Runner:
                                     store=self.store, workspace=ctx.ws, view_entries=self.settings.view_entries,
                                     half_life=self.settings.reputation_half_life_runs, library=ctx.library,
                                     max_rounds=self.settings.max_rounds if ctx.process == 2 else None,
-                                    close_rule=self.settings.close_rule)
+                                    close_rule=self.settings.close_rule, briefs=ctx.briefs)
             who = make_who(inputs.profiles)
             template = "agent_system.md" if ctx.process == 1 else "process2_agent_system.md"
             system = system_prompt(
                 who(agent_id), self.store.private(agent_id)["temperament.md"], self.settings.max_reads, template,
                 max_writes=self.settings.max_writes, close_rule=self.settings.close_rule,
+                scorer_briefs=bool(ctx.briefs.constraints),
             )
             client = self.clients[agent_id]
             budget = max(2_000, int(client.context_window * 3 * 0.75) - len(system) - len(request))

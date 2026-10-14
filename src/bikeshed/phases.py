@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from bikeshed.board import Board
+from bikeshed.briefs import EMPTY, RunBriefs
 from bikeshed.consensus import call_status, spent_calls
 from bikeshed.db import transaction
 from bikeshed.events import EventLog
@@ -28,6 +29,7 @@ class RoundContext:
     ws: Workspace
     events: EventLog
     library: list[str]
+    briefs: RunBriefs = EMPTY
 
     def rng(self, runner: "Runner", salt: str = "") -> Any:
         """Seeded per run and round (tests inject one), so a resumed run replays the same order."""
