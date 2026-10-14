@@ -438,3 +438,300 @@ def test_runs_record_the_scorer_in_provenance(project):
     cfg_json, prompts = conn.execute("SELECT config, prompts FROM run_provenance WHERE phase = 'start'").fetchone()
     assert json.loads(cfg_json)["scorer"]["judge"] == "claude" and "claude" in json.loads(cfg_json)["models"]
     assert "scorer.md" in json.loads(prompts)
+
+
+def test_run_next_stores_a_queue_goals_briefs_and_show_prints_the_reveal(project, monkeypatch):
+    tmp_path, config = project
+    for agent_id in ("a", "b"):
+        assert invoke("agents", "new", agent_id, "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    original = cli.make_client
+
+    def with_briefed_scorer(backend, retries):
+        base = original(backend, retries)
+
+        def respond(system, messages):
+            if system.startswith("You are the Scorer"):
+                return json.dumps({"answers_goal": True, "feedback": "", "conflicts": []})
+            return base._script(system, messages)
+
+        return FakeModel(respond)
+
+    monkeypatch.setattr(cli, "make_client", with_briefed_scorer)
+    (tmp_path / "community" / "goals.toml").write_text(
+        '[benchmark]\ntext = "Pick a topping."\ncategory = "underspecified"\nevery = 99\n\n'
+        '[[goals]]\nid = "briefed"\ntext = "Plan a picnic."\ncategory = "distributed"\n'
+        'shared = "Shared facts."\nshared_constraints = ["Use the list."]\n\n'
+        '[[goals.private]]\ntext = "Private fact one."\nconstraints = ["Rule one."]\n')
+    assert invoke("run", "--next", "--max-rounds", "2", "--no-postrun", "-c", config).exit_code == 0  # benchmark
+    result = invoke("run", "--next", "--max-rounds", "2", "--no-postrun", "-c", config)
+    assert result.exit_code == 0, result.output
+    from bikeshed.db import connect
+    conn = connect(tmp_path / "community" / "community.db")
+    phases = [r["phase"] for r in conn.execute("SELECT phase FROM run_provenance WHERE run_id = ? ORDER BY id", (first_id,))]
+    assert phases == ["start", "postrun"]
+    assert "Harness changed" not in invoke("show", first_id, "-c", config).output
+    shown = invoke("show", second_id, "-c", config).output
+    assert f"since run {first_id}: config run.max_rounds" in shown
+
+
+def test_agents_new_control_creates_a_seeded_control_agent(project):
+    tmp_path, config = project
+    result = invoke("agents", "new", "e", "--model", "local", "--temperament", "T.", "--control", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert "control = true" in (tmp_path / "community" / "agents" / "e" / "agent.toml").read_text()
+    assert (tmp_path / "community" / "agents" / "e" / "seed" / "public.toml").exists()
+    assert "control" in invoke("agents", "list", "-c", config).output
+
+
+def test_init_seeds_the_goal_queue(project):
+    tmp_path, config = project
+    assert "best-fruit" in (tmp_path / "community" / "goals.toml").read_text()
+
+
+def test_run_next_takes_the_benchmark_then_the_queue(project):
+    tmp_path, config = project
+    for agent_id in ("a", "b"):
+        assert invoke("agents", "new", agent_id, "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    first = invoke("run", "--next", "--max-rounds", "2", "--no-postrun", "-c", config)
+    assert first.exit_code == 0, first.output
+    assert "goal (benchmark, underspecified): Pick one pizza topping combination" in first.output
+    second = invoke("run", "--next", "--max-rounds", "2", "--no-postrun", "-c", config)
+    assert "goal (best-fruit, unsettled): Come to an agreement on the best fruit." in second.output
+    listing = invoke("goals", "list", "-c", config).output
+    assert "best-fruit\tunsettled\tused by" in listing and "next: hot-dog-sandwich" in listing
+    assert "due after 3 more runs" in listing
+
+
+def test_run_rejects_a_goal_together_with_next(project):
+    tmp_path, config = project
+    result = invoke("run", "Pick a colour", "--next", "-c", config)
+    assert result.exit_code != 0 and "not both" in result.output
+
+
+def test_goals_add(project):
+    tmp_path, config = project
+    result = invoke("goals", "add", "Rank the best sandwiches.", "--category", "unsettled", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert "added rank-the-best-sandwiches (unsettled)" in result.output
+    bad = invoke("goals", "add", "Fine.", "--category", "serious", "-c", config)
+    assert bad.exit_code != 0 and "category" in bad.output
+
+
+def test_goals_list_reports_a_broken_file(project):
+    tmp_path, config = project
+    (tmp_path / "community" / "goals.toml").write_text("[benchmark\n")
+    result = invoke("goals", "list", "-c", config)
+    assert result.exit_code != 0 and "goals.toml" in result.output and "Traceback" not in result.output
+
+
+def test_agents_timeline(project):
+    tmp_path, config = project
+    assert invoke("agents", "new", "a", "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    result = invoke("agents", "timeline", "member 1", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert result.output.startswith("# Timeline: Member 1 (a)")
+    missing = invoke("agents", "timeline", "nobody", "-c", config)
+    assert missing.exit_code != 0 and "no agent" in missing.output
+    bad_since = invoke("agents", "timeline", "a", "--since", "nope", "-c", config)
+    assert bad_since.exit_code != 0 and "no run" in bad_since.output
+
+
+def test_agents_introduce_says_what_it_is_waiting_for(project):
+    tmp_path, config = project
+    result = invoke("agents", "new", "a", "--model", "local", "--temperament", "T.", "-c", config)
+    assert "asking a (local) to introduce itself" in result.output
+
+
+def test_agents_set_model(project):
+    tmp_path, config = project
+    config.write_text(config.read_text() + '\n[models.other]\nkind = "openai"\nbase_url = "http://x/v1"\nmodel = "m"\n')
+    assert invoke("agents", "new", "a", "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    unknown = invoke("agents", "set-model", "a", "nope", "-c", config)
+    assert unknown.exit_code != 0 and "unknown model backend" in unknown.output
+    result = invoke("agents", "set-model", "a", "other", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert "a now uses other (was local)" in result.output
+    assert "other" in invoke("agents", "list", "-c", config).output
+
+
+def test_agents_set_model_refuses_during_an_unclosed_run(project):
+    from bikeshed.db import connect
+
+    tmp_path, config = project
+    assert invoke("agents", "new", "a", "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    conn = connect(tmp_path / "community" / "community.db")
+    conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES "
+                 "('r1', 'g', 'paused', '[\"a\"]', '2026-10-10T00:00:00+00:00')")
+    conn.commit()
+    result = invoke("agents", "set-model", "a", "local", "-c", config)
+    assert result.exit_code != 0
+    assert "r1" in result.output
+
+
+@pytest.mark.parametrize("extra", [["Some goal"], ["--next"]])
+def test_run_resume_rejects_a_goal_or_next(project, extra):
+    tmp_path, config = project
+    result = invoke("run", "--resume", "r1", *extra, "-c", config)
+    assert result.exit_code != 0
+    assert "--resume" in result.output and "not both" in result.output
+
+
+def test_observe_without_a_judge(project):
+    tmp_path, config = project
+    for agent_id in ("a", "b"):
+        assert invoke("agents", "new", agent_id, "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    assert invoke("run", "Pick a colour", "--max-rounds", "2", "--no-postrun", "-c", config).exit_code == 0
+    result = invoke("observe", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert "metrics only" in result.output
+    assert (tmp_path / "observer" / "summary.md").exists()
+
+
+def test_observe_unknown_run_fails_cleanly(project):
+    tmp_path, config = project
+    result = invoke("observe", "--run", "nope", "--no-judge", "-c", config)
+    assert result.exit_code != 0 and "no closed run" in result.output
+
+
+def test_export_after_a_real_run(project):
+    tmp_path, config = project
+    for agent_id in ("a", "b"):
+        assert invoke("agents", "new", agent_id, "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    assert invoke("run", "Pick a colour", "--max-rounds", "2", "--no-postrun", "-c", config).exit_code == 0
+    result = invoke("export", "--out", tmp_path / "out", "-c", config)
+    assert result.exit_code == 0, result.output
+    (run_dir,) = (tmp_path / "out" / "runs").iterdir()
+    assert "Pick a colour" in (run_dir / "transcript.md").read_text()
+    assert (run_dir / "events.jsonl").exists()
+    assert "Pick a colour" in (tmp_path / "out" / "runs.csv").read_text()
+
+
+def test_export_unknown_run_fails_cleanly(project):
+    tmp_path, config = project
+    result = invoke("export", "--run", "nope", "--out", tmp_path / "out", "-c", config)
+    assert result.exit_code != 0 and "unknown run" in result.output
+
+
+def test_watch_errors_cleanly(project):
+    tmp_path, config = project
+    result = invoke("watch", "-c", config)
+    assert result.exit_code != 0 and "no runs yet" in result.output
+    unknown = invoke("watch", "nope", "-c", config)
+    assert unknown.exit_code != 0 and "no run 'nope'" in unknown.output
+
+
+def test_watch_opens_the_latest_run(project, monkeypatch):
+    tmp_path, config = project
+    make_agents(config, "a")
+    assert invoke("run", "Pick a colour", "--max-rounds", "1", "--no-postrun", "-c", config).exit_code == 0
+    opened = []
+    monkeypatch.setattr(cli.WatchApp, "run", lambda self: opened.append(self.watcher.state.run_id))
+    result = invoke("watch", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert len(opened) == 1
+
+
+def test_run_with_process_2_records_it_and_resume_keeps_it(project):
+    import sqlite3
+
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    result = invoke("run", "Pick a colour", "--process", "2", "--max-rounds", "2", "--no-postrun", "-c", config)
+    assert result.exit_code == 0, result.output
+    run_id = run_id_from(result.output)
+    conn = sqlite3.connect(tmp_path / "community" / "community.db")
+    assert conn.execute("SELECT process FROM runs WHERE id = ?", (run_id,)).fetchone()[0] == 2
+    provenance = json.loads(conn.execute("SELECT config FROM run_provenance WHERE run_id = ?", (run_id,)).fetchone()[0])
+    assert provenance["run"]["process"] == 2
+    rejected = invoke("run", "--resume", run_id, "--process", "1", "-c", config)
+    assert rejected.exit_code != 0 and "keeps its process" in rejected.output
+    assert invoke("run", "G", "--process", "3", "-c", config).exit_code != 0
+
+
+def test_abandon_closes_a_dead_run_and_keeps_its_record(project):
+    from bikeshed.db import connect
+
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    conn = connect(tmp_path / "community" / "community.db")
+    conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES "
+                 "('r1', 'Pick a colour', 'running', '[\"a\", \"b\"]', '2026-10-10T00:00:00+00:00')")
+    conn.execute("INSERT INTO entries (run_id, round, author, type, payload, created_at) VALUES "
+                 "('r1', 3, 'a', 'propose', '{\"answer_summary\": \"Blue\", \"method\": \"m\"}', 't')")
+    conn.commit()
+    declined = runner.invoke(cli.app, ["abandon", "r1", "-c", str(config)], input="n\n")
+    assert declined.exit_code != 0
+    assert conn.execute("SELECT status FROM runs WHERE id = 'r1'").fetchone()[0] == "running"
+    result = invoke("abandon", "r1", "--yes", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert "r1 closed: abandoned" in result.output
+    assert tuple(conn.execute("SELECT status, ended_reason FROM runs WHERE id = 'r1'").fetchone()) == \
+        ("closed", "abandoned")
+    rows = conn.execute("SELECT round, author, type, payload FROM entries WHERE run_id = 'r1' ORDER BY id").fetchall()
+    assert [r["type"] for r in rows] == ["propose", "run_closed"]  # nothing is deleted
+    assert rows[1]["round"] == 3 and json.loads(rows[1]["payload"]) == {"reason": "abandoned", "call_id": None}
+    last = json.loads((tmp_path / "runs" / "r1" / "events.jsonl").read_text().splitlines()[-1])
+    assert (last["event"], last["reason"]) == ("run_closed", "abandoned")
+    assert "abandoned" in (tmp_path / "runs" / "r1" / "report" / "answer.md").read_text()
+    again = invoke("abandon", "r1", "--yes", "-c", config)
+    assert again.exit_code != 0 and "already closed" in again.output
+    assert invoke("abandon", "nope", "--yes", "-c", config).exit_code != 0
+
+
+def test_run_refuses_without_a_scorer(project):
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    config.write_text(config.read_text().replace('\njudge = "claude"\n', "\n"))  # the [observer] line is commented
+    result = invoke("run", "Pick a colour", "--no-postrun", "-c", config)
+    assert result.exit_code != 0 and "[scorer]" in result.output
+
+
+def test_runs_record_the_scorer_in_provenance(project):
+    import sqlite3
+
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    result = invoke("run", "Pick a colour", "--max-rounds", "1", "--no-postrun", "-c", config)
+    assert result.exit_code == 0, result.output
+    conn = sqlite3.connect(tmp_path / "community" / "community.db")
+    cfg_json, prompts = conn.execute("SELECT config, prompts FROM run_provenance WHERE phase = 'start'").fetchone()
+    assert json.loads(cfg_json)["scorer"]["judge"] == "claude" and "claude" in json.loads(cfg_json)["models"]
+    assert "scorer.md" in json.loads(prompts)
+
+
+def test_run_next_stores_a_queue_goals_briefs_and_show_prints_the_reveal(project, monkeypatch):
+    tmp_path, config = project
+    for agent_id in ("a", "b"):
+        assert invoke("agents", "new", agent_id, "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    original = cli.make_client
+
+    def with_briefed_scorer(backend, retries):
+        base = original(backend, retries)
+
+        def respond(system, messages):
+            if system.startswith("You are the Scorer"):
+                return json.dumps({"answers_goal": True, "feedback": "", "conflicts": []})
+            return base._script(system, messages)
+
+        return FakeModel(respond)
+
+    monkeypatch.setattr(cli, "make_client", with_briefed_scorer)
+    (tmp_path / "community" / "goals.toml").write_text(
+        '[benchmark]\ntext = "Pick a topping."\ncategory = "underspecified"\nevery = 99\n\n'
+        '[[goals]]\nid = "briefed"\ntext = "Plan a picnic."\ncategory = "distributed"\n'
+        'shared = "Shared facts."\nshared_constraints = ["Use the list."]\n\n'
+        '[[goals.private]]\ntext = "Private fact one."\nconstraints = ["Rule one."]\n')
+    assert invoke("run", "--next", "--max-rounds", "2", "--no-postrun", "-c", config).exit_code == 0  # benchmark
+    result = invoke("run", "--next", "--max-rounds", "2", "--no-postrun", "-c", config)
+    assert result.exit_code == 0, result.output
+    run_id = next(l.split()[-1] for l in result.output.splitlines() if "run" in l and "r" in l.split()[-1:][0]) \
+        if False else None
+    from bikeshed.db import connect
+    conn = connect(tmp_path / "community" / "community.db")
+    run_id = conn.execute("SELECT id FROM runs WHERE goal_id = 'briefed'").fetchone()[0]
+    rows = conn.execute("SELECT slot, text FROM run_briefs WHERE run_id = ? ORDER BY slot", (run_id,)).fetchall()
+    assert [tuple(r) for r in rows] == [(0, "Shared facts."), (1, "Private fact one.")]
+    briefs_md = (tmp_path / "runs" / run_id / "report" / "briefs.md").read_text()
+    assert "Private fact one." in briefs_md
+    shown = invoke("show", run_id, "-c", config)
+    assert shown.exit_code == 0 and briefs_md.strip() in shown.output
