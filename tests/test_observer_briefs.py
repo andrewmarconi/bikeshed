@@ -68,3 +68,23 @@ def test_the_run_report_shows_callouts_and_reactions(community):
     assert "“Choose from the list.” — the shared brief" in text
     assert "Closed by consensus after the call-outs: no" in text
     assert "r4, after Bea (b) was named" in text and "Bea, what is it?" in text
+
+
+def test_a_word_that_merely_contains_the_name_is_not_a_reaction(community):
+    _, conn = community
+    briefed_run(conn)
+    add_entry(conn, "r1", "c", "critique", {"target": 1, "about": "answer", "points": "A beautiful plan"}, round=4)
+    [reaction] = pb.reactions(conn, closed_runs(conn)[0], who)
+    assert len(reaction.entries) == 1 and "beautiful" not in reaction.entries[0]
+
+
+def test_a_nameless_holder_is_matched_only_by_refs(community):
+    _, conn = community
+    briefed_run(conn)
+    add_entry(conn, "r1", "c", "critique", {"target": 1, "about": "answer", "points": "a big plan"}, round=4)
+
+    def bare(agent_id):
+        return f"{agent_id} ({agent_id})"
+
+    [reaction] = pb.reactions(conn, closed_runs(conn)[0], bare)
+    assert len(reaction.entries) == 1 and "Bea, what is it?" in reaction.entries[0]

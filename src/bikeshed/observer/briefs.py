@@ -4,6 +4,7 @@ Read-only like the rest of the Observer. Nothing here reaches an agent.
 """
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass, field
 
@@ -42,9 +43,26 @@ class Reaction:
     entries: tuple[str, ...]  # rendered entries from that round that refer to the named member
 
 
+def _strings(value: object):
+    """Every string value in a payload, nested lists and dicts included; keys are not content."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from _strings(v)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            yield from _strings(v)
+
+
 def _refers(entry: Entry, agent_id: str, name: str, theirs: set[int]) -> bool:
-    text = json.dumps(entry.payload, ensure_ascii=False).casefold()
-    return bool(set(entry.refs) & theirs) or name.casefold() in text or f"({agent_id})" in text
+    if set(entry.refs) & theirs:
+        return True
+    terms = [f"({agent_id})"]
+    if name and name.casefold() != agent_id.casefold():  # a bare id would match nearly any text
+        terms.append(name)
+    pattern = re.compile("|".join(rf"(?<!\w){re.escape(t)}(?!\w)" for t in terms), re.IGNORECASE)
+    return any(pattern.search(text) for text in _strings(entry.payload))
 
 
 def reactions(conn: sqlite3.Connection, run: RunInfo, who: Who) -> list[Reaction]:

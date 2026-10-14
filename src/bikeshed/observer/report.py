@@ -50,7 +50,7 @@ def _briefs(s: RunSection) -> list[str]:
     b = s.briefs
     if b is None:
         return []
-    out = ["", "## Briefs (Process 4)", "", "### Scorer call-outs", ""]
+    out = ["## Briefs (Process 4)", "", "### Scorer call-outs", ""]
     out += [f"- call #{c.call_id} (r{c.round}): “{c.constraint}” — "
             + (f"{s.who(c.holder)}'s private brief" if c.holder else "the shared brief") for c in b.callouts] \
         or ["_None._"]
