@@ -1,6 +1,6 @@
-# Goal briefs
+# Process 4: goal briefs
 
-*2026-10-14. Extends the goal queue in the experiment harness design, the View in the base design, the Scorer spec and the post-run design. Generation 1's runs are unaffected; briefed goals are meant for the next generation's fresh cohort.*
+*2026-10-14. "Process 4" is this experiment's name, not a `--process` value: briefs belong to goals and run under Process 1 or 2, so goal content and phase order can vary separately. Extends the goal queue in the experiment harness design, the View in the base design, the Scorer spec and the post-run design. Generation 1's runs are unaffected; briefed goals are meant for the next generation's fresh cohort.*
 
 ## Problem
 
@@ -61,7 +61,7 @@ A goal with only a shared brief keeps whichever category fits, usually `underspe
 
 ## What agents see
 
-When the run has briefs, the fixed (never-trimmed) part of the View gains, directly after `# Goal`:
+When the run has briefs, the fixed (never-trimmed) part of the View gains, directly after the header (which opens with `# Goal`):
 
 ```
 # Shared brief (every member sees this)
@@ -110,7 +110,7 @@ The Scorer never sees private brief text that is not a constraint, nor any membe
 The harness, not the Scorer, writes the rejection text agents see:
 
 1. If `answers_goal` is false, the Scorer's feedback.
-2. One line per distinct holder of a conflicting private constraint, in the run's seeded member order: "The synthesis conflicts with a constraint in Scalar (b)'s private brief."
+2. One line per distinct holder of a conflicting private constraint, in the run's member order (`runs.agent_ids`): "The synthesis conflicts with a constraint in Scalar (b)'s private brief."
 3. If any shared constraint conflicts: "The synthesis conflicts with a constraint in the shared brief."
 
 That text goes everywhere rejection feedback goes now: the `scorer_rejected` entry's `feedback`, `scorer_feedback.md`, and the View's "Calls the Scorer rejected" section. The entry also carries `named` (agent ids; their names are public). The call is spent as with any rejection. Scorer points are unchanged.
@@ -154,7 +154,7 @@ A brief states facts about the member's situation. It never states attitudes, pr
 - Allowed: "Sam has a severe nut allergy." "Your share of the budget is $15." "You told your partner you'd be home by 2pm." "You were at the restaurant last week; it was closed for renovation."
 - Not allowed: "You care deeply about…", "Don't give in on…", "Make sure the group…", "Insist that…", "You are the expert on…".
 
-For a `contested` goal, the conflict lives in the facts (two members' constraints cannot both be met), never in a stated preference about how hard to push. Code cannot check this; it is a checklist for whoever writes goals.
+For a `contested` goal, the conflict lives in the facts (two members' situations cannot both be fully served), never in a stated preference about how hard to push. The conflicting facts go in brief `text`, not in `constraints`: the Scorer rejects any conflict with a constraint, so constraints that cannot all be met would make the goal impossible to pass. Every goal's constraints, shared and private, must be satisfiable together; the group, not the Scorer, decides whose need gives way. Code cannot check any of this; it is a checklist for whoever writes goals.
 
 A starter set ships as a reference file, `docs/goals/briefed-goals.toml`, to copy into the live lab's queue: two goals with a shared brief only, two `distributed`, two `contested`. It contains no `[benchmark]` table; the lab keeps its own.
 
