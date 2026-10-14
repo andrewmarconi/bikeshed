@@ -103,7 +103,7 @@ The Scorer never sees private brief text that is not a constraint, nor any membe
 
 - an id in `conflicts` that the run does not have;
 - `answers_goal` false with empty feedback;
-- feedback that contains the text of any constraint (matched with the Observer's `normalise`, so case and punctuation do not hide it).
+- `answers_goal` false and feedback that contains the text of any private constraint (matched with the Observer's `normalise`, so case and punctuation do not hide it). Shared constraints are visible to every member, so repeating one leaks nothing; and feedback is shown to members only when `answers_goal` is false.
 
 ### The call-out
 

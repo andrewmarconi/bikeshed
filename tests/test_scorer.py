@@ -102,6 +102,20 @@ async def test_an_invalid_briefed_ruling_gets_one_correction(bad, problem):
     assert result.ruling.accepted and problem in client.calls[1][1][-1]["content"]
 
 
+async def test_feedback_may_repeat_a_shared_constraint():
+    reply = json.dumps({"answers_goal": False, "feedback": "It does not use only the pantry.", "conflicts": []})
+    client = FakeModel([reply])
+    result = await score_briefed(client, "G", "S", BRIEFS)
+    assert result.ruling.feedback == "It does not use only the pantry." and len(client.calls) == 1
+
+
+async def test_a_private_constraint_in_feedback_is_not_checked_when_the_goal_is_answered():
+    reply = json.dumps({"answers_goal": True, "feedback": "Sam has a nut allergy.", "conflicts": ["p1.c1"]})
+    client = FakeModel([reply])
+    result = await score_briefed(client, "G", "S", BRIEFS)
+    assert result.ruling.conflicts == ["p1.c1"] and len(client.calls) == 1
+
+
 async def test_two_invalid_briefed_rulings_give_no_ruling():
     bad = json.dumps({"answers_goal": True, "feedback": "", "conflicts": ["nope"]})
     result = await score_briefed(FakeModel([bad, bad]), "G", "S", BRIEFS)

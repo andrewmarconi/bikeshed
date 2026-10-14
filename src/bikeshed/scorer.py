@@ -103,8 +103,8 @@ def _briefed_problem(ruling: BriefedRuling, briefs: RunBriefs) -> str | None:
     known = {c.id for c in briefs.constraints}
     if unknown := [c for c in ruling.conflicts if c not in known]:
         return f"these are not constraint ids: {', '.join(unknown)}; use only ids from the Constraints section"
-    if quotes_constraint(ruling.feedback, briefs):
-        return "feedback must not quote or restate a constraint; say only what is missing for it to answer the goal"
+    if not ruling.answers_goal and quotes_constraint(ruling.feedback, briefs):
+        return "feedback must not quote or restate a private constraint; say only what is missing for it to answer the goal"
     return None
 
 

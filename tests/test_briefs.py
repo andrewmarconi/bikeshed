@@ -60,7 +60,7 @@ def test_readers_of_an_older_store_get_no_briefs():
 def test_quotes_constraint_ignores_case_and_punctuation():
     a = assign(BriefSpec("x", ("Use only the pantry.",), (("t", ("Sam has a nut allergy.",)),)), ["a"], seed=1)
     assert quotes_constraint("Remember: SAM has a nut-allergy!", a)
-    assert quotes_constraint("use ONLY the pantry", a)
+    assert not quotes_constraint("use ONLY the pantry", a)  # shared constraints are visible to everyone
     assert not quotes_constraint("It does not say which day.", a)
 
 

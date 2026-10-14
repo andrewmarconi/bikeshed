@@ -50,6 +50,10 @@ class RunBriefs:
         briefs = ([self.shared] if self.shared else []) + list(self.private)
         return tuple(c for b in briefs for c in b.constraints)
 
+    @property
+    def private_constraints(self) -> tuple[Constraint, ...]:
+        return tuple(c for b in self.private for c in b.constraints)
+
     def for_agent(self, agent_id: str) -> Brief | None:
         return next((b for b in self.private if b.agent_id == agent_id), None)
 
@@ -135,9 +139,10 @@ def _plain(text: str) -> str:
 
 
 def quotes_constraint(text: str, briefs: RunBriefs) -> bool:
-    """Whether `text` restates any constraint, ignoring case, punctuation and spacing."""
+    """Whether `text` restates a private constraint (shared ones are seen by every member), ignoring case,
+    punctuation and spacing."""
     plain = _plain(text)
-    return any((c_plain := _plain(c.text)) and c_plain in plain for c in briefs.constraints)
+    return any((c_plain := _plain(c.text)) and c_plain in plain for c in briefs.private_constraints)
 
 
 def callout(feedback: str | None, conflicts: Sequence[str], briefs: RunBriefs, agent_ids: Sequence[str],
