@@ -10,7 +10,8 @@ from bikeshed.provenance import prompt_snapshot
 
 SRC = Path(bikeshed.__file__).parent
 AGENT_PATH = ["view.py", "agent.py", "runner.py", "board.py", "consensus.py", "actions.py", "introduce.py",
-              "checkin.py", "journal.py", "library.py", "norms.py", "reviews.py", "profiles.py", "prompts/__init__.py",
+              "checkin.py", "journal.py", "library.py", "norms.py", "reviews.py", "profiles.py", "briefs.py", "scorer.py",
+              "prompts/__init__.py",
               *[f"postrun/{p.name}" for p in (SRC / "postrun").glob("*.py")]]
 
 
@@ -84,3 +85,24 @@ async def test_observe_never_initialises_or_commits_to_the_community_repo(tmp_pa
     with pytest.raises(ValueError, match="not a community"):
         await observe(cfg, judge_note="--no-judge")
     assert not (bare / ".git").exists()
+
+
+async def test_observe_leaves_a_briefed_community_untouched(tmp_path, community):
+    from observer_helpers import add_briefs, add_conflict
+
+    from bikeshed.briefs import Brief, Constraint, RunBriefs
+    from bikeshed.config import Config
+    from bikeshed.observer.observe import observe
+
+    store, conn = community
+    add_run(conn, "r1", created="2099-01-01T00:00:00+00:00")
+    add_briefs(conn, "r1", RunBriefs(Brief(0, None, "S", (Constraint("s.c1", "R"),)), (Brief(1, "a", "P"),)))
+    call = add_entry(conn, "r1", "a", "call_consensus", {"synthesis": "x", "refs": [], "credits": []})
+    add_conflict(conn, "r1", call, "s.c1")
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    cfg = Config.model_validate({"models": {"claude": {"kind": "claude_cli"}}})
+    cfg.community_dir = tmp_path / "community"
+    cfg.observer.dir = tmp_path / "observer"
+    before = _fingerprint(cfg.community_dir)
+    await observe(cfg, judge_note="--no-judge")
+    assert _fingerprint(cfg.community_dir) == before

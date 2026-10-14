@@ -11,6 +11,7 @@ from pathlib import Path
 from bikeshed.config import Config
 from bikeshed.db import connect_readonly
 from bikeshed.models.base import ModelClient, limit_clients
+from bikeshed.observer import briefs as pb
 from bikeshed.observer import metrics as m
 from bikeshed.observer import process2 as p2
 from bikeshed.observer import scoring as sc
@@ -161,6 +162,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
             benchmark=next((a for a in answers if a.run_id == run.id), None), judge_note=note,
             dimensions=m.dimension_scores(conn, run.id), process2=_process2_section(conn, run, who, out_dir, written),
             rulings=sc.rulings(conn, run.id), awards=sc.awards(conn, run.id),
+            briefs=pb.section(conn, run, who, judgments),
         )
         path = out_dir / "runs" / f"{run.id}.md"
         path.parent.mkdir(parents=True, exist_ok=True)

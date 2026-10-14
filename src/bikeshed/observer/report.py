@@ -3,6 +3,7 @@
 from collections import Counter
 from dataclasses import dataclass, field
 
+from bikeshed.observer.briefs import BriefsSection
 from bikeshed.observer.metrics import (
     ACTIONS, PRE_ACTIONS, BenchmarkAnswer, CategoryStats, Credits, IdentityEvent, Influence, NormEvent, RunInfo,
 )
@@ -38,6 +39,46 @@ class RunSection:
     process2: Process2Section | None = None  # only for Process 2 runs
     rulings: list[RulingRow] = field(default_factory=list)  # the Scorer's rulings, in board order
     awards: list[Award] = field(default_factory=list)  # Scorer points awarded in this run
+    briefs: BriefsSection | None = None  # Process 4 runs only
+
+
+def _cell(text: str) -> str:
+    return " ".join(text.split()).replace("|", "\\|")
+
+
+def _briefs(s: RunSection) -> list[str]:
+    b = s.briefs
+    if b is None:
+        return []
+    out = ["", "## Briefs (Process 4)", "", "### Scorer call-outs", ""]
+    out += [f"- call #{c.call_id} (r{c.round}): “{c.constraint}” — "
+            + (f"{s.who(c.holder)}'s private brief" if c.holder else "the shared brief") for c in b.callouts] \
+        or ["_None._"]
+    if b.callouts:
+        out += ["", f"Closed by consensus after the call-outs: {'yes' if b.closed_by_consensus else 'no'}"]
+    out += ["", "### Disclosure", ""]
+    if b.facts:
+        out += ["| Member | Fact | Disclosed | Round | Timing | Relayed |", "|---|---|---|---|---|---|"]
+        out += [f"| {s.who(f.agent_id)} | {_cell(f.text)} | {'yes' if f.disclosed else 'no'} | {f.round or '–'} | "
+                f"{f.timing} | {'yes' if f.relayed else 'no'} |" for f in b.facts]
+    else:
+        out.append(f"_not judged ({s.judge_note or 'no disclosure judgment'})_")
+    out += ["", "### Call-out reactions", ""]
+    for r in b.reactions:
+        out += [f"#### r{r.round}, after {s.who(r.named)} was named", ""]
+        out += ["```text", *r.entries, "```"] if r.entries else ["_No entry referred to them._"]
+        out.append("")
+    if not b.reactions:
+        out += ["_No member was named._", ""]
+    if b.has_shared:
+        out += ["### Fabrication", ""]
+        if (missing := _not_judged(b.fabrication, s.judge_note)) is not None:
+            out.append(missing)
+        else:
+            out += [f"- {i['where']}: “{i['quote']}” — {i['what']}" for i in b.fabrication.result["items"]] \
+                or ["_Nothing unsupported._"]
+        out.append("")
+    return out
 
 
 def _dimensions(s: RunSection) -> list[str]:
@@ -164,7 +205,7 @@ def render_run(s: RunSection) -> str:
            f"- **Process:** {r.process}"]
     if s.changes:
         out += ["", "> **Harness changed:** " + "; ".join(s.changes)]
-    out += [""] + _metrics(s) + [""] + _dimensions(s) + _credits(s) + [""] + _scorer_run(s)
+    out += [""] + _metrics(s) + [""] + _dimensions(s) + _credits(s) + [""] + _scorer_run(s) + _briefs(s)
     if s.process2 is not None:
         out += _process2(s)
     out += _per_agent(s, "Themes", "themes", lambda res: [
