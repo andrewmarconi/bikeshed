@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -235,3 +236,37 @@ async def test_progress_without_a_judge(lab):
     await observe(lab, judge_note="--no-judge", progress=lines.append)
     assert any("metrics only" in line for line in lines)
     assert not any("to judge" in line for line in lines)
+
+
+class Slow:
+    """Wraps a client so each call takes a moment, and records the most calls in flight at once (shared by all)."""
+    in_flight = peak = 0
+
+    def __init__(self, inner):
+        self.inner, self.context_window = inner, inner.context_window
+
+    async def chat(self, system, messages, json_schema=None):
+        Slow.in_flight += 1
+        Slow.peak = max(Slow.peak, Slow.in_flight)
+        try:
+            await asyncio.sleep(0.01)
+            return await self.inner.chat(system, messages, json_schema)
+        finally:
+            Slow.in_flight -= 1
+
+
+async def test_judges_share_the_run_concurrency_limit(lab, community):
+    store, conn = community
+    add_run(conn, "r5", created=FUTURE, goal_id="debate", process=2)
+    for agent in ("a", "b", "c"):
+        add_entry(conn, "r5", agent, "think", {"text": "Pear is weak."}, round=1, visible_to=[agent])
+        add_entry(conn, "r5", agent, "propose", {"answer_summary": "Pear is fine.", "method": "m"}, round=1)
+    lab = Config.model_validate({
+        "models": {"claude": {"kind": "claude_cli"}, "local": {"kind": "openai", "model": "qwen"}},
+        "run": {"max_concurrent_calls": 2},
+        "observer": {"judge": "claude", "judges": {"think_vs_act": "local"}, "dir": lab.observer.dir},
+        "community_dir": lab.community_dir, "runs_dir": lab.runs_dir})
+    Slow.in_flight = Slow.peak = 0
+    await observe(lab, judge_client=Slow(FakeModel(judge_reply)),
+                  analysis_clients={"think_vs_act": Slow(FakeModel(judge_reply))})
+    assert Slow.peak == 2

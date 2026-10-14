@@ -28,8 +28,6 @@ from bikeshed.profiles import ProfileError, ProfileStore
 from bikeshed.provenance import provenance_changes
 from bikeshed.view import Who, make_who
 
-JUDGE_CONCURRENCY = 3
-
 Progress = Callable[[str], None]
 
 
@@ -52,7 +50,7 @@ class ObserveResult:
 
 async def _judge_run(judge: Callable[[str], Judge], ostore: ObserverStore, conn: sqlite3.Connection, store: ProfileStore,
                      runs: list[m.RunInfo], run: m.RunInfo, who: Who, answers: list[m.BenchmarkAnswer],
-                     progress: Progress) -> None:
+                     progress: Progress, max_calls: int) -> None:
     specs: list[tuple[str, str | None, dict[str, str]]] = []
     for agent in run.agent_ids:
         specs.append(("themes", agent, themes_inputs(conn, store, run, agent)))
@@ -65,7 +63,7 @@ async def _judge_run(judge: Callable[[str], Judge], ostore: ObserverStore, conn:
         specs.append(("benchmark", None, benchmark_inputs(answers, run.id)))
     fresh = [s for s in specs if not judge(s[0]).is_cached(ANALYSES[s[0]], run_id=run.id, agent_id=s[1], inputs=s[2])]
     progress(f"  {len(specs)} judgments: {len(specs) - len(fresh)} cached, {len(fresh)} to judge"
-             + (f" ({JUDGE_CONCURRENCY} at a time)" if fresh else ""))
+             + (f" ({max_calls} at a time)" if fresh else ""))
     start, finished = time.monotonic(), 0
 
     async def one(analysis: str, agent: str | None, inputs: dict[str, str]) -> None:
@@ -108,13 +106,16 @@ def _judges(cfg: Config, ostore: ObserverStore, default: ModelClient,
     if missing := sorted(set(cfg.observer.judges) - set(analysis_clients)):
         raise ValueError(f"no client for the judge of: {', '.join(missing)}")
 
-    def make(client: ModelClient, backend_name: str | None) -> Judge:
-        limited = limit_clients({"judge": client}, JUDGE_CONCURRENCY)["judge"]
-        backend = cfg.models.get(backend_name or "")
-        return Judge(limited, ostore, backend.model if backend else "judge")  # a new model means new judgments
+    # one limiter for every judge, like the agents in a run: at most `[run] max_concurrent_calls` calls at once
+    limited = limit_clients({"": default} | {name: analysis_clients[name] for name in cfg.observer.judges},
+                            cfg.run.max_concurrent_calls)
 
-    fallback = make(default, cfg.observer.judge)
-    own = {name: make(analysis_clients[name], backend) for name, backend in cfg.observer.judges.items()}
+    def make(client: ModelClient, backend_name: str | None) -> Judge:
+        backend = cfg.models.get(backend_name or "")
+        return Judge(client, ostore, backend.model if backend else "judge")  # a new model means new judgments
+
+    fallback = make(limited[""], cfg.observer.judge)
+    own = {name: make(limited[name], backend) for name, backend in cfg.observer.judges.items()}
     return lambda analysis: own.get(analysis, fallback)
 
 
@@ -149,7 +150,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
     for i, run in enumerate(targets, 1):
         progress(f"[{i}/{len(targets)}] {run.tag}" + (f" ({run.id})" if run.tag != run.id else ""))
         if judge is not None:
-            await _judge_run(judge, ostore, conn, store, runs, run, who, answers, progress)
+            await _judge_run(judge, ostore, conn, store, runs, run, who, answers, progress, cfg.run.max_concurrent_calls)
         judgments = ostore.judgments(run.id)
         labels = {t["label"] for j in judgments if j.analysis == "themes" and j.status == "ok" for t in j.result["themes"]}
         section = RunSection(
