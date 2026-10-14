@@ -202,6 +202,23 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX scorer_points_by_agent ON scorer_points (agent_id);
     """,
+    """
+    CREATE TABLE run_briefs (
+        run_id TEXT NOT NULL REFERENCES runs(id),
+        slot INTEGER NOT NULL,
+        agent_id TEXT,
+        text TEXT NOT NULL,
+        constraints TEXT NOT NULL,
+        PRIMARY KEY (run_id, slot)
+    );
+    CREATE TABLE scorer_conflicts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL REFERENCES runs(id),
+        call_id INTEGER NOT NULL,
+        constraint_id TEXT NOT NULL
+    );
+    CREATE INDEX scorer_conflicts_by_run ON scorer_conflicts (run_id, id);
+    """,
 ]
 
 
