@@ -273,3 +273,15 @@ def test_pre_action_entries_do_not_push_actions_out_of_the_board_window(tmp_path
     view = view_for("a", 3, store, board, ws, view_entries=2)
     assert "TURN-ACTION-B" in view and "TURN-ACTION-C" in view  # two turn actions, however many writes between
     assert "PRE-5" in view  # pre-actions inside the window are still shown
+
+
+def test_under_the_stood_round_rule_a_call_shows_whether_it_has_stood(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    old = board.append(2, "b", "call_consensus", {"synthesis": "Blue", "refs": [], "credits": []})
+    new = board.append(3, "c", "call_consensus", {"synthesis": "Red", "refs": [], "credits": []})
+    inputs = collect_inputs(agent_id="a", goal="Pick a colour", round=3, board=board, store=store, workspace=ws,
+                            view_entries=15, close_rule="stood_round")
+    view = build_view(inputs, budget_chars=50_000)
+    assert f"#{old.id} by" in view and "stood a round: yes" in view
+    assert f"#{new.id} by" in view and "stood a round: no" in view
+    assert "critiqued:" not in view

@@ -179,12 +179,13 @@ class Runner:
             inputs = collect_inputs(agent_id=agent_id, goal=ctx.goal, round=ctx.round, board=ctx.board,
                                     store=self.store, workspace=ctx.ws, view_entries=self.settings.view_entries,
                                     half_life=self.settings.reputation_half_life_runs, library=ctx.library,
-                                    max_rounds=self.settings.max_rounds if ctx.process == 2 else None)
+                                    max_rounds=self.settings.max_rounds if ctx.process == 2 else None,
+                                    close_rule=self.settings.close_rule)
             who = make_who(inputs.profiles)
             template = "agent_system.md" if ctx.process == 1 else "process2_agent_system.md"
             system = system_prompt(
                 who(agent_id), self.store.private(agent_id)["temperament.md"], self.settings.max_reads, template,
-                max_writes=self.settings.max_writes,
+                max_writes=self.settings.max_writes, close_rule=self.settings.close_rule,
             )
             client = self.clients[agent_id]
             budget = max(2_000, int(client.context_window * 3 * 0.75) - len(system) - len(request))

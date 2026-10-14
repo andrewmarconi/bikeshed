@@ -7,6 +7,11 @@ from typing import Literal
 from bikeshed.board import Entry
 from bikeshed.config import RunSettings
 
+CLOSE_RULES = {  # how each rule reads in the agents' system prompt
+    "critique": "has been critiqued at least once",
+    "stood_round": "has stood on the board through the round after the one it was made in",
+}
+
 
 @dataclass(frozen=True)
 class CallStatus:
@@ -62,6 +67,11 @@ def _idle_round(entries: Sequence[Entry], agent_ids: Sequence[str], round: int) 
     return bool(posted) and all(_is_idle(e, entries) for e in posted)
 
 
+def ready_to_close(call: Entry, status: CallStatus, round: int, rule: str) -> bool:
+    """Whether a call meets its close rule, apart from the quorum."""
+    return call.round < round if rule == "stood_round" else status.critiqued
+
+
 def spent_calls(entries: Sequence[Entry]) -> set[int]:
     """Calls the Scorer rejected: they can never close the run, and votes on them count for nothing."""
     return {e.payload.get("call_id") for e in entries if e.type == "scorer_rejected"}
@@ -76,7 +86,7 @@ def stop_decision(
     for entry in entries:
         if entry.type == "call_consensus" and entry.id not in spent:
             status = call_status(entries, entry.id)
-            if status.critiqued and len(status.supporters & members) >= needed:
+            if ready_to_close(entry, status, round, settings.close_rule) and len(status.supporters & members) >= needed:
                 return StopDecision("consensus", entry.id)
     window = range(round - settings.stagnation_rounds + 1, round + 1)
     if round >= settings.stagnation_rounds and all(_idle_round(entries, agent_ids, r) for r in window):

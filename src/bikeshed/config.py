@@ -35,6 +35,8 @@ class RunSettings(BaseModel):
     max_rounds: int = Field(12, ge=1)
     process: Literal[1, 2] = 1  # 1: all act at once; 2: think, then react in turn (with a poll)
     quorum_slack: int = Field(1, ge=0)
+    # what a supported call needs besides its quorum: a critique by a non-caller, or one full round on the board
+    close_rule: Literal["critique", "stood_round"] = "critique"
     stagnation_rounds: int = Field(2, ge=1)
     view_entries: int = Field(15, ge=1)
     max_reads: int = Field(3, ge=0)

@@ -21,7 +21,7 @@ Actions:
 - {"type": "vote", "target": <call_consensus entry id>, "stance": "support" or "object", "reason": "..."}
 - {"type": "pass"}: nothing to add right now.
 
-The work ends when a call_consensus has been critiqued at least once, is supported by all members but at most one, and the Scorer accepts it. Its caller counts as a supporter.
+The work ends when a call_consensus $close_rule, is supported by all members but at most one, and the Scorer accepts it. Its caller counts as a supporter.
 
 An outside Scorer reviews every call for consensus that passes. It accepts a call only if its synthesis gives the concrete answer the goal asks for; it does not judge whether the answer is good. If it rejects a call, its feedback appears on the board and in `scorer_feedback.md`, and work continues. When a call is accepted, every member credited in it earns a Scorer point.
 

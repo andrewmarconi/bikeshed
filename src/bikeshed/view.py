@@ -59,6 +59,7 @@ class ViewInputs:
     max_rounds: int | None = None  # Process 2 shows "Round N of M"; Process 1 shows no limit
     think_notes: tuple[tuple[int, str], ...] = ()  # own think notes this run, (round, text)
     points: Mapping[str, int] = field(default_factory=dict)  # lifetime Scorer points per member
+    close_rule: str = "critique"  # which readiness fact each open call shows
 
 
 def _norms(store: ProfileStore) -> str:
@@ -69,7 +70,7 @@ def _norms(store: ProfileStore) -> str:
 def collect_inputs(
     *, agent_id: str, goal: str, round: int, board: Board, store: ProfileStore,
     workspace: Workspace, view_entries: int, half_life: float = 5.0, library: Sequence[str] = (),
-    max_rounds: int | None = None,
+    max_rounds: int | None = None, close_rule: str = "critique",
 ) -> ViewInputs:
     entries = board.entries_for(agent_id)
     notes = tuple((e.round, e.payload.get("text", "")) for e in entries if e.type == "think" and e.author == agent_id)
@@ -87,7 +88,7 @@ def collect_inputs(
         reputations={i: reputation(board.conn, i, half_life) for i in store.ids()},
         library=tuple(library),
         dimension_scores={i: dimension_reputations(board.conn, i, half_life) for i in store.ids()},
-        max_rounds=max_rounds, think_notes=notes, points=points(board.conn),
+        max_rounds=max_rounds, think_notes=notes, points=points(board.conn), close_rule=close_rule,
     )
 
 
@@ -149,10 +150,11 @@ def build_view(inputs: ViewInputs, budget_chars: int, opening_hint: bool = True)
             status = call_status(inputs.entries, call.id)
             support = ", ".join(sorted(who(a) for a in status.supporters)) or "none"
             objection = ", ".join(sorted(who(a) for a in status.objectors)) or "none"
-            critiqued = "yes" if status.critiqued else "no"
-            lines.append(
-                f"- #{call.id} by {who(call.author)}: support: {support} · object: {objection} · critiqued: {critiqued}"
-            )
+            if inputs.close_rule == "stood_round":
+                ready = f"stood a round: {'yes' if call.round < inputs.round else 'no'}"
+            else:
+                ready = f"critiqued: {'yes' if status.critiqued else 'no'}"
+            lines.append(f"- #{call.id} by {who(call.author)}: support: {support} · object: {objection} · {ready}")
         fixed.append("# Open calls for consensus\n" + "\n".join(lines))
     authors = {e.id: e.author for e in inputs.entries}
     rejected = [e for e in inputs.entries if e.type == "scorer_rejected"]

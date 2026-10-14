@@ -66,7 +66,7 @@ The Scorer (`scorer.py`) is the one judge agents know about: it rules only wheth
 
 ### A run
 
-- `runner.py` (`Runner`) owns the lifecycle shared by both processes: start/resume, provenance, `rounds` rows, stop rules (`consensus.stop_decision`: a call critiqued at least once and supported by all but at most one; stagnation; budget), the Scorer submission, and pausing on outages.
+- `runner.py` (`Runner`) owns the lifecycle shared by both processes: start/resume, provenance, `rounds` rows, stop rules (`consensus.stop_decision`: a call supported by all but at most one that meets `[run] close_rule`, either critiqued at least once or stood a full round; stagnation; budget), the Scorer submission, and pausing on outages.
 - `phases.py`: a Process is an ordered list of phases per round. Process 1 = `simultaneous_act` (all agents act on the same snapshot, posted in a seeded shuffle). Process 2 = think (private note) → react (round 1 blind and simultaneous, later rounds sequential in seeded order) → poll (on the latest open, unspent call). Phases return a pause detail or `None` and never decide when the run stops.
 - One agent turn: `view.build_view` assembles the context (trimmed by priority to the model's context window; privacy enforced through `Board.entries_for` and `entries.visible_to`), `agent.take_step` lets the model make up to N reads and then one action, and `actions.py` validates it with Pydantic (one correction retry, then `pass` with `invalid_action`).
 - A rejected Scorer ruling *spends* the call (`consensus.spent_calls`): it can never close the run and is not polled.

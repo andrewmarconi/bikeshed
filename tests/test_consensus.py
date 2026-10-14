@@ -127,3 +127,22 @@ def test_a_message_taken_as_the_action_is_still_progress():
     entries = base()[:4] + [e(5, 2, "a", "private_message", to="b", text="psst"), e(6, 2, "b", "pass"),
                             e(7, 2, "c", "pass")] + [e(8 + i, 3, a, "pass") for i, a in enumerate(AGENTS)]
     assert stop_decision(entries, AGENTS, 3, RunSettings()) is None
+
+
+def test_stood_round_rule_closes_without_a_critique_once_the_call_has_stood_a_round():
+    entries = base() + [
+        e(6, 2, "b", "vote", target=5, stance="support", reason="r"),
+        e(7, 2, "c", "vote", target=5, stance="support", reason="r"),
+    ]
+    settings = RunSettings(close_rule="stood_round")
+    assert stop_decision(entries, AGENTS, 2, settings) is None  # made this round: not yet
+    assert stop_decision(entries, AGENTS, 3, settings) == StopDecision("consensus", 5)
+
+
+def test_stood_round_rule_still_needs_the_quorum():
+    entries = base() + [e(6, 2, "b", "vote", target=5, stance="support", reason="r")]
+    assert stop_decision(entries, ["a", "b", "c", "d"], 3, RunSettings(close_rule="stood_round")) is None
+
+
+def test_the_critique_rule_is_the_default():
+    assert RunSettings().close_rule == "critique"

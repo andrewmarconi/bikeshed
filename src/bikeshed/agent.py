@@ -11,6 +11,7 @@ from bikeshed.actions import (
     Vote, WriteFile, parse_action, step_schema,
 )
 from bikeshed.board import Entry
+from bikeshed.consensus import CLOSE_RULES
 from bikeshed.models.base import Message, ModelClient, ModelError
 from bikeshed.prompts import render
 from bikeshed.scorer import FEEDBACK_FILE
@@ -34,10 +35,11 @@ class StepOutcome:
 
 
 def system_prompt(
-    display: str, temperament: str, max_reads: int, template: str = "agent_system.md", max_writes: int = 0
+    display: str, temperament: str, max_reads: int, template: str = "agent_system.md", max_writes: int = 0,
+    close_rule: str = "critique",
 ) -> str:
     return render(template, display=display, temperament=temperament.strip(), max_reads=max_reads,
-                  max_writes=max_writes)
+                  max_writes=max_writes, close_rule=CLOSE_RULES[close_rule])
 
 
 async def take_step(

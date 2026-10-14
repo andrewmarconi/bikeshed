@@ -164,6 +164,22 @@ async def test_the_poll_turns_stances_into_votes_and_reaches_consensus(community
     assert polled == []  # the caller is never polled
 
 
+async def test_under_the_stood_round_rule_an_uncritiqued_call_closes_a_round_later(community, process2, find,
+                                                                                    runner_factory):
+    store, conn = community
+    support = lambda v: {"type": "poll_answer", "stance": "support", "reason": "Fine."}
+    call = lambda v: {"type": "call_consensus", "synthesis": "A it is", "refs": find(v, "propose", "a"), "credits": []}
+    clients = {"a": process2(react={1: propose("A"), 2: call}),
+               "b": process2(react={1: propose("B")}, poll={2: support}),
+               "c": process2(react={1: propose("C")}, poll={2: support})}
+    runner = runner_factory(store, conn, clients, rng=NoShuffle(), max_rounds=4, close_rule="stood_round")
+    run_id = runner.start("G", AGENTS, process=2)
+    result = await runner.run(run_id)
+    assert (result.status, result.reason) == ("closed", "consensus")
+    assert rows(conn, run_id, "critique") == []
+    assert conn.execute("SELECT MAX(round) FROM rounds WHERE run_id = ?", (run_id,)).fetchone()[0] == 3
+
+
 async def test_abstaining_is_recorded_and_counts_for_nothing(community, process2, find, runner_factory):
     store, conn = community
     plans = call_then_critique(find)

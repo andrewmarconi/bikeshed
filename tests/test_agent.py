@@ -325,3 +325,12 @@ def test_process2_prompt_lists_writes_as_pre_actions():
 def test_process1_prompt_keeps_write_file_as_an_action():
     text = system_prompt("Ash (a)", "Calm.", 3)
     assert "Pre-actions" not in text and '"type": "write_file"' in text
+
+
+@pytest.mark.parametrize("template", ["agent_system.md", "process2_agent_system.md"])
+def test_system_prompts_state_the_close_rule_in_use(template):
+    default = system_prompt("Ash (a)", "Calm.", 3, template)
+    stood = system_prompt("Ash (a)", "Calm.", 3, template, close_rule="stood_round")
+    assert "has been critiqued at least once" in default
+    assert "has been critiqued" not in stood
+    assert "has stood on the board through the round after the one it was made in" in stood
