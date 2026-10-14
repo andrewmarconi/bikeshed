@@ -12,6 +12,8 @@ from typing import Any
 from bikeshed.actions import NOTE_MAX, POLL, STEP, STEP_P2, THINK, Pass, PrivateMessage, WriteFile, target_refs
 from bikeshed.agent import StepOutcome, make_reader, make_validator, system_prompt, take_step
 from bikeshed.board import SYSTEM, Board, Entry, public
+from bikeshed.briefs import BriefSpec, assign, too_many
+from bikeshed.briefs import save as save_briefs
 from bikeshed.config import RunSettings
 from bikeshed.consensus import StopDecision, stop_decision
 from bikeshed.db import now_iso, transaction
@@ -68,6 +70,7 @@ class Runner:
     def start(
         self, goal: str, agent_ids: Sequence[str], *, goal_id: str | None = None,
         goal_category: str | None = None, is_benchmark: bool = False, process: int = 1,
+        brief: BriefSpec | None = None,
     ) -> str:
         if process not in (1, 2):
             raise ValueError("process must be 1 or 2")
@@ -76,6 +79,8 @@ class Runner:
         unknown = [a for a in agent_ids if a not in self.store.ids()]
         if unknown:
             raise ValueError(f"unknown agents: {unknown}")
+        if brief is not None and len(brief.private) > len(agent_ids):
+            raise ValueError(too_many(len(brief.private), len(agent_ids)))
         controls = [a for a in agent_ids if self.store.record(a).control]
         for agent_id in controls:
             if not self.store.has_seed_public(agent_id):
@@ -93,6 +98,8 @@ class Runner:
                  process),
             )
             Board(self.conn, run_id).append(0, SYSTEM, "goal", {"goal": goal})
+            if brief is not None:
+                save_briefs(self.conn, run_id, assign(brief, agent_ids, seed))
         self._workspace(run_id)
         events = self._events(run_id)
         events.emit("run_started", run_id=run_id, goal=goal, agents=list(agent_ids))

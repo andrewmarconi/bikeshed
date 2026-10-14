@@ -320,6 +320,7 @@ def run(
                 goal_category=selected.category if selected else None,
                 is_benchmark=bool(selected and selected.is_benchmark),
                 process=cfg.run.process,
+                brief=selected.brief if selected else None,
             )
         except ValueError as exc:
             _fail(str(exc))
