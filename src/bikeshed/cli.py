@@ -470,18 +470,15 @@ def observe(
         note = "--no-judge"
     elif cfg.observer.judge is None:
         note = "no judge configured"
-        typer.echo("no [observer] judge configured; metrics only", err=True)
     else:
         client = make_client(cfg.models[cfg.observer.judge], cfg.run.model_retries)
         own = {name: make_client(cfg.models[backend], cfg.run.model_retries)
                for name, backend in cfg.observer.judges.items()}
     try:
         result = asyncio.run(run_observer(cfg, run_id=run, judge_client=client, analysis_clients=own,
-                                          twin=twin, judge_note=note))
+                                          twin=twin, judge_note=note, progress=lambda line: typer.echo(line, err=True)))
     except (ValueError, sqlite3.OperationalError) as exc:
         _fail(str(exc))
-    for path in result.written:
-        typer.echo(f"wrote {path}")
     typer.echo(f"judgments: {result.judged} ok, {result.failed} failed")
     if result.in_progress:
         typer.echo(f"skipped (in progress): {', '.join(result.in_progress)}")

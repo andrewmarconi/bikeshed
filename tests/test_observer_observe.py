@@ -208,3 +208,30 @@ async def test_unknown_analysis_in_judges_is_an_error(lab):
     lab.observer.judges = {"vibes": "claude"}
     with pytest.raises(ValueError, match="vibes"):
         await observe(lab, judge_client=FakeModel(judge_reply), analysis_clients={"vibes": FakeModel(judge_reply)})
+
+
+async def test_observe_reports_progress(lab):
+    lines: list[str] = []
+    await observe(lab, judge_client=FakeModel(judge_reply), progress=lines.append)
+    text = "\n".join(lines)
+    assert "2 closed runs" in text and "r3" in text  # what it covers and what it skips
+    assert "0 cached" in text and "to judge" in text
+    assert any(line.startswith("  [1/") and "themes" in line and "ok" in line for line in lines)
+    assert "codebook" in text
+    assert "r1.md" in text and "summary.md" in text
+
+
+async def test_progress_counts_cached_judgments(lab):
+    client = FakeModel(judge_reply)
+    await observe(lab, judge_client=client)
+    lines: list[str] = []
+    await observe(lab, judge_client=client, progress=lines.append)
+    assert any("cached, 0 to judge" in line for line in lines)
+    assert not any(line.startswith("  [1/") for line in lines)  # no judgment lines, only run headers
+
+
+async def test_progress_without_a_judge(lab):
+    lines: list[str] = []
+    await observe(lab, judge_note="--no-judge", progress=lines.append)
+    assert any("metrics only" in line for line in lines)
+    assert not any("to judge" in line for line in lines)

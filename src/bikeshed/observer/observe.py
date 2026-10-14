@@ -2,6 +2,7 @@
 
 import asyncio
 import sqlite3
+import time
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -29,6 +30,17 @@ from bikeshed.view import Who, make_who
 
 JUDGE_CONCURRENCY = 3
 
+Progress = Callable[[str], None]
+
+
+def _quiet(_: str) -> None:
+    pass
+
+
+def _elapsed(start: float) -> str:
+    secs = round(time.monotonic() - start)
+    return f"{secs // 60}m{secs % 60:02d}s" if secs >= 60 else f"{secs}s"
+
 
 @dataclass(frozen=True)
 class ObserveResult:
@@ -39,23 +51,39 @@ class ObserveResult:
 
 
 async def _judge_run(judge: Callable[[str], Judge], ostore: ObserverStore, conn: sqlite3.Connection, store: ProfileStore,
-                     runs: list[m.RunInfo], run: m.RunInfo, who: Who, answers: list[m.BenchmarkAnswer]) -> None:
-    jobs = []
+                     runs: list[m.RunInfo], run: m.RunInfo, who: Who, answers: list[m.BenchmarkAnswer],
+                     progress: Progress) -> None:
+    specs: list[tuple[str, str | None, dict[str, str]]] = []
     for agent in run.agent_ids:
-        jobs.append(judge("themes").run(ANALYSES["themes"], run_id=run.id, agent_id=agent,
-                              inputs=themes_inputs(conn, store, run, agent)))
+        specs.append(("themes", agent, themes_inputs(conn, store, run, agent)))
         if (pp := private_public_inputs(conn, run, agent, who)) is not None:
-            jobs.append(judge("private_public").run(ANALYSES["private_public"], run_id=run.id, agent_id=agent, inputs=pp))
+            specs.append(("private_public", agent, pp))
         if run.process == 2 and (tva := think_vs_act_inputs(conn, run, agent, who)) is not None:
-            jobs.append(judge("think_vs_act").run(ANALYSES["think_vs_act"], run_id=run.id, agent_id=agent, inputs=tva))
-        jobs.append(judge("self_image").run(ANALYSES["self_image"], run_id=run.id, agent_id=agent,
-                              inputs=self_image_inputs(store, runs, run, agent)))
+            specs.append(("think_vs_act", agent, tva))
+        specs.append(("self_image", agent, self_image_inputs(store, runs, run, agent)))
     if run.is_benchmark:
-        jobs.append(judge("benchmark").run(ANALYSES["benchmark"], run_id=run.id, agent_id=None,
-                              inputs=benchmark_inputs(answers, run.id)))
-    await asyncio.gather(*jobs)
+        specs.append(("benchmark", None, benchmark_inputs(answers, run.id)))
+    fresh = [s for s in specs if not judge(s[0]).is_cached(ANALYSES[s[0]], run_id=run.id, agent_id=s[1], inputs=s[2])]
+    progress(f"  {len(specs)} judgments: {len(specs) - len(fresh)} cached, {len(fresh)} to judge"
+             + (f" ({JUDGE_CONCURRENCY} at a time)" if fresh else ""))
+    start, finished = time.monotonic(), 0
+
+    async def one(analysis: str, agent: str | None, inputs: dict[str, str]) -> None:
+        nonlocal finished
+        j = await judge(analysis).run(ANALYSES[analysis], run_id=run.id, agent_id=agent, inputs=inputs)
+        finished += 1
+        outcome = "ok" if j.status == "ok" else f"failed: {j.error}"
+        progress(f"  [{finished}/{len(fresh)}] {analysis} · {who(agent) if agent else 'everyone'}: {outcome}"
+                 f" ({_elapsed(start)})")
+
+    await asyncio.gather(*(one(*s) for s in fresh))
     labels = [t["label"] for j in ostore.judgments(run.id, "themes") if j.status == "ok" for t in j.result["themes"]]
-    await update_codebook(judge("codebook"), ostore, run.id, labels)
+    new = len({label for label in labels if ostore.code_for(label) is None})
+    if new:
+        progress(f"  codebook: merging {new} new theme label{'s' if new != 1 else ''}")
+    codebook = await update_codebook(judge("codebook"), ostore, run.id, labels)
+    if codebook is not None and codebook.status != "ok":
+        progress(f"  codebook: failed: {codebook.error}")
 
 
 def _process2_section(conn: sqlite3.Connection, run: m.RunInfo, who: Who, out_dir: Path,
@@ -92,7 +120,8 @@ def _judges(cfg: Config, ostore: ObserverStore, default: ModelClient,
 
 async def observe(cfg: Config, *, run_id: str | None = None, judge_client: ModelClient | None = None,
                   analysis_clients: dict[str, ModelClient] | None = None,
-                  twin: str | None = None, judge_note: str | None = None) -> ObserveResult:
+                  twin: str | None = None, judge_note: str | None = None,
+                  progress: Progress = _quiet) -> ObserveResult:
     try:
         store = ProfileStore(cfg.community_dir, create=False)  # never init, never commit
     except ProfileError as exc:
@@ -113,9 +142,14 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
     judge = None if judge_client is None else _judges(cfg, ostore, judge_client, analysis_clients or {})
     note = judge_note if judge is None else None
     written: list[Path] = []
-    for run in targets:
+    progress(f"observing {len(targets)} closed run{'s' if len(targets) != 1 else ''}"
+             + (f"; skipping {', '.join(in_progress)}" if in_progress else ""))
+    progress(f"judge: {', '.join(sorted({cfg.observer.judge or '', *cfg.observer.judges.values()} - {''}))}"
+             if judge is not None else "not judging" + (f" ({note})" if note else "") + ": metrics only")
+    for i, run in enumerate(targets, 1):
+        progress(f"[{i}/{len(targets)}] {run.tag}" + (f" ({run.id})" if run.tag != run.id else ""))
         if judge is not None:
-            await _judge_run(judge, ostore, conn, store, runs, run, who, answers)
+            await _judge_run(judge, ostore, conn, store, runs, run, who, answers, progress)
         judgments = ostore.judgments(run.id)
         labels = {t["label"] for j in judgments if j.analysis == "themes" and j.status == "ok" for t in j.result["themes"]}
         section = RunSection(
@@ -131,8 +165,12 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(render_run(section))
         written.append(path)
+        progress(f"  wrote {path}")
     if run_id is None:
-        written += _write_summary(conn, store, ostore, runs, who, answers, out_dir, twin, note, in_progress)
+        progress(f"summary across {len(runs)} runs" + (": drawing charts" if len(runs) >= 2 else ""))
+        summary = _write_summary(conn, store, ostore, runs, who, answers, out_dir, twin, note, in_progress)
+        written += summary
+        progress(f"  wrote {summary[-1]} and {len(summary) - 1} chart{'s' if len(summary) != 2 else ''}")
     all_judgments = [j for r in targets for j in ostore.judgments(r.id)]
     return ObserveResult(written, sum(j.status == "ok" for j in all_judgments),
                          sum(j.status == "failed" for j in all_judgments), in_progress)

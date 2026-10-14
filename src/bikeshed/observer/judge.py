@@ -144,11 +144,18 @@ class Judge:
         self.store = store
         self.model_alias = model_alias
 
+    def key(self, analysis: Analysis, *, run_id: str, agent_id: str | None, inputs: dict[str, str]) -> str:
+        """The cache key: the same analysis, inputs, prompt and model give the same judgment."""
+        return _sha(json.dumps([analysis.name, run_id, agent_id, _sha(render(analysis.prompt_name)), self.model_alias,
+                                inputs], sort_keys=True, ensure_ascii=False))
+
+    def is_cached(self, analysis: Analysis, *, run_id: str, agent_id: str | None, inputs: dict[str, str]) -> bool:
+        return self.store.cached(self.key(analysis, run_id=run_id, agent_id=agent_id, inputs=inputs)) is not None
+
     async def run(self, analysis: Analysis, *, run_id: str, agent_id: str | None, inputs: dict[str, str]) -> Judgment:
         system = render(analysis.prompt_name)
         prompt_sha = _sha(system)
-        key = _sha(json.dumps([analysis.name, run_id, agent_id, prompt_sha, self.model_alias, inputs],
-                              sort_keys=True, ensure_ascii=False))
+        key = self.key(analysis, run_id=run_id, agent_id=agent_id, inputs=inputs)
         if (hit := self.store.cached(key)) is not None:
             return hit
 
