@@ -33,7 +33,7 @@ These are the options for Sunday:
 - Matinee at the Rialto cinema: 1:30pm or 4pm, $9.
 - Bus day pass: $5. Every option above is on a bus route; the market and the garden are a 20-minute walk apart.
 """
-shared_constraints = ["Use only the options listed above.", "Spend no more than $20 per person in total, buses included."]
+shared_constraints = ["Choose activities only from the options listed above.", "Spend no more than $20 per person in total, buses included."]
 
 [[goals]]
 id = "picnic-briefed"

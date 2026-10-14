@@ -61,7 +61,7 @@ class ViewInputs:
     think_notes: tuple[tuple[int, str], ...] = ()  # own think notes this run, (round, text)
     points: Mapping[str, int] = field(default_factory=dict)  # lifetime Scorer points per member
     close_rule: str = "critique"  # which readiness fact each open call shows
-    brief_sections: tuple[str, ...] = ()  # Process 4: the shared brief, this member's own, and the setup line
+    brief_sections: tuple[str, ...] = ()  # Goal briefs: the shared brief, this member's own, and the setup line
 
 
 def _norms(store: ProfileStore) -> str:
