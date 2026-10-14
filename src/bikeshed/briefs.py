@@ -6,6 +6,7 @@ Observer read them back from `run_briefs`. A brief states facts about the situat
 
 import json
 import random
+import re
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -127,3 +128,13 @@ def view_sections(briefs: RunBriefs, agent_id: str) -> tuple[str, ...]:
             out.append("# Your private brief (only you can see this)\n" + brief_body(mine))
         out.append(SETUP if mine is not None else SETUP_NONE)
     return tuple(out)
+
+
+def _plain(text: str) -> str:
+    return " ".join(re.sub(r"[^\w\s]", " ", text.casefold()).split())
+
+
+def quotes_constraint(text: str, briefs: RunBriefs) -> bool:
+    """Whether `text` restates any constraint, ignoring case, punctuation and spacing."""
+    plain = _plain(text)
+    return any((c_plain := _plain(c.text)) and c_plain in plain for c in briefs.constraints)

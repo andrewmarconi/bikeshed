@@ -3,7 +3,7 @@ import sqlite3
 import pytest
 
 from bikeshed.briefs import (
-    EMPTY, Brief, BriefSpec, Constraint, RunBriefs, assign, load, load_conflicts, save,
+    EMPTY, Brief, BriefSpec, Constraint, RunBriefs, assign, load, load_conflicts, quotes_constraint, save,
 )
 
 SPEC = BriefSpec("Saturday.", ("Use only the pantry.",),
@@ -55,3 +55,10 @@ def test_readers_of_an_older_store_get_no_briefs():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     assert load(conn, "r1") == EMPTY and load_conflicts(conn, "r1") == []
+
+
+def test_quotes_constraint_ignores_case_and_punctuation():
+    a = assign(BriefSpec("x", ("Use only the pantry.",), (("t", ("Sam has a nut allergy.",)),)), ["a"], seed=1)
+    assert quotes_constraint("Remember: SAM has a nut-allergy!", a)
+    assert quotes_constraint("use ONLY the pantry", a)
+    assert not quotes_constraint("It does not say which day.", a)
