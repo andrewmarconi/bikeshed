@@ -4,6 +4,7 @@ import asyncio
 import json
 import sqlite3
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -11,6 +12,7 @@ import typer
 
 from bikeshed.config import DEFAULT_CONFIG, ClaudeCliBackend, Config, load_config
 from bikeshed.db import connect
+from bikeshed.export import export
 from bikeshed.checkin import checkin
 from bikeshed.goals import GOALS_FILE, GoalError, add_goal, load_goals, next_goal, runs_since_benchmark, seed_goals, used_goals
 from bikeshed.introduce import introduce
@@ -483,6 +485,24 @@ def observe(
     typer.echo(f"judgments: {result.judged} ok, {result.failed} failed")
     if result.in_progress:
         typer.echo(f"skipped (in progress): {', '.join(result.in_progress)}")
+
+
+@app.command("export")
+def export_data(
+    run: Annotated[list[str] | None, typer.Option("--run", help="Export only this run (repeatable).")] = None,
+    since: Annotated[str | None, typer.Option(help="Export only runs created on or after this date (YYYY-MM-DD).")] = None,
+    out: Annotated[Path | None, typer.Option(help="Output directory (default: exports/<timestamp> next to the config).")] = None,
+    config: ConfigOpt = DEFAULT_PATH,
+) -> None:
+    """User-only, read-only export of the community and Observer data as JSONL, CSV and Markdown."""
+    cfg = _load(config)
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    target = out or config.resolve().parent / "exports" / stamp
+    try:
+        written = export(cfg, target, run_ids=run, since=since)
+    except (ValueError, sqlite3.OperationalError) as exc:
+        _fail(str(exc))
+    typer.echo(f"wrote {written}")
 
 
 @app.command()

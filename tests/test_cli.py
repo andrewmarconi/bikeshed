@@ -334,6 +334,25 @@ def test_observe_unknown_run_fails_cleanly(project):
     assert result.exit_code != 0 and "no closed run" in result.output
 
 
+def test_export_after_a_real_run(project):
+    tmp_path, config = project
+    for agent_id in ("a", "b"):
+        assert invoke("agents", "new", agent_id, "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    assert invoke("run", "Pick a colour", "--max-rounds", "2", "--no-postrun", "-c", config).exit_code == 0
+    result = invoke("export", "--out", tmp_path / "out", "-c", config)
+    assert result.exit_code == 0, result.output
+    (run_dir,) = (tmp_path / "out" / "runs").iterdir()
+    assert "Pick a colour" in (run_dir / "transcript.md").read_text()
+    assert (run_dir / "events.jsonl").exists()
+    assert "Pick a colour" in (tmp_path / "out" / "runs.csv").read_text()
+
+
+def test_export_unknown_run_fails_cleanly(project):
+    tmp_path, config = project
+    result = invoke("export", "--run", "nope", "--out", tmp_path / "out", "-c", config)
+    assert result.exit_code != 0 and "unknown run" in result.output
+
+
 def test_watch_errors_cleanly(project):
     tmp_path, config = project
     result = invoke("watch", "-c", config)
