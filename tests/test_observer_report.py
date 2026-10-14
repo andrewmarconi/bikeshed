@@ -89,6 +89,12 @@ def test_summary_sections(tmp_path):
     assert "r9" in text
 
 
+def summary_section(**kw):
+    base = dict(runs=[], who=who, charts={}, identity=[], norms=[], codebook=[], twins={}, categories={}, failed=[],
+                benchmark=[], reciprocity=[], in_progress=[], judge_note=None)
+    return SummarySection(**(base | kw))
+
+
 P2 = replace(RUN, process=2)
 
 

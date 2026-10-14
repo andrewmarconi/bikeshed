@@ -11,6 +11,7 @@ from pathlib import Path
 from bikeshed.config import Config
 from bikeshed.db import connect_readonly
 from bikeshed.models.base import ModelClient, limit_clients
+from bikeshed.observer import briefs as pb
 from bikeshed.observer import metrics as m
 from bikeshed.observer import process2 as p2
 from bikeshed.observer import scoring as sc
@@ -59,6 +60,10 @@ async def _judge_run(judge: Callable[[str], Judge], ostore: ObserverStore, conn:
         if run.process == 2 and (tva := think_vs_act_inputs(conn, run, agent, who)) is not None:
             specs.append(("think_vs_act", agent, tva))
         specs.append(("self_image", agent, self_image_inputs(store, runs, run, agent)))
+        if (di := pb.disclosure_inputs(conn, run, agent, who)) is not None:
+            specs.append(("disclosure", agent, di))
+    if (fi := pb.fabrication_inputs(conn, run, who)) is not None:
+        specs.append(("fabrication", None, fi))
     if run.is_benchmark:
         specs.append(("benchmark", None, benchmark_inputs(answers, run.id)))
     hits = {i: judge(a).cached(ANALYSES[a], run_id=run.id, agent_id=agent, inputs=inputs)
@@ -166,6 +171,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
             benchmark=next((a for a in answers if a.run_id == run.id), None), judge_note=note,
             dimensions=m.dimension_scores(conn, run.id), process2=_process2_section(conn, run, who, out_dir, written),
             rulings=sc.rulings(conn, run.id), awards=sc.awards(conn, run.id),
+            briefs=pb.section(conn, run, who, judgments),
         )
         path = out_dir / "runs" / f"{run.id}.md"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -187,7 +193,8 @@ def _series(runs: list[m.RunInfo], value) -> dict[str, list[float | None]]:
     return {a: [value(r, a) for r in runs] for a in agents}
 
 
-def _charts(conn: sqlite3.Connection, ostore: ObserverStore, runs: list[m.RunInfo], out_dir: Path) -> dict[str, Path]:
+def _charts(conn: sqlite3.Connection, ostore: ObserverStore, runs: list[m.RunInfo], who: Who,
+            out_dir: Path) -> dict[str, Path]:
     labels = [r.tag for r in runs]
     markers = m.harness_changes(conn, runs)
     peer = {r.id: m.peer_scores(conn, r.id) for r in runs}
@@ -234,6 +241,12 @@ def _charts(conn: sqlite3.Connection, ostore: ObserverStore, runs: list[m.RunInf
     if top:
         specs["Themes"] = ("themes.png", {code: [float(sum(c.get(code, 0) for c in by_run[r.id].values()))
                                                  for r in runs] for code in top}, "times expressed")
+    stats = [pb.run_stat(conn, r, who, ostore.judgments(r.id)) for r in runs]
+    if any(st is not None for st in stats):
+        specs["Disclosure"] = ("disclosure.png", {"share of private facts disclosed": [
+            None if st is None or not st.facts else st.disclosed / st.facts for st in stats]}, "share")
+        specs["Fabrication"] = ("fabrication.png", {"unsupported specifics": [
+            None if st is None or st.fabricated is None else float(st.fabricated) for st in stats]}, "count")
     return {title: trend_chart(out_dir / "charts" / filename, title, labels, series, markers, ylabel)
             for title, (filename, series, ylabel) in specs.items()}
 
@@ -241,7 +254,7 @@ def _charts(conn: sqlite3.Connection, ostore: ObserverStore, runs: list[m.RunInf
 def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: ObserverStore, runs: list[m.RunInfo],
                    who: Who, answers: list[m.BenchmarkAnswer], out_dir: Path, twin: str | None,
                    judge_note: str | None, in_progress: list[str]) -> list[Path]:
-    charts = _charts(conn, ostore, runs, out_dir) if len(runs) >= 2 else {}
+    charts = _charts(conn, ostore, runs, who, out_dir) if len(runs) >= 2 else {}
     found = m.twins(store)
     if twin is not None:
         found = {control: [twin] for control in found}
@@ -278,6 +291,7 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
         twins=found, categories=m.by_category(conn, runs), failed=ostore.failed(), benchmark=answers,
         reciprocity=m.credit_pairs(conn, runs), in_progress=in_progress, judge_note=judge_note, twin_rows=twin_rows,
         process2=process2, scorer=scorer,
+        process4=[st for r in runs if (st := pb.run_stat(conn, r, who, ostore.judgments(r.id))) is not None],
     )
     path = out_dir / "summary.md"
     path.parent.mkdir(parents=True, exist_ok=True)

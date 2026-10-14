@@ -12,6 +12,9 @@ from typing import Any
 from bikeshed.actions import NOTE_MAX, POLL, STEP, STEP_P2, THINK, Pass, PrivateMessage, WriteFile, target_refs
 from bikeshed.agent import StepOutcome, make_reader, make_validator, system_prompt, take_step
 from bikeshed.board import SYSTEM, Board, Entry, public
+from bikeshed.briefs import BriefSpec, assign, callout, load_conflicts, reveal, too_many
+from bikeshed.briefs import load as load_briefs
+from bikeshed.briefs import save as save_briefs
 from bikeshed.config import RunSettings
 from bikeshed.consensus import StopDecision, stop_decision
 from bikeshed.db import now_iso, transaction
@@ -23,7 +26,7 @@ from bikeshed.profiles import ProfileStore
 from bikeshed.prompts import render
 from bikeshed.report import write_report
 from bikeshed.reviews import render_public_reviews
-from bikeshed.scorer import FEEDBACK_FILE, score
+from bikeshed.scorer import FEEDBACK_FILE, score, score_briefed
 from bikeshed.view import build_view, collect_inputs, make_who, render_entry
 from bikeshed.gitrepo import GitError
 from bikeshed.workspace import InvalidPath, Workspace, WriteConflict
@@ -68,6 +71,7 @@ class Runner:
     def start(
         self, goal: str, agent_ids: Sequence[str], *, goal_id: str | None = None,
         goal_category: str | None = None, is_benchmark: bool = False, process: int = 1,
+        brief: BriefSpec | None = None,
     ) -> str:
         if process not in (1, 2):
             raise ValueError("process must be 1 or 2")
@@ -76,6 +80,8 @@ class Runner:
         unknown = [a for a in agent_ids if a not in self.store.ids()]
         if unknown:
             raise ValueError(f"unknown agents: {unknown}")
+        if brief is not None and len(brief.private) > len(agent_ids):
+            raise ValueError(too_many(len(brief.private), len(agent_ids)))
         controls = [a for a in agent_ids if self.store.record(a).control]
         for agent_id in controls:
             if not self.store.has_seed_public(agent_id):
@@ -93,6 +99,8 @@ class Runner:
                  process),
             )
             Board(self.conn, run_id).append(0, SYSTEM, "goal", {"goal": goal})
+            if brief is not None:
+                save_briefs(self.conn, run_id, assign(brief, agent_ids, seed))
         self._workspace(run_id)
         events = self._events(run_id)
         events.emit("run_started", run_id=run_id, goal=goal, agents=list(agent_ids))
@@ -120,6 +128,7 @@ class Runner:
         self._discard_after(run_id, completed, events)
         self.conn.execute("UPDATE runs SET status = 'running' WHERE id = ?", (run_id,))
         library = await self._library(run_id, goal, events)
+        briefs = load_briefs(self.conn, run_id)
         settled = await self._settle(run_id, goal, agent_ids, board, ws, events, completed,
                                      final=completed >= self.settings.max_rounds)
         if settled is not None:  # e.g. resumed after a pause at the Scorer: rule before any new round
@@ -127,7 +136,7 @@ class Runner:
 
         for rnd in range(completed + 1, self.settings.max_rounds + 1):
             events.emit("round_started", round=rnd)
-            ctx = RoundContext(run_id, rnd, goal, agent_ids, seed, row["process"], board, ws, events, library)
+            ctx = RoundContext(run_id, rnd, goal, agent_ids, seed, row["process"], board, ws, events, library, briefs)
             for phase in phases(row["process"], rnd):
                 detail = await phase(self, ctx)
                 if detail is not None:
@@ -180,12 +189,13 @@ class Runner:
                                     store=self.store, workspace=ctx.ws, view_entries=self.settings.view_entries,
                                     half_life=self.settings.reputation_half_life_runs, library=ctx.library,
                                     max_rounds=self.settings.max_rounds if ctx.process == 2 else None,
-                                    close_rule=self.settings.close_rule)
+                                    close_rule=self.settings.close_rule, briefs=ctx.briefs)
             who = make_who(inputs.profiles)
             template = "agent_system.md" if ctx.process == 1 else "process2_agent_system.md"
             system = system_prompt(
                 who(agent_id), self.store.private(agent_id)["temperament.md"], self.settings.max_reads, template,
                 max_writes=self.settings.max_writes, close_rule=self.settings.close_rule,
+                scorer_briefs=bool(ctx.briefs.constraints),
             )
             client = self.clients[agent_id]
             budget = max(2_000, int(client.context_window * 3 * 0.75) - len(system) - len(request))
@@ -370,23 +380,34 @@ class Runner:
     async def _settle(self, run_id: str, goal: str, agent_ids: list[str], board: Board, ws: Workspace,
                       events: EventLog, rnd: int, *, final: bool) -> RunResult | None:
         """The stop rules after a round. A call that passes goes to the Scorer before the run may close."""
+        briefs = load_briefs(self.conn, run_id)
         while True:
             decision = stop_decision(board.entries(), agent_ids, rnd, self.settings)
             if decision is None or decision.reason != "consensus" or self.scorer is None:
                 break
             call = next(e for e in board.entries() if e.id == decision.call_id)
-            result = await score(self.scorer, goal, str(call.payload.get("synthesis", "")))
+            synthesis = str(call.payload.get("synthesis", ""))
+            result = await (score(self.scorer, goal, synthesis) if briefs.empty
+                            else score_briefed(self.scorer, goal, synthesis, briefs))
             if result.ruling is None:  # nothing is guessed: pause, and the resumed run asks again
                 self.conn.execute("UPDATE runs SET status = 'paused' WHERE id = ?", (run_id,))
                 events.emit("run_paused", round=rnd, detail=f"scorer: {result.detail}")
                 return RunResult(run_id, "paused")
             ruling = result.ruling
+            conflicts = [] if briefs.empty else list(dict.fromkeys(ruling.conflicts))
+            extra = {} if briefs.empty else {"answers_goal": ruling.answers_goal, "conflicts": conflicts}
             events.emit("scorer_ruled", call=call.id, accepted=ruling.accepted, feedback=ruling.feedback,
-                        model=result.model)
+                        model=result.model, **extra)
             if ruling.accepted:
                 return self._close(run_id, goal, board, events, rnd, decision,
                                    before=lambda: self._accept(board, rnd, call, agent_ids))
-            self._reject(run_id, board, ws, rnd, call, ruling.feedback)
+            if briefs.empty:
+                self._reject(run_id, board, ws, rnd, call, ruling.feedback)
+            else:
+                who = make_who({i: self.store.public(i) for i in self.store.ids()})
+                text, named = callout(None if ruling.answers_goal else ruling.feedback, conflicts, briefs,
+                                      agent_ids, who)
+                self._reject(run_id, board, ws, rnd, call, text, named=named, conflicts=conflicts)
         if decision is not None:
             return self._close(run_id, goal, board, events, rnd, decision)
         return self._close(run_id, goal, board, events, rnd, StopDecision("budget")) if final else None
@@ -403,14 +424,19 @@ class Runner:
             "INSERT INTO scorer_points (run_id, agent_id, call_id, contribution, created_at) VALUES (?, ?, ?, ?, ?)",
             [(board.run_id, agent, call.id, text, now_iso()) for agent, text in credited.items()])
 
-    def _reject(self, run_id: str, board: Board, ws: Workspace, rnd: int, call: Entry, feedback: str) -> None:
+    def _reject(self, run_id: str, board: Board, ws: Workspace, rnd: int, call: Entry, feedback: str, *,
+                named: list[str] | None = None, conflicts: Sequence[str] = ()) -> None:
         """The call is spent; its feedback goes on the board and into the workspace before the next round."""
         path = FEEDBACK_FILE
+        payload: dict[str, Any] = {"call_id": call.id, "feedback": feedback.strip()}
+        if named is not None:
+            payload["named"] = named
         with transaction(self.conn):
             ws.write(path, ws.current_version(path), f"# Scorer feedback on call #{call.id}\n\n{feedback.strip()}\n",
                      author=SYSTEM, note=f"Scorer feedback on call #{call.id}")
-            board.append(rnd, SYSTEM, "scorer_rejected", {"call_id": call.id, "feedback": feedback.strip()},
-                         refs=[call.id])
+            board.append(rnd, SYSTEM, "scorer_rejected", payload, refs=[call.id])
+            self.conn.executemany("INSERT INTO scorer_conflicts (run_id, call_id, constraint_id) VALUES (?, ?, ?)",
+                                  [(run_id, call.id, c) for c in conflicts])
             # the round's checkpoint now includes the feedback, so a resumed run keeps it
             self.conn.execute("UPDATE rounds SET workspace_commit = ? WHERE run_id = ? AND round = ?",
                               (ws.head(), run_id, rnd))
@@ -427,6 +453,7 @@ class Runner:
                 "UPDATE runs SET status = 'closed', ended_reason = ? WHERE id = ?", (decision.reason, run_id)
             )
         who = make_who({i: self.store.public(i) for i in self.store.ids()})
-        write_report(self.runs_dir / run_id, goal, public(board.entries()), decision, who)
+        write_report(self.runs_dir / run_id, goal, public(board.entries()), decision, who,
+                     briefs=reveal(load_briefs(self.conn, run_id), load_conflicts(self.conn, run_id), who))
         events.emit("run_closed", reason=decision.reason, call_id=decision.call_id)
         return RunResult(run_id, "closed", decision.reason, decision.call_id)

@@ -1,13 +1,14 @@
 """The Scorer: an outside check that a passing call for consensus answers the goal. It never judges quality."""
 
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from bikeshed.actions import ActionError, correction_request, extract_json, simplify_schema, summarise_validation
+from bikeshed.briefs import RunBriefs, quotes_constraint
 from bikeshed.models.base import Message, ModelClient, ModelError
 from bikeshed.prompts import render
 
@@ -30,9 +31,25 @@ class Ruling(BaseModel):
         return self
 
 
+class BriefedRuling(BaseModel):
+    answers_goal: bool
+    feedback: str = Field("", max_length=FEEDBACK_MAX)
+    conflicts: list[str] = Field(default_factory=list)  # constraint ids; the harness names their holders
+
+    @property
+    def accepted(self) -> bool:
+        return self.answers_goal and not self.conflicts
+
+    @model_validator(mode="after")
+    def _feedback_off_goal(self) -> "BriefedRuling":
+        if not self.answers_goal and not self.feedback.strip():
+            raise ValueError("when the synthesis does not answer the goal, say what is missing in feedback")
+        return self
+
+
 @dataclass(frozen=True)
 class ScoreResult:
-    ruling: Ruling | None  # None: no valid ruling, so the run pauses; nothing is guessed
+    ruling: Ruling | BriefedRuling | None  # None: no valid ruling, so the run pauses; nothing is guessed
     detail: str | None = None
     model: str | None = None
 
@@ -43,10 +60,10 @@ def scorer_request(goal: str, synthesis: str) -> str:
             "Reply with JSON only.")
 
 
-async def score(client: ModelClient, goal: str, synthesis: str) -> ScoreResult:
-    system = render("scorer.md")
-    messages: list[Message] = [{"role": "user", "content": scorer_request(goal, synthesis)}]
-    schema = simplify_schema(Ruling.model_json_schema())
+async def _rule(client: ModelClient, system: str, request: str, shape: type[BaseModel],
+                check: Callable[[BaseModel], str | None] | None = None) -> ScoreResult:
+    messages: list[Message] = [{"role": "user", "content": request}]
+    schema = simplify_schema(shape.model_json_schema())
     problem, model = "no reply", None
     for _ in range(2):
         try:
@@ -55,7 +72,10 @@ async def score(client: ModelClient, goal: str, synthesis: str) -> ScoreResult:
             return ScoreResult(None, f"model error: {exc}", model)
         model = result.model or model
         try:
-            return ScoreResult(Ruling.model_validate(extract_json(result.text)), None, model)
+            ruling = shape.model_validate(extract_json(result.text))
+            problem = check(ruling) if check else None
+            if problem is None:
+                return ScoreResult(ruling, None, model)
         except ValidationError as exc:
             problem = summarise_validation(exc)
         except ActionError as exc:
@@ -63,6 +83,34 @@ async def score(client: ModelClient, goal: str, synthesis: str) -> ScoreResult:
         messages += [{"role": "assistant", "content": result.text},
                      {"role": "user", "content": correction_request(problem)}]
     return ScoreResult(None, f"invalid ruling: {problem}", model)
+
+
+async def score(client: ModelClient, goal: str, synthesis: str) -> ScoreResult:
+    return await _rule(client, render("scorer.md"), scorer_request(goal, synthesis), Ruling)
+
+
+def briefed_request(goal: str, synthesis: str, briefs: RunBriefs) -> str:
+    """The goal, the shared text, every constraint by id, and the synthesis. No names, no private text."""
+    parts = [f"## Goal\n\n{goal.strip()}"]
+    if briefs.shared is not None and briefs.shared.text.strip():
+        parts.append(f"## Shared brief\n\n{briefs.shared.text.strip()}")
+    parts.append("## Constraints\n\n" + ("\n".join(f"{c.id}: {c.text}" for c in briefs.constraints) or "(none)"))
+    parts.append(f"## Synthesis\n\n<synthesis>\n{synthesis.strip()}\n</synthesis>")
+    return "\n\n".join(parts) + "\n\nReply with JSON only."
+
+
+def _briefed_problem(ruling: BriefedRuling, briefs: RunBriefs) -> str | None:
+    known = {c.id for c in briefs.constraints}
+    if unknown := [c for c in ruling.conflicts if c not in known]:
+        return f"these are not constraint ids: {', '.join(unknown)}; use only ids from the Constraints section"
+    if not ruling.answers_goal and quotes_constraint(ruling.feedback, briefs):
+        return "feedback must not quote or restate a private constraint; say only what is missing for it to answer the goal"
+    return None
+
+
+async def score_briefed(client: ModelClient, goal: str, synthesis: str, briefs: RunBriefs) -> ScoreResult:
+    return await _rule(client, render("scorer_briefed.md"), briefed_request(goal, synthesis, briefs), BriefedRuling,
+                       lambda ruling: _briefed_problem(ruling, briefs))
 
 
 def points(conn: sqlite3.Connection) -> dict[str, int]:

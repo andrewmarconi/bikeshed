@@ -3,6 +3,7 @@
 from collections import Counter
 from dataclasses import dataclass, field
 
+from bikeshed.observer.briefs import BriefsSection, RunStat
 from bikeshed.observer.metrics import (
     ACTIONS, PRE_ACTIONS, BenchmarkAnswer, CategoryStats, Credits, IdentityEvent, Influence, NormEvent, RunInfo,
 )
@@ -38,6 +39,58 @@ class RunSection:
     process2: Process2Section | None = None  # only for Process 2 runs
     rulings: list[RulingRow] = field(default_factory=list)  # the Scorer's rulings, in board order
     awards: list[Award] = field(default_factory=list)  # Scorer points awarded in this run
+    briefs: BriefsSection | None = None  # Process 4 runs only
+
+
+def _cell(text: str) -> str:
+    return " ".join(text.split()).replace("|", "\\|")
+
+
+def _mean(values: list[int]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _fmt1(value: float | None) -> str:
+    return "–" if value is None else f"{value:.1f}"
+
+
+def _briefs(s: RunSection) -> list[str]:
+    b = s.briefs
+    if b is None:
+        return []
+    out = ["## Briefs (Process 4)", "", "### Scorer call-outs", ""]
+    out += [f"- call #{c.call_id} (r{c.round}): “{c.constraint}” — "
+            + (f"{s.who(c.holder)}'s private brief" if c.holder else "the shared brief") for c in b.callouts] \
+        or ["_None._"]
+    if b.callouts:
+        out += ["", f"Closed by consensus after the call-outs: {'yes' if b.closed_by_consensus else 'no'}"]
+    out += ["", "### Disclosure", ""]
+    if b.facts:
+        out += ["| Member | Fact | Disclosed | Round | Timing | Relayed |", "|---|---|---|---|---|---|"]
+        out += [f"| {s.who(f.agent_id)} | {_cell(f.text)} | {'yes' if f.disclosed else 'no'} | {f.round or '–'} | "
+                f"{f.timing} | {'yes' if f.relayed else 'no'} |" for f in b.facts]
+    else:
+        out.append(f"_not judged ({s.judge_note or 'no disclosure judgment'})_")
+    out += ["", "### Call-out reactions", ""]
+    for r in b.reactions:
+        out += [f"#### r{r.round}, after {s.who(r.named)} was named", ""]
+        if r.ended:
+            out += ["_The run ended before another round._", ""]
+            continue
+        out += ["```text", *r.entries, "```"] if r.entries else ["_No entry referred to them._"]
+        said = {None: "not judged", True: "yes", False: "no"}[r.disclosed]
+        out += ["", f"Named member disclosed in r{r.round}: {said}", ""]
+    if not b.reactions:
+        out += ["_No member was named._", ""]
+    if b.has_shared:
+        out += ["### Fabrication", ""]
+        if (missing := _not_judged(b.fabrication, s.judge_note)) is not None:
+            out.append(missing)
+        else:
+            out += [f"- {i['where']}: “{i['quote']}” — {i['what']}" for i in b.fabrication.result["items"]] \
+                or ["_Nothing unsupported._"]
+        out.append("")
+    return out
 
 
 def _dimensions(s: RunSection) -> list[str]:
@@ -164,7 +217,7 @@ def render_run(s: RunSection) -> str:
            f"- **Process:** {r.process}"]
     if s.changes:
         out += ["", "> **Harness changed:** " + "; ".join(s.changes)]
-    out += [""] + _metrics(s) + [""] + _dimensions(s) + _credits(s) + [""] + _scorer_run(s)
+    out += [""] + _metrics(s) + [""] + _dimensions(s) + _credits(s) + [""] + _scorer_run(s) + _briefs(s)
     if s.process2 is not None:
         out += _process2(s)
     out += _per_agent(s, "Themes", "themes", lambda res: [
@@ -235,6 +288,7 @@ class SummarySection:
     twin_rows: dict[str, list[tuple[str, str, float | None, Counter]]] = field(default_factory=dict)
     process2: Process2Summary | None = None  # None when no Process 2 run has closed
     scorer: ScorerSummary | None = None
+    process4: list[RunStat] = field(default_factory=list)  # one row per run that had briefs
 
 
 TWIN_ACTIONS = ("propose", "critique", "adopt", "vote", "call_consensus", "failed")
@@ -307,6 +361,24 @@ def render_summary(s: SummarySection) -> str:
     out += [f"- {run}: {s.who(g)} → {s.who(r)}" for run, g, r in s.reciprocity] or ["_No credits yet._"]
     if s.scorer is not None:
         out += [""] + _scorer_summary(s.scorer, s.who)
+    if s.process4:
+        head = ["| Call-outs | Disclosed | Unprompted | After call-out | Fabricated | Mean first round |",
+                "|---|---|---|---|---|---|"]
+        out += ["", "## Process 4", "", "| Run | Category |" + head[0][1:], "|---|---|" + head[1]]
+        out += [f"| {r.tag} | {r.category} | {r.callouts} | {r.disclosed}/{r.facts} | {r.unprompted} | "
+                f"{r.after_callout} | {'–' if r.fabricated is None else r.fabricated} | {_fmt1(r.mean_round)} |"
+                for r in s.process4]
+        out += ["", "| Category | Runs | Call-outs | Disclosed | Unprompted | After call-out | Fabricated | "
+                "Mean first round |", "|---|---|---|---|---|---|---|---|"]
+        key = lambda r: r.category if r.process == 1 else f"{r.category} (P2)"  # as by_category does
+        for cat in sorted({key(r) for r in s.process4}):
+            rows = [r for r in s.process4 if key(r) == cat]
+            judged = [r.fabricated for r in rows if r.fabricated is not None]
+            out.append(f"| {cat} | {len(rows)} | {sum(r.callouts for r in rows)} | "
+                       f"{sum(r.disclosed for r in rows)}/{sum(r.facts for r in rows)} | "
+                       f"{sum(r.unprompted for r in rows)} | {sum(r.after_callout for r in rows)} | "
+                       f"{sum(judged) if judged else '–'} | "
+                       f"{_fmt1(_mean([n for r in rows for n in r.rounds]))} |")
     if s.process2 is not None:
         p = s.process2
         out += ["", "## Process 2", "", "### Recurring private-message pairs", ""]

@@ -5,6 +5,7 @@ import pytest
 from bikeshed.actions import ActionError, Critique, ReadEntry
 from bikeshed.agent import make_reader, make_validator
 from bikeshed.board import SYSTEM, Board, Entry
+from bikeshed.briefs import EMPTY, SETUP, SETUP_NONE, BriefSpec, assign
 from bikeshed.view import METHODS_HEADER, NOTES_HEADER, build_view, collect_inputs, make_who, render_entry
 from bikeshed.workspace import Workspace
 
@@ -285,3 +286,51 @@ def test_under_the_stood_round_rule_a_call_shows_whether_it_has_stood(tmp_path, 
     assert f"#{old.id} by" in view and "stood a round: yes" in view
     assert f"#{new.id} by" in view and "stood a round: no" in view
     assert "critiqued:" not in view
+
+
+BRIEFS = assign(BriefSpec("SHARED-FACT", ("SHARED-RULE",), (("PRIV-ONE", ("CONS-ONE",)), ("PRIV-TWO", ()))),
+                ["a", "b", "c"], seed=3)
+
+
+def briefed_view(agent_id, store, board, ws, briefs):
+    inputs = collect_inputs(agent_id=agent_id, goal="Pick a colour", round=2, board=board, store=store,
+                            workspace=ws, view_entries=15, briefs=briefs)
+    return build_view(inputs, budget_chars=50_000)
+
+
+def test_view_shows_shared_brief_own_private_brief_and_setup(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    view = briefed_view(BRIEFS.private[0].agent_id, store, board, ws, BRIEFS)
+    assert "# Shared brief (every member sees this)\nSHARED-FACT\n- SHARED-RULE" in view
+    assert "# Your private brief (only you can see this)\nPRIV-ONE\n- CONS-ONE" in view
+    assert SETUP in view and "p1.c1" not in view and "s.c1" not in view
+    assert view.index("# Shared brief") < view.index("# Your private brief") < view.index(SETUP) \
+        < view.index("# Current goal")
+
+
+def test_an_agent_without_a_private_brief_is_told_so(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    leftover = next(a for a in "abc" if BRIEFS.for_agent(a) is None)
+    view = briefed_view(leftover, store, board, ws, BRIEFS)
+    assert SETUP_NONE in view and "# Your private brief" not in view
+    assert "PRIV-ONE" not in view and "PRIV-TWO" not in view and "SHARED-FACT" in view
+
+
+def test_a_shared_only_brief_has_no_setup_line(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    view = briefed_view("a", store, board, ws, assign(BriefSpec("SHARED-FACT"), ["a", "b", "c"], seed=3))
+    assert "SHARED-FACT" in view and "private brief" not in view
+
+
+def test_private_briefs_never_reach_another_agent(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    for agent in "abc":
+        view = briefed_view(agent, store, board, ws, BRIEFS)
+        for other in BRIEFS.private:
+            if other.agent_id != agent:
+                assert other.text not in view and all(c.text not in view for c in other.constraints)
+
+
+def test_no_briefs_leaves_the_view_unchanged(tmp_path, community, make_run):
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    assert briefed_view("a", store, board, ws, EMPTY) == view_for("a", 2, store, board, ws)

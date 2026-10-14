@@ -109,3 +109,10 @@ def test_a_budget_end_after_a_rejected_call_says_the_scorer_accepted_none(tmp_pa
     minority = read(tmp_path, "minority.md")
     assert "_The community reached a consensus, but the Scorer accepted no call._" in minority
     assert "No consensus was reached" not in minority
+
+
+def test_write_report_writes_the_briefs_only_when_given(tmp_path):
+    write_report(tmp_path / "with", "G", [], StopDecision("budget"), lambda a: a, briefs="## The briefs this run\nX")
+    write_report(tmp_path / "without", "G", [], StopDecision("budget"), lambda a: a)
+    assert (tmp_path / "with" / "report" / "briefs.md").read_text() == "## The briefs this run\nX\n"
+    assert not (tmp_path / "without" / "report" / "briefs.md").exists()

@@ -39,3 +39,14 @@ def add_review(conn, run_id, reviewer, reviewee, overall, *, more_of="more", les
 def add_journal(conn, run_id, agent_id, section, text, created=T0):
     conn.execute("INSERT INTO journals (run_id, agent_id, section, text, created_at) VALUES (?, ?, ?, ?, ?)",
                  (run_id, agent_id, section, text, created))
+
+
+def add_briefs(conn, run_id, briefs):
+    from bikeshed.briefs import save
+
+    save(conn, run_id, briefs)
+
+
+def add_conflict(conn, run_id, call_id, constraint_id):
+    conn.execute("INSERT INTO scorer_conflicts (run_id, call_id, constraint_id) VALUES (?, ?, ?)",
+                 (run_id, call_id, constraint_id))

@@ -14,7 +14,7 @@ from bikeshed.config import DEFAULT_CONFIG, ClaudeCliBackend, Config, load_confi
 from bikeshed.db import connect
 from bikeshed.export import export
 from bikeshed.checkin import checkin
-from bikeshed.goals import GOALS_FILE, GoalError, add_goal, load_goals, next_goal, runs_since_benchmark, seed_goals, used_goals
+from bikeshed.goals import GOALS_FILE, GoalError, add_goal, brief_mark, load_goals, next_goal, runs_since_benchmark, seed_goals, used_goals
 from bikeshed.introduce import introduce
 from bikeshed.models.base import ModelError, limit_clients
 from bikeshed.models.claude_cli import ClaudeCliClient, leak_check
@@ -320,6 +320,7 @@ def run(
                 goal_category=selected.category if selected else None,
                 is_benchmark=bool(selected and selected.is_benchmark),
                 process=cfg.run.process,
+                brief=selected.brief if selected else None,
             )
         except ValueError as exc:
             _fail(str(exc))
@@ -361,7 +362,8 @@ def goals_list(config: ConfigOpt = DEFAULT_PATH) -> None:
     used = used_goals(conn)
     for g in gf.goals:
         mark = f"used by {used[g.id]}" if g.id in used else "unused"
-        typer.echo(f"{g.id}\t{g.category}\t{mark}\t{g.text}")
+        briefs = brief_mark(g)
+        typer.echo(f"{g.id}\t{g.category}\t{mark}\t{g.text}" + (f"\t[{briefs}]" if briefs else ""))
     try:
         typer.echo(f"\nnext: {next_goal(conn, gf).id}")
     except GoalError as exc:
@@ -371,7 +373,7 @@ def goals_list(config: ConfigOpt = DEFAULT_PATH) -> None:
 @goals_app.command("add")
 def goals_add(
     text: str,
-    category: Annotated[str, typer.Option(help="unsettled or underspecified (Observer-only).")],
+    category: Annotated[str, typer.Option(help="unsettled, underspecified, distributed or contested (Observer-only).")],
     goal_id: Annotated[str | None, typer.Option("--id", help="Goal id (default: derived from the text).")] = None,
     config: ConfigOpt = DEFAULT_PATH,
 ) -> None:
@@ -450,7 +452,7 @@ def show(run_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
     start = next((p for p in provenance_rows(conn, run_id) if p.phase == "start"), None)
     if start and start.code_dirty:
         typer.echo("Note: this run started from uncommitted Bikeshed code.\n")
-    for name in ("answer.md", "minority.md", "account.md", "narrative.md"):
+    for name in ("answer.md", "minority.md", "briefs.md", "account.md", "narrative.md"):
         path = report / name
         if path.exists():
             typer.echo(path.read_text())

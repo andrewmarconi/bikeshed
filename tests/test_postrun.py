@@ -4,6 +4,7 @@ import re
 import pytest
 
 from bikeshed.board import SYSTEM, Board
+from bikeshed.briefs import Brief, Constraint, RunBriefs, save
 from bikeshed.events import read_events
 from bikeshed.journal import journal_section
 from bikeshed.models.base import ModelError
@@ -619,3 +620,40 @@ async def test_the_journal_step_says_nothing_about_a_scorer_that_made_no_ruling(
     await cycle(store, conn, tmp_path, clients).run(run_id)
     journal = next(m[0]["content"] for _, m, _ in clients["a"].calls if m[0]["content"].startswith("# Post-run: journal"))
     assert "Scorer" not in journal
+
+
+async def test_post_run_reveals_every_brief_to_journal_review_and_update(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    save(conn, run_id, RunBriefs(None, (Brief(1, "b", "BEA-SECRET.", (Constraint("p1.c1", "BEA-RULE."),)),)))
+    conn.execute("INSERT INTO scorer_conflicts (run_id, call_id, constraint_id) VALUES (?, 5, 'p1.c1')", (run_id,))
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    requests = {(a, m[0]["content"].split("\n", 1)[0]): m[0]["content"]
+                for a, client in clients.items() for _, m, _ in client.calls}
+    for step in ("journal", "review of yourself", "review of Bea (b)", "update"):  # review headings name the reviewee
+        request = requests[("a", f"# Post-run: {step}")]
+        assert "## The briefs this run" in request and "BEA-SECRET." in request, step
+        assert '- call #5: "BEA-RULE." (Bea (b)\'s private brief)' in request, step
+
+
+async def test_post_run_requests_are_unchanged_without_briefs(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    assert not any("## The briefs this run" in m["content"]
+                   for client in clients.values() for _, msgs, _ in client.calls for m in msgs)
+
+
+async def test_the_library_stores_no_brief_text(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    save(conn, run_id, RunBriefs(Brief(0, None, "SHARED-MARK.", (Constraint("s.c1", "SHARED-RULE-MARK."),)),
+                                 (Brief(1, "b", "PRIVATE-MARK.", (Constraint("p1.c1", "PRIVATE-RULE-MARK."),)),)))
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    rows = conn.execute("SELECT goal, text, reception, author, kind FROM methods").fetchall()
+    assert rows
+    stored = "\n".join(str(value) for row in rows for value in tuple(row))
+    assert "MARK" not in stored

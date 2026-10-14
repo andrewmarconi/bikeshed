@@ -438,3 +438,39 @@ def test_runs_record_the_scorer_in_provenance(project):
     cfg_json, prompts = conn.execute("SELECT config, prompts FROM run_provenance WHERE phase = 'start'").fetchone()
     assert json.loads(cfg_json)["scorer"]["judge"] == "claude" and "claude" in json.loads(cfg_json)["models"]
     assert "scorer.md" in json.loads(prompts)
+
+
+def test_run_next_stores_a_queue_goals_briefs_and_show_prints_the_reveal(project, monkeypatch):
+    tmp_path, config = project
+    for agent_id in ("a", "b"):
+        assert invoke("agents", "new", agent_id, "--model", "local", "--temperament", "T.", "-c", config).exit_code == 0
+    original = cli.make_client
+
+    def with_briefed_scorer(backend, retries):
+        base = original(backend, retries)
+
+        def respond(system, messages):
+            if system.startswith("You are the Scorer"):
+                return json.dumps({"answers_goal": True, "feedback": "", "conflicts": []})
+            return base._script(system, messages)
+
+        return FakeModel(respond)
+
+    monkeypatch.setattr(cli, "make_client", with_briefed_scorer)
+    (tmp_path / "community" / "goals.toml").write_text(
+        '[benchmark]\ntext = "Pick a topping."\ncategory = "underspecified"\nevery = 99\n\n'
+        '[[goals]]\nid = "briefed"\ntext = "Plan a picnic."\ncategory = "distributed"\n'
+        'shared = "Shared facts."\nshared_constraints = ["Use the list."]\n\n'
+        '[[goals.private]]\ntext = "Private fact one."\nconstraints = ["Rule one."]\n')
+    assert invoke("run", "--next", "--max-rounds", "2", "--no-postrun", "-c", config).exit_code == 0  # benchmark
+    result = invoke("run", "--next", "--max-rounds", "2", "--no-postrun", "-c", config)
+    assert result.exit_code == 0, result.output
+    from bikeshed.db import connect
+    conn = connect(tmp_path / "community" / "community.db")
+    run_id = conn.execute("SELECT id FROM runs WHERE goal_id = 'briefed'").fetchone()[0]
+    rows = conn.execute("SELECT slot, text FROM run_briefs WHERE run_id = ? ORDER BY slot", (run_id,)).fetchall()
+    assert [tuple(r) for r in rows] == [(0, "Shared facts."), (1, "Private fact one.")]
+    briefs_md = (tmp_path / "runs" / run_id / "report" / "briefs.md").read_text()
+    assert "Private fact one." in briefs_md
+    shown = invoke("show", run_id, "-c", config)
+    assert shown.exit_code == 0 and briefs_md.strip() in shown.output

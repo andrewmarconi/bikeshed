@@ -34,12 +34,17 @@ class StepOutcome:
     calls: int = 0  # model calls the step took, corrections included
 
 
+SCORER_BRIEFS = ("It also rejects a call whose synthesis conflicts with a constraint in any member's brief; its "
+                 "feedback then names whose brief, not what the constraint says.")
+
+
 def system_prompt(
     display: str, temperament: str, max_reads: int, template: str = "agent_system.md", max_writes: int = 0,
-    close_rule: str = "critique",
+    close_rule: str = "critique", scorer_briefs: bool = False,
 ) -> str:
     return render(template, display=display, temperament=temperament.strip(), max_reads=max_reads,
-                  max_writes=max_writes, close_rule=CLOSE_RULES[close_rule])
+                  max_writes=max_writes, close_rule=CLOSE_RULES[close_rule],
+                  scorer_briefs=f" {SCORER_BRIEFS}" if scorer_briefs else "")
 
 
 async def take_step(

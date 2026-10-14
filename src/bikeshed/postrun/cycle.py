@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from bikeshed.board import Board, Entry, public, visible
+from bikeshed.briefs import load as load_briefs
+from bikeshed.briefs import load_conflicts, reveal
 from bikeshed.consensus import StopDecision
 from bikeshed.db import now_iso, transaction
 from bikeshed.events import EventLog
@@ -214,7 +216,10 @@ class PostRun:
             "SELECT round, kind, detail FROM failures WHERE run_id = ? AND agent_id = ? AND round > 0 ORDER BY id",
             (ctx.run_id, agent_id))]
         return feedback_packet(agent_id, run_id=ctx.run_id, goal=ctx.goal, entries=self._seen(ctx, agent_id),
-                               who=ctx.who, answer=ctx.answer, failures=failures)
+                               who=ctx.who, answer=ctx.answer, failures=failures, briefs=self._reveal(ctx))
+
+    def _reveal(self, ctx: _Context) -> str:
+        return reveal(load_briefs(self.conn, ctx.run_id), load_conflicts(self.conn, ctx.run_id), ctx.who)
 
     # --- steps -------------------------------------------------------------------------------
 
@@ -241,12 +246,14 @@ class PostRun:
             "as an integer from 1 to 5 with a reason:\n" + "\n".join(f'- "{d.name}": {d.question}' for d in dims) + "\n"
         )
         dimension_json = "" if not dims else ', "dimension_ratings": [{"dimension": "<name>", "rating": <1-5>, "reason": "..."}]'
+        revealed = self._reveal(ctx)
         request = render(
             "review_request.md",
             heading="yourself" if own else name,
             run_id=ctx.run_id, goal=ctx.goal,
             authors="you" if own else f"you and {name}",
-            transcript=transcript(self._seen(ctx, reviewer), ctx.who, {reviewer, reviewee}, max(2_000, int(client.context_window * 1.5))),
+            transcript=transcript(self._seen(ctx, reviewer), ctx.who, {reviewer, reviewee}, max(2_000, int(client.context_window * 1.5)))
+            + (f"\n\n{revealed}" if revealed else ""),
             instruction="Review your own work in this run." if own else f"Review the work of {name} in this run.",
             subject="you" if own else "this colleague",
             object="yourself" if own else "them",
@@ -431,8 +438,10 @@ class PostRun:
             else StopDecision("budget")
         report = self.runs_dir / ctx.run_id / "report"
         minority = report / "minority.md"
+        revealed = self._reveal(ctx)
         request = render(
-            "narrative_request.md", account=account(ctx.goal, ctx.entries, decision, ctx.who),
+            "narrative_request.md",
+            account=account(ctx.goal, ctx.entries, decision, ctx.who) + (f"\n{revealed}\n" if revealed else ""),
             answer=ctx.answer.strip() or "(no report)",
             minority=minority.read_text().strip() if minority.exists() else "(none)", narrative_max=JOURNAL_MAX,
         )

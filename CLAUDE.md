@@ -34,7 +34,7 @@ uv run bikeshed agents checkin [--agent <id>]     # offer a name change, ask pro
 uv run bikeshed agents list | show <id> | timeline <agent> [--since <run-id>]
 
 # goals (category is Observer-only, never shown to agents)
-uv run bikeshed goals add "<text>" --category unsettled|underspecified [--id <id>]
+uv run bikeshed goals add "<text>" --category unsettled|underspecified|distributed|contested [--id <id>]
 uv run bikeshed goals list               # benchmark, queue, what --next would take
 
 # runs
@@ -88,6 +88,7 @@ The Scorer (`scorer.py`) is the one judge agents know about: it rules only wheth
 - `phases.py`: a Process is an ordered list of phases per round. Process 1 = `simultaneous_act` (all agents act on the same snapshot, posted in a seeded shuffle). Process 2 = think (private note) → react (round 1 blind and simultaneous, later rounds sequential in seeded order) → poll (on the latest open, unspent call). Phases return a pause detail or `None` and never decide when the run stops.
 - One agent turn: `view.build_view` assembles the context (trimmed by priority to the model's context window; privacy enforced through `Board.entries_for` and `entries.visible_to`), `agent.take_step` lets the model make up to N reads and then one action, and `actions.py` validates it with Pydantic (one correction retry, then `pass` with `invalid_action`).
 - A rejected Scorer ruling *spends* the call (`consensus.spent_calls`): it can never close the run and is not polled.
+- Process 4 (goal briefs) is a goal feature, not a `--process` value: `briefs.py` assigns a goal's shared and private briefs at start (`run_briefs`), each View shows the shared brief and the member's own, the briefed Scorer (`scorer_briefed.md`) lists conflicting constraint ids, `briefs.py` writes the call-out naming their holders, and the Runner records `scorer_conflicts` (the harness, not the Scorer, writes the call-out text), and post-run reveals everything. Spec: `2026-10-14-bikeshed-goal-briefs-design.md`.
 - `models/`: one `ModelClient` interface with `openai_compat` (oMLX) and `claude_cli` (`claude -p`, isolated) backends. `FakeModel` drives every non-smoke test. Tests never assert on real model content.
 
 ### After a run

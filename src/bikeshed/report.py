@@ -72,7 +72,8 @@ def account(goal: str, entries: list[Entry], decision: StopDecision, who: Who) -
     return "\n".join(out) + "\n"
 
 
-def write_report(run_dir: Path, goal: str, entries: list[Entry], decision: StopDecision, who: Who) -> None:
+def write_report(run_dir: Path, goal: str, entries: list[Entry], decision: StopDecision, who: Who,
+                 briefs: str = "") -> None:
     out = run_dir / "report"
     out.mkdir(parents=True, exist_ok=True)
     ended = decision.reason + (f" (call #{decision.call_id})" if decision.call_id else "")
@@ -115,3 +116,5 @@ def write_report(run_dir: Path, goal: str, entries: list[Entry], decision: StopD
     (out / "account.md").write_text(account(goal, entries, decision, who))
     (out / "answer.md").write_text("\n".join(answer).rstrip() + "\n")
     (out / "minority.md").write_text("\n".join(minority).rstrip() + "\n")
+    if briefs:
+        (out / "briefs.md").write_text(briefs.rstrip() + "\n")
