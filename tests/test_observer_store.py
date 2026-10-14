@@ -17,6 +17,12 @@ def test_cache_returns_only_ok_judgments(tmp_path):
     assert [j.status for j in store.failed()] == ["failed"]
 
 
+def test_cache_can_include_failed_judgments(tmp_path):
+    store = ObserverStore(tmp_path / "o.db")
+    store.save("k", judgment("failed"), "sonnet")
+    assert store.cached("k", include_failed=True) == judgment("failed")
+
+
 def test_save_replaces_a_failed_judgment(tmp_path):
     store = ObserverStore(tmp_path / "o.db")
     store.save("k", judgment("failed"), "sonnet")

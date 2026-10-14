@@ -64,8 +64,9 @@ class ObserverStore:
         for number, sql in enumerate(MIGRATIONS[current:], start=current + 1):
             self.conn.executescript(f"BEGIN;\n{sql}\nPRAGMA user_version = {number};\nCOMMIT;")
 
-    def cached(self, key: str) -> Judgment | None:
-        row = self.conn.execute("SELECT * FROM judgments WHERE key = ? AND status = 'ok'", (key,)).fetchone()
+    def cached(self, key: str, *, include_failed: bool = False) -> Judgment | None:
+        sql = "SELECT * FROM judgments WHERE key = ?" + ("" if include_failed else " AND status = 'ok'")
+        row = self.conn.execute(sql, (key,)).fetchone()
         return _judgment(row) if row else None
 
     def save(self, key: str, judgment: Judgment, model_alias: str) -> None:

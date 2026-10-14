@@ -47,7 +47,7 @@ uv run bikeshed postrun <run-id>         # start/resume/retry the post-run cycle
 # read-only (never reaches agents)
 uv run bikeshed watch [run-id]           # Textual TUI, latest run by default
 uv run bikeshed show <run-id>            # answer + minority report, flags harness changes
-uv run bikeshed observe [--run <id>] [--no-judge] [--twin <agent>]   # reports/charts → observer/; twin = compare with control
+uv run bikeshed observe [--run <id>] [--no-judge | --no-retry] [--twin <agent>]   # reports/charts → observer/; no-retry = keep failed judgments; twin = compare with control
 uv run bikeshed export [--run <id>...] [--since YYYY-MM-DD] [--out <dir>]   # JSONL/CSV/MD → exports/<timestamp>/
 ```
 

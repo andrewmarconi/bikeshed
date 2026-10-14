@@ -61,8 +61,12 @@ async def _judge_run(judge: Callable[[str], Judge], ostore: ObserverStore, conn:
         specs.append(("self_image", agent, self_image_inputs(store, runs, run, agent)))
     if run.is_benchmark:
         specs.append(("benchmark", None, benchmark_inputs(answers, run.id)))
-    fresh = [s for s in specs if not judge(s[0]).is_cached(ANALYSES[s[0]], run_id=run.id, agent_id=s[1], inputs=s[2])]
-    progress(f"  {len(specs)} judgments: {len(specs) - len(fresh)} cached, {len(fresh)} to judge"
+    hits = {i: judge(a).cached(ANALYSES[a], run_id=run.id, agent_id=agent, inputs=inputs)
+            for i, (a, agent, inputs) in enumerate(specs)}
+    fresh = [s for i, s in enumerate(specs) if hits[i] is None]
+    settled = sum(1 for j in hits.values() if j is not None and j.status == "failed")
+    progress(f"  {len(specs)} judgments: {len(specs) - len(fresh)} cached"
+             + (f" ({settled} failed, not retried)" if settled else "") + f", {len(fresh)} to judge"
              + (f" ({max_calls} at a time)" if fresh else ""))
     start, finished = time.monotonic(), 0
 
@@ -99,7 +103,7 @@ def _process2_section(conn: sqlite3.Connection, run: m.RunInfo, who: Who, out_di
 
 
 def _judges(cfg: Config, ostore: ObserverStore, default: ModelClient,
-            analysis_clients: dict[str, ModelClient]) -> Callable[[str], Judge]:
+            analysis_clients: dict[str, ModelClient], retry_failed: bool = True) -> Callable[[str], Judge]:
     """The judge for each analysis: the default one unless `[observer.judges]` names another backend."""
     if unknown := sorted(set(cfg.observer.judges) - set(ANALYSES)):
         raise ValueError(f"[observer.judges] names unknown analyses: {', '.join(unknown)} (known: {', '.join(ANALYSES)})")
@@ -112,7 +116,8 @@ def _judges(cfg: Config, ostore: ObserverStore, default: ModelClient,
 
     def make(client: ModelClient, backend_name: str | None) -> Judge:
         backend = cfg.models.get(backend_name or "")
-        return Judge(client, ostore, backend.model if backend else "judge")  # a new model means new judgments
+        return Judge(client, ostore, backend.model if backend else "judge",  # a new model means new judgments
+                     retry_failed=retry_failed)
 
     fallback = make(limited[""], cfg.observer.judge)
     own = {name: make(limited[name], backend) for name, backend in cfg.observer.judges.items()}
@@ -121,7 +126,7 @@ def _judges(cfg: Config, ostore: ObserverStore, default: ModelClient,
 
 async def observe(cfg: Config, *, run_id: str | None = None, judge_client: ModelClient | None = None,
                   analysis_clients: dict[str, ModelClient] | None = None,
-                  twin: str | None = None, judge_note: str | None = None,
+                  twin: str | None = None, judge_note: str | None = None, retry_failed: bool = True,
                   progress: Progress = _quiet) -> ObserveResult:
     try:
         store = ProfileStore(cfg.community_dir, create=False)  # never init, never commit
@@ -140,7 +145,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
     in_progress = m.open_runs(conn) + [f"{r} (post-run)" for r in unfinished]
     who = make_who({i: store.public(i) for i in store.ids()})
     answers = m.benchmark_answers(conn, runs, who)
-    judge = None if judge_client is None else _judges(cfg, ostore, judge_client, analysis_clients or {})
+    judge = None if judge_client is None else _judges(cfg, ostore, judge_client, analysis_clients or {}, retry_failed)
     note = judge_note if judge is None else None
     written: list[Path] = []
     progress(f"observing {len(targets)} closed run{'s' if len(targets) != 1 else ''}"

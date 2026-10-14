@@ -461,6 +461,7 @@ def observe(
     run: Annotated[str | None, typer.Option("--run", help="Report on one closed run only.")] = None,
     no_judge: Annotated[bool, typer.Option("--no-judge", help="Metrics only; no LLM calls.")] = False,
     twin: Annotated[str | None, typer.Option(help="Agent to compare with the control agent.")] = None,
+    no_retry: Annotated[bool, typer.Option("--no-retry", help="Keep failed judgments as they are; judge only new ones.")] = False,
     config: ConfigOpt = DEFAULT_PATH,
 ) -> None:
     """User-only analysis of the community: reports and charts under the observer directory."""
@@ -476,7 +477,7 @@ def observe(
                for name, backend in cfg.observer.judges.items()}
     try:
         result = asyncio.run(run_observer(cfg, run_id=run, judge_client=client, analysis_clients=own,
-                                          twin=twin, judge_note=note, progress=lambda line: typer.echo(line, err=True)))
+                                          twin=twin, judge_note=note, retry_failed=not no_retry, progress=lambda line: typer.echo(line, err=True)))
     except (ValueError, sqlite3.OperationalError) as exc:
         _fail(str(exc))
     typer.echo(f"judgments: {result.judged} ok, {result.failed} failed")

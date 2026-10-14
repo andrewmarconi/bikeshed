@@ -57,6 +57,15 @@ async def test_second_failure_is_stored_failed_and_retried_next_time(tmp_path):
     assert retried.status == "ok"
 
 
+async def test_a_judge_that_does_not_retry_failures_returns_the_stored_failure(tmp_path):
+    judge, client = make_judge(tmp_path, [INVENTED, "not json", GOOD])
+    failed = await judge.run(ANALYSES["themes"], run_id="r1", agent_id="a", inputs=INPUTS)
+    settled = Judge(client, judge.store, "sonnet", retry_failed=False)
+    assert settled.is_cached(ANALYSES["themes"], run_id="r1", agent_id="a", inputs=INPUTS)
+    again = await settled.run(ANALYSES["themes"], run_id="r1", agent_id="a", inputs=INPUTS)
+    assert again == failed and len(client.calls) == 2
+
+
 async def test_changed_characters_in_a_quote_fail(tmp_path):
     curly = json.dumps({"themes": [{"label": "x", "polarity": "expressed",
                                     "evidence": "I value “honest” feedback", "source": "journal"}]})

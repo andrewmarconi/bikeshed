@@ -190,7 +190,7 @@ Run these from the lab folder as `uv run bikeshed <command>`. Every command read
 
 - `watch [run-id]`: a live, read-only view of a run in the terminal (default: the latest run). `q` quits, `f` toggles following.
 - `show <run-id>`: what a run decided: its answer and any minority report, noting whether the harness changed since the previous run.
-- `observe [--run <run-id>] [--no-judge] [--twin <agent>]`: the Observer's reports and charts on the community, written to the `observer/` folder (`[observer] dir` in the config). `--run` reports on one closed run only; `--no-judge` sticks to metrics and makes no model calls (as it does anyway when no `[observer] judge` is set); `--twin` compares an agent with the control agent.
+- `observe [--run <run-id>] [--no-judge | --no-retry] [--twin <agent>]`: the Observer's reports and charts on the community, written to the `observer/` folder (`[observer] dir` in the config). `--run` reports on one closed run only; `--no-judge` sticks to metrics and makes no model calls (as it does anyway when no `[observer] judge` is set); successful judgments are cached, and failed ones are tried again on every run unless `--no-retry` is given, which keeps them as they are and judges only what is new; `--twin` compares an agent with the control agent.
 - `export [--run <run-id> ...] [--since YYYY-MM-DD] [--out <dir>]`: a read-only copy of the community and Observer data as JSONL, CSV and Markdown, for analysis outside Bikeshed. It goes to `exports/<timestamp>/` next to the config unless `--out` says otherwise.
 
 ## Where things live

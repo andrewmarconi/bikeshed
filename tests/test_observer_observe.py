@@ -72,6 +72,18 @@ async def test_second_observe_uses_the_cache(lab):
     assert len(client.calls) == calls
 
 
+async def test_observe_without_retry_leaves_failed_judgments_alone(lab):
+    first = await observe(lab, judge_client=FakeModel(judge_reply, fail_times=1000))
+    assert first.failed > 0
+    client = FakeModel(judge_reply)
+    lines: list[str] = []
+    result = await observe(lab, judge_client=client, retry_failed=False, progress=lines.append)
+    assert result.failed == first.failed and client.calls == []
+    assert any("failed, not retried" in line for line in lines)
+    retried = await observe(lab, judge_client=client)
+    assert retried.failed == 0 and client.calls
+
+
 async def test_changing_the_judge_model_re_judges(lab):
     client = FakeModel(judge_reply)
     await observe(lab, judge_client=client)

@@ -155,24 +155,30 @@ def _sha(text: str) -> str:
 
 
 class Judge:
-    def __init__(self, client: ModelClient, store: ObserverStore, model_alias: str):
+    def __init__(self, client: ModelClient, store: ObserverStore, model_alias: str, *, retry_failed: bool = True):
         self.client = client
         self.store = store
         self.model_alias = model_alias
+        self.retry_failed = retry_failed  # False: a stored failure stands, like a cached judgment
 
     def key(self, analysis: Analysis, *, run_id: str, agent_id: str | None, inputs: dict[str, str]) -> str:
         """The cache key: the same analysis, inputs, prompt and model give the same judgment."""
         return _sha(json.dumps([analysis.name, run_id, agent_id, _sha(render(analysis.prompt_name)), self.model_alias,
                                 inputs], sort_keys=True, ensure_ascii=False))
 
+    def cached(self, analysis: Analysis, *, run_id: str, agent_id: str | None,
+               inputs: dict[str, str]) -> Judgment | None:
+        return self.store.cached(self.key(analysis, run_id=run_id, agent_id=agent_id, inputs=inputs),
+                                 include_failed=not self.retry_failed)
+
     def is_cached(self, analysis: Analysis, *, run_id: str, agent_id: str | None, inputs: dict[str, str]) -> bool:
-        return self.store.cached(self.key(analysis, run_id=run_id, agent_id=agent_id, inputs=inputs)) is not None
+        return self.cached(analysis, run_id=run_id, agent_id=agent_id, inputs=inputs) is not None
 
     async def run(self, analysis: Analysis, *, run_id: str, agent_id: str | None, inputs: dict[str, str]) -> Judgment:
         system = render(analysis.prompt_name)
         prompt_sha = _sha(system)
         key = self.key(analysis, run_id=run_id, agent_id=agent_id, inputs=inputs)
-        if (hit := self.store.cached(key)) is not None:
+        if (hit := self.store.cached(key, include_failed=not self.retry_failed)) is not None:
             return hit
 
         def done(status: str, result: dict[str, Any] | None, error: str | None, reported: str | None) -> Judgment:
