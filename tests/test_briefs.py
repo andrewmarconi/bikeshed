@@ -3,7 +3,7 @@ import sqlite3
 import pytest
 
 from bikeshed.briefs import (
-    EMPTY, Brief, BriefSpec, Constraint, RunBriefs, assign, load, load_conflicts, quotes_constraint, save,
+    EMPTY, Brief, BriefSpec, Constraint, RunBriefs, assign, callout, load, load_conflicts, quotes_constraint, save,
 )
 
 SPEC = BriefSpec("Saturday.", ("Use only the pantry.",),
@@ -62,3 +62,18 @@ def test_quotes_constraint_ignores_case_and_punctuation():
     assert quotes_constraint("Remember: SAM has a nut-allergy!", a)
     assert quotes_constraint("use ONLY the pantry", a)
     assert not quotes_constraint("It does not say which day.", a)
+
+
+def test_callout_names_each_holder_once_in_member_order():
+    briefs = RunBriefs(Brief(0, None, "S", (Constraint("s.c1", "Rule."),)),
+                       (Brief(1, "c", "x", (Constraint("p1.c1", "C1."), Constraint("p1.c2", "C2."))),
+                        Brief(2, "a", "y", (Constraint("p2.c1", "C3."),))))
+    who = {"a": "Alpha (a)", "b": "Bea (b)", "c": "Cyd (c)"}.get
+    text, named = callout("No dish is named.", ["p1.c2", "s.c1", "p2.c1", "p1.c1"], briefs, ["a", "b", "c"], who)
+    assert named == ["a", "c"]
+    assert text == ("No dish is named. "
+                    "The synthesis conflicts with a constraint in Alpha (a)'s private brief. "
+                    "The synthesis conflicts with a constraint in Cyd (c)'s private brief. "
+                    "The synthesis conflicts with a constraint in the shared brief.")
+    assert callout(None, ["s.c1"], briefs, ["a", "b", "c"], who) == (
+        "The synthesis conflicts with a constraint in the shared brief.", [])

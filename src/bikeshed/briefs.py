@@ -8,7 +8,7 @@ import json
 import random
 import re
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from bikeshed.db import has_table
@@ -138,3 +138,15 @@ def quotes_constraint(text: str, briefs: RunBriefs) -> bool:
     """Whether `text` restates any constraint, ignoring case, punctuation and spacing."""
     plain = _plain(text)
     return any((c_plain := _plain(c.text)) and c_plain in plain for c in briefs.constraints)
+
+
+def callout(feedback: str | None, conflicts: Sequence[str], briefs: RunBriefs, agent_ids: Sequence[str],
+            who: Callable[[str], str]) -> tuple[str, list[str]]:
+    """The rejection text members see, written by the harness: whose brief, never what it says."""
+    holders = {briefs.holder(c) for c in conflicts}
+    named = [a for a in agent_ids if a in holders]
+    lines = [feedback.strip()] if feedback and feedback.strip() else []
+    lines += [f"The synthesis conflicts with a constraint in {who(a)}'s private brief." for a in named]
+    if None in holders:
+        lines.append("The synthesis conflicts with a constraint in the shared brief.")
+    return " ".join(lines), named
