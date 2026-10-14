@@ -14,7 +14,7 @@ from bikeshed.config import DEFAULT_CONFIG, ClaudeCliBackend, Config, load_confi
 from bikeshed.db import connect
 from bikeshed.export import export
 from bikeshed.checkin import checkin
-from bikeshed.goals import GOALS_FILE, GoalError, add_goal, load_goals, next_goal, runs_since_benchmark, seed_goals, used_goals
+from bikeshed.goals import GOALS_FILE, GoalError, add_goal, brief_mark, load_goals, next_goal, runs_since_benchmark, seed_goals, used_goals
 from bikeshed.introduce import introduce
 from bikeshed.models.base import ModelError, limit_clients
 from bikeshed.models.claude_cli import ClaudeCliClient, leak_check
@@ -361,7 +361,8 @@ def goals_list(config: ConfigOpt = DEFAULT_PATH) -> None:
     used = used_goals(conn)
     for g in gf.goals:
         mark = f"used by {used[g.id]}" if g.id in used else "unused"
-        typer.echo(f"{g.id}\t{g.category}\t{mark}\t{g.text}")
+        briefs = brief_mark(g)
+        typer.echo(f"{g.id}\t{g.category}\t{mark}\t{g.text}" + (f"\t[{briefs}]" if briefs else ""))
     try:
         typer.echo(f"\nnext: {next_goal(conn, gf).id}")
     except GoalError as exc:
@@ -371,7 +372,7 @@ def goals_list(config: ConfigOpt = DEFAULT_PATH) -> None:
 @goals_app.command("add")
 def goals_add(
     text: str,
-    category: Annotated[str, typer.Option(help="unsettled or underspecified (Observer-only).")],
+    category: Annotated[str, typer.Option(help="unsettled, underspecified, distributed or contested (Observer-only).")],
     goal_id: Annotated[str | None, typer.Option("--id", help="Goal id (default: derived from the text).")] = None,
     config: ConfigOpt = DEFAULT_PATH,
 ) -> None:

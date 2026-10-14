@@ -2,9 +2,13 @@ import subprocess
 import tomllib
 
 import pytest
+from pydantic import ValidationError
 
+from bikeshed.briefs import BriefSpec
+from bikeshed.db import connect
 from bikeshed.goals import (
-    DEFAULT_GOALS, GOALS_FILE, Benchmark, Goal, GoalError, GoalFile, add_goal, load_goals, render_goals, seed_goals,
+    DEFAULT_GOALS, GOALS_FILE, Benchmark, Goal, GoalError, GoalFile, PrivateBrief, add_goal, brief_mark, load_goals,
+    next_goal, render_goals, seed_goals,
 )
 from bikeshed.profiles import ProfileStore
 
@@ -176,3 +180,61 @@ def test_load_goals_reports_a_directory(tmp_path):
     (tmp_path / GOALS_FILE).mkdir()
     with pytest.raises(GoalError, match=GOALS_FILE):
         load_goals(tmp_path / GOALS_FILE)
+
+
+BRIEFED = Goal(id="picnic", text="Plan a picnic.", category="distributed",
+               shared="Saturday at noon.\nNo fridge.", shared_constraints=["Use only the pantry."],
+               private=[PrivateBrief(text="You packed it.", constraints=["At most 6 containers."]),
+                        PrivateBrief(text='Sam is "Sammy" 🥜.')])
+
+
+def test_render_round_trips_briefs():
+    gf = GoalFile(benchmark=DEFAULT_GOALS.benchmark, goals=[BRIEFED])
+    assert GoalFile.model_validate(tomllib.loads(render_goals(gf))) == gf
+
+
+def test_render_leaves_unbriefed_goals_as_before():
+    text = render_goals(DEFAULT_GOALS)
+    assert "shared" not in text and "private" not in text
+
+
+def test_brief_spec_keeps_file_order():
+    assert BRIEFED.brief_spec() == BriefSpec(
+        "Saturday at noon.\nNo fridge.", ("Use only the pantry.",),
+        (("You packed it.", ("At most 6 containers.",)), ('Sam is "Sammy" 🥜.', ())))
+    assert DEFAULT_GOALS.goals[0].brief_spec() is None
+    assert Goal(id="g", text="t", category="underspecified", shared="Facts.").brief_spec() == BriefSpec("Facts.")
+
+
+@pytest.mark.parametrize("fields, problem", [
+    ({"shared_constraints": ["x"]}, "shared_constraints needs a shared brief"),
+    ({"shared": "x" * 3001}, "the shared brief must be 1-3000 characters"),
+    ({"private": [{"text": "x" * 990, "constraints": ["y" * 20]}]}, "at most 1000"),
+    ({"private": [{"text": "x"}] * 9}, "at most 8 items"),
+    ({"private": [{"text": "x", "constraints": ["two\nlines"]}]}, "a constraint must be a single line"),
+    ({"shared": "bell\x07"}, "control characters other than newlines"),
+])
+def test_brief_validation(fields, problem):
+    with pytest.raises(ValidationError, match=problem):
+        Goal(id="g", text="t", category="distributed", **fields)
+
+
+def test_next_goal_carries_the_brief(tmp_path):
+    conn = connect(tmp_path / "c.db")
+    conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at, is_benchmark) "
+                 "VALUES ('r0', 'b', 'closed', '[]', 't', 1)")
+    gf = GoalFile(benchmark=Benchmark(text="B", category="unsettled", every=5), goals=[BRIEFED])
+    selected = next_goal(conn, gf)
+    assert selected.id == "picnic" and selected.brief == BRIEFED.brief_spec()
+
+
+def test_add_goal_keeps_existing_briefs(store):
+    store.write_community_file(GOALS_FILE, render_goals(GoalFile(benchmark=DEFAULT_GOALS.benchmark, goals=[BRIEFED])),
+                               "seed", author="bikeshed")
+    add_goal(store, "Pick a name.", "underspecified")
+    assert load_goals(store.root / GOALS_FILE).goals[0] == BRIEFED
+
+
+def test_brief_mark():
+    assert brief_mark(BRIEFED) == "shared, 2 private"
+    assert brief_mark(DEFAULT_GOALS.goals[0]) == ""

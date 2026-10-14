@@ -12,26 +12,41 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from bikeshed.actions import summarise_validation
+from bikeshed.briefs import BriefSpec
 from bikeshed.profiles import ProfileStore
 
 GOALS_FILE = "goals.toml"
 BENCHMARK_ID = "benchmark"
 GOAL_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 TEXT_MAX = 500
+SHARED_MAX = 3_000
+PRIVATE_MAX = 1_000  # one private brief's text and constraints together
+PRIVATE_BRIEFS_MAX = 8
 # unsettled: no data could settle it (taste, values). underspecified: the question leaves out details the group must supply.
-Category = Literal["unsettled", "underspecified"]
+# distributed: private briefs hold complementary facts. contested: private briefs hold facts that pull against each other.
+Category = Literal["unsettled", "underspecified", "distributed", "contested"]
 
 
 class GoalError(ValueError):
     pass
 
 
-def _text(value: str) -> str:
+def _text(value: str, what: str = "goal text") -> str:
     value = value.strip()
     if not 1 <= len(value) <= TEXT_MAX or "\n" in value:
-        raise ValueError(f"goal text must be a single line of 1-{TEXT_MAX} characters")
+        raise ValueError(f"{what} must be a single line of 1-{TEXT_MAX} characters")
     if any(unicodedata.category(c) == "Cc" for c in value):
-        raise ValueError("goal text must not contain control characters")
+        raise ValueError(f"{what} must not contain control characters")
+    return value
+
+
+def _block(value: str, limit: int, what: str) -> str:
+    """Multi-line brief text: newlines allowed, other control characters not."""
+    value = value.strip()
+    if not 1 <= len(value) <= limit:
+        raise ValueError(f"{what} must be 1-{limit} characters")
+    if any(unicodedata.category(c) == "Cc" and c != "\n" for c in value):
+        raise ValueError(f"{what} must not contain control characters other than newlines")
     return value
 
 
@@ -48,12 +63,38 @@ class Benchmark(BaseModel):
         return _text(value)
 
 
+class PrivateBrief(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+    constraints: list[str] = Field(default_factory=list)
+
+    @field_validator("text")
+    @classmethod
+    def _text(cls, value: str) -> str:
+        return _block(value, PRIVATE_MAX, "a private brief's text")
+
+    @field_validator("constraints")
+    @classmethod
+    def _constraints(cls, value: list[str]) -> list[str]:
+        return [_text(c, "a constraint") for c in value]
+
+    @model_validator(mode="after")
+    def _size(self) -> "PrivateBrief":
+        if len(self.text) + sum(len(c) for c in self.constraints) > PRIVATE_MAX:
+            raise ValueError(f"a private brief's text and constraints must total at most {PRIVATE_MAX} characters")
+        return self
+
+
 class Goal(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
     text: str
     category: Category
+    shared: str | None = None
+    shared_constraints: list[str] = Field(default_factory=list)
+    private: list[PrivateBrief] = Field(default_factory=list, max_length=PRIVATE_BRIEFS_MAX)
 
     @field_validator("id")
     @classmethod
@@ -68,6 +109,34 @@ class Goal(BaseModel):
     @classmethod
     def _text(cls, value: str) -> str:
         return _text(value)
+
+    @field_validator("shared")
+    @classmethod
+    def _shared(cls, value: str | None) -> str | None:
+        return None if value is None else _block(value, SHARED_MAX, "the shared brief")
+
+    @field_validator("shared_constraints")
+    @classmethod
+    def _shared_constraints(cls, value: list[str]) -> list[str]:
+        return [_text(c, "a constraint") for c in value]
+
+    @model_validator(mode="after")
+    def _constraints_need_shared(self) -> "Goal":
+        if self.shared_constraints and self.shared is None:
+            raise ValueError("shared_constraints needs a shared brief")
+        return self
+
+    def brief_spec(self) -> BriefSpec | None:
+        if self.shared is None and not self.private:
+            return None
+        return BriefSpec(self.shared, tuple(self.shared_constraints),
+                         tuple((p.text, tuple(p.constraints)) for p in self.private))
+
+
+def brief_mark(goal: Goal) -> str:
+    """How `goals list` marks a briefed goal; empty for an unbriefed one."""
+    return ", ".join((["shared"] if goal.shared is not None else []) +
+                     ([f"{len(goal.private)} private"] if goal.private else []))
 
 
 class GoalFile(BaseModel):
@@ -124,6 +193,14 @@ def render_goals(gf: GoalFile) -> str:
     ]
     for goal in gf.goals:
         lines += ["", "[[goals]]", f"id = {_q(goal.id)}", f"text = {_q(goal.text)}", f"category = {_q(goal.category)}"]
+        if goal.shared is not None:
+            lines.append(f"shared = {_q(goal.shared)}")
+        if goal.shared_constraints:
+            lines.append(f"shared_constraints = [{', '.join(_q(c) for c in goal.shared_constraints)}]")
+        for brief in goal.private:
+            lines += ["", "[[goals.private]]", f"text = {_q(brief.text)}"]
+            if brief.constraints:
+                lines.append(f"constraints = [{', '.join(_q(c) for c in brief.constraints)}]")
     return "\n".join(lines) + "\n"
 
 
@@ -184,6 +261,7 @@ class Selected:
     text: str
     category: str
     is_benchmark: bool
+    brief: BriefSpec | None = None
 
 
 def _last_benchmark_rowid(conn: sqlite3.Connection) -> int | None:
@@ -218,5 +296,5 @@ def next_goal(conn: sqlite3.Connection, gf: GoalFile) -> Selected:
     used = used_goals(conn)
     for goal in gf.goals:
         if goal.id not in used:
-            return Selected(goal.id, goal.text, goal.category, False)
+            return Selected(goal.id, goal.text, goal.category, False, goal.brief_spec())
     raise GoalError("goal queue is empty; add goals with `bikeshed goals add`")
