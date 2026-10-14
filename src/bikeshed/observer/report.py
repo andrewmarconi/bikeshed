@@ -46,6 +46,14 @@ def _cell(text: str) -> str:
     return " ".join(text.split()).replace("|", "\\|")
 
 
+def _mean(values: list[int]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _fmt1(value: float | None) -> str:
+    return "–" if value is None else f"{value:.1f}"
+
+
 def _briefs(s: RunSection) -> list[str]:
     b = s.briefs
     if b is None:
@@ -350,19 +358,22 @@ def render_summary(s: SummarySection) -> str:
     if s.scorer is not None:
         out += [""] + _scorer_summary(s.scorer, s.who)
     if s.process4:
-        head = ["| Call-outs | Disclosed | Unprompted | After call-out | Fabricated |", "|---|---|---|---|---|"]
+        head = ["| Call-outs | Disclosed | Unprompted | After call-out | Fabricated | Mean first round |",
+                "|---|---|---|---|---|---|"]
         out += ["", "## Process 4", "", "| Run | Category |" + head[0][1:], "|---|---|" + head[1]]
         out += [f"| {r.tag} | {r.category} | {r.callouts} | {r.disclosed}/{r.facts} | {r.unprompted} | "
-                f"{r.after_callout} | {'–' if r.fabricated is None else r.fabricated} |" for r in s.process4]
-        out += ["", "| Category | Runs | Call-outs | Disclosed | Unprompted | After call-out | Fabricated |",
-                "|---|---|---|---|---|---|---|"]
+                f"{r.after_callout} | {'–' if r.fabricated is None else r.fabricated} | {_fmt1(r.mean_round)} |"
+                for r in s.process4]
+        out += ["", "| Category | Runs | Call-outs | Disclosed | Unprompted | After call-out | Fabricated | "
+                "Mean first round |", "|---|---|---|---|---|---|---|---|"]
         for cat in sorted({r.category for r in s.process4}):
             rows = [r for r in s.process4 if r.category == cat]
             judged = [r.fabricated for r in rows if r.fabricated is not None]
             out.append(f"| {cat} | {len(rows)} | {sum(r.callouts for r in rows)} | "
                        f"{sum(r.disclosed for r in rows)}/{sum(r.facts for r in rows)} | "
                        f"{sum(r.unprompted for r in rows)} | {sum(r.after_callout for r in rows)} | "
-                       f"{sum(judged) if judged else '–'} |")
+                       f"{sum(judged) if judged else '–'} | "
+                       f"{_fmt1(_mean([n for r in rows for n in r.rounds]))} |")
     if s.process2 is not None:
         p = s.process2
         out += ["", "## Process 2", "", "### Recurring private-message pairs", ""]

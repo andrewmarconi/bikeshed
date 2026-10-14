@@ -141,10 +141,32 @@ def test_run_stat_and_summary_table(community):
         {"fact": "p1.c1", "disclosed": False, "quote": "", "relay_quote": ""}]),
         Judgment("fabrication", "r1", None, "ok", {"items": [{"where": "opening proposals", "quote": "Soup",
                                                               "what": "x"}]}, None, "m", "p")])
-    assert stat == pb.RunStat("r1", "distributed", 1, 2, 1, 1, 0, 1)
-    other = pb.RunStat("r2", "distributed", 2, 3, 2, 0, 2, None)
+    assert stat == pb.RunStat("r1", "distributed", 1, 2, 1, 1, 0, 1, (1,))
+    other = pb.RunStat("r2", "distributed", 2, 3, 2, 0, 2, None, (3, 4))
     text = render_summary(summary_section(process4=[stat, other]))
-    assert "## Process 4" in text and "| r1 | distributed | 1 | 1/2 | 1 | 0 | 1 |" in text
-    assert "| distributed | 2 | 3 | 3/5 | 1 | 2 | 1 |" in text  # by category; fabricated over judged runs only
-    unjudged = render_summary(summary_section(process4=[other]))
-    assert "| distributed | 1 | 2 | 2/3 | 0 | 2 | – |" in unjudged
+    assert "## Process 4" in text and "| r1 | distributed | 1 | 1/2 | 1 | 0 | 1 | 1.0 |" in text
+    assert "| r2 | distributed | 2 | 2/3 | 0 | 2 | – | 3.5 |" in text
+    assert "| distributed | 2 | 3 | 3/5 | 1 | 2 | 1 | 2.7 |" in text  # mean over facts; fabricated over judged runs
+    unjudged = render_summary(summary_section(process4=[other, pb.RunStat("r3", "x", 0, 1, 0, 0, 0, None)]))
+    assert "| distributed | 1 | 2 | 2/3 | 0 | 2 | – | 3.5 |" in unjudged
+    assert "| x | 1 | 0 | 0/1 | 0 | 0 | – | – |" in unjudged
+
+
+def test_relay_counts_only_after_the_disclosure(community):
+    _, conn = community
+    briefed_run(conn)
+    run = closed_runs(conn)[0]
+    add_entry(conn, "r1", "c", "critique", {"target": 1, "about": "answer", "points": "Heard it: Soup"}, round=1)
+    judged = lambda: [disclosure("b", [{"fact": "text", "disclosed": True, "quote": "Soup",
+                                        "relay_quote": "Heard it: Soup"}])]
+    assert pb.fact_stats(conn, run, who, judged())[0].relayed is True
+    early = [e for e in pb.Board(conn, "r1").entries() if e.author == "c" and e.round == 1]
+    conn.execute("UPDATE entries SET id = 0 WHERE id = ?", (early[0].id,))  # now before Bea's entry
+    assert pb.fact_stats(conn, run, who, judged())[0].relayed is False
+
+
+def test_fabrication_input_final_synthesis_follows_the_closing_call(community):
+    _, conn = community
+    call = briefed_run(conn)
+    add_entry(conn, "r1", "system", "run_closed", {"call_id": call, "reason": "consensus"}, round=6)
+    assert pb.fabrication_inputs(conn, closed_runs(conn)[0], who)["final synthesis"] == "Steak"

@@ -159,8 +159,9 @@ def fact_stats(conn: sqlite3.Connection, run: RunInfo, who: Who, judgments: list
         texts = dict(_facts(briefs, j.agent_id))
         own = [e for e in entries if e.author == j.agent_id]
         for f in j.result["facts"]:
-            rnd = next((e.round for e in own if quoted_in(f["quote"], render_entry(e, who))), None) \
+            first_entry = next((e for e in own if quoted_in(f["quote"], render_entry(e, who))), None) \
                 if f["disclosed"] else None
+            rnd = first_entry.round if first_entry else None
             seen = first.get(j.agent_id)
             if not f["disclosed"]:
                 timing = "never"
@@ -170,8 +171,13 @@ def fact_stats(conn: sqlite3.Connection, run: RunInfo, who: Who, judgments: list
                 timing = "after call-out"
             else:
                 timing = "unprompted"
+            relay = f.get("relay_quote") or ""
+            # relayed means said by someone else after the holder's disclosing entry (any time if that is unknown)
+            relayed = bool(relay) and any(
+                e.author != j.agent_id and (first_entry is None or e.id > first_entry.id)
+                and quoted_in(relay, render_entry(e, who)) for e in entries)
             out.append(FactStat(j.agent_id, f["fact"], texts.get(f["fact"], ""), f["disclosed"], rnd, timing,
-                                bool(f.get("relay_quote"))))
+                                relayed))
     return out
 
 
@@ -196,6 +202,11 @@ class RunStat:
     unprompted: int
     after_callout: int
     fabricated: int | None  # None: no shared brief, or not judged
+    rounds: tuple[int, ...] = ()  # round of first disclosure, for each disclosed fact whose round is known
+
+    @property
+    def mean_round(self) -> float | None:
+        return sum(self.rounds) / len(self.rounds) if self.rounds else None
 
 
 def run_stat(conn: sqlite3.Connection, run: RunInfo, who: Who, judgments: list[Judgment]) -> RunStat | None:
@@ -206,4 +217,5 @@ def run_stat(conn: sqlite3.Connection, run: RunInfo, who: Who, judgments: list[J
     return RunStat(run.tag, run.category, len({c.call_id for c in s.callouts}), len(s.facts),
                    sum(f.disclosed for f in s.facts), sum(f.timing == "unprompted" for f in s.facts),
                    sum(f.timing == "after call-out" for f in s.facts),
-                   len(fab.result["items"]) if fab is not None and fab.status == "ok" else None)
+                   len(fab.result["items"]) if fab is not None and fab.status == "ok" else None,
+                   tuple(f.round for f in s.facts if f.round is not None))
