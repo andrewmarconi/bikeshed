@@ -452,7 +452,7 @@ def show(run_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
     start = next((p for p in provenance_rows(conn, run_id) if p.phase == "start"), None)
     if start and start.code_dirty:
         typer.echo("Note: this run started from uncommitted Bikeshed code.\n")
-    for name in ("answer.md", "minority.md", "account.md", "narrative.md"):
+    for name in ("answer.md", "minority.md", "briefs.md", "account.md", "narrative.md"):
         path = report / name
         if path.exists():
             typer.echo(path.read_text())

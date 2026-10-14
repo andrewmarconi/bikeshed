@@ -150,3 +150,22 @@ def callout(feedback: str | None, conflicts: Sequence[str], briefs: RunBriefs, a
     if None in holders:
         lines.append("The synthesis conflicts with a constraint in the shared brief.")
     return " ".join(lines), named
+
+
+def reveal(briefs: RunBriefs, conflicts: Sequence[tuple[int, str]], who: Callable[[str], str]) -> str:
+    """After the run, everything: every brief under its holder's name, and each call-out with what it hit."""
+    if briefs.empty:
+        return ""
+    lines = ["## The briefs this run"]
+    if briefs.shared is not None:
+        lines += ["", "### Shared brief", brief_body(briefs.shared)]
+    for brief in briefs.private:
+        lines += ["", f"### {who(brief.agent_id)}'s private brief", brief_body(brief)]
+    if conflicts:
+        text = {c.id: c.text for c in briefs.constraints}
+        lines += ["", "### Scorer call-outs"]
+        for call_id, constraint_id in conflicts:
+            holder = briefs.holder(constraint_id)
+            whose = f"{who(holder)}'s private brief" if holder else "the shared brief"
+            lines.append(f"- call #{call_id}: \"{text.get(constraint_id, constraint_id)}\" ({whose})")
+    return "\n".join(lines)

@@ -3,7 +3,7 @@ import sqlite3
 import pytest
 
 from bikeshed.briefs import (
-    EMPTY, Brief, BriefSpec, Constraint, RunBriefs, assign, callout, load, load_conflicts, quotes_constraint, save,
+    EMPTY, Brief, BriefSpec, Constraint, RunBriefs, assign, callout, load, load_conflicts, quotes_constraint, reveal, save,
 )
 
 SPEC = BriefSpec("Saturday.", ("Use only the pantry.",),
@@ -77,3 +77,15 @@ def test_callout_names_each_holder_once_in_member_order():
                     "The synthesis conflicts with a constraint in the shared brief.")
     assert callout(None, ["s.c1"], briefs, ["a", "b", "c"], who) == (
         "The synthesis conflicts with a constraint in the shared brief.", [])
+
+
+def test_reveal_lists_every_brief_and_each_callout():
+    briefs = RunBriefs(Brief(0, None, "Shared.", (Constraint("s.c1", "Use the list."),)),
+                       (Brief(1, "b", "One.", (Constraint("p1.c1", "C-one."),)), Brief(2, "a", "Two.")))
+    who = {"a": "Alpha (a)", "b": "Bea (b)"}.get
+    assert reveal(briefs, [(12, "p1.c1"), (12, "s.c1")], who) == (
+        "## The briefs this run\n\n### Shared brief\nShared.\n- Use the list.\n\n"
+        "### Bea (b)'s private brief\nOne.\n- C-one.\n\n### Alpha (a)'s private brief\nTwo.\n\n"
+        "### Scorer call-outs\n- call #12: \"C-one.\" (Bea (b)'s private brief)\n"
+        "- call #12: \"Use the list.\" (the shared brief)")
+    assert reveal(EMPTY, [], who) == ""

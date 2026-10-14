@@ -35,7 +35,7 @@ def interactions(
 
 def feedback_packet(
     agent_id: str, *, run_id: str, goal: str, entries: Sequence[Entry], who: Who, answer: str,
-    failures: Sequence[tuple[int, str, str]],
+    failures: Sequence[tuple[int, str, str]], briefs: str = "",
 ) -> str:
     by_id = {entry.id: entry for entry in entries}
     closed = next((entry for entry in reversed(entries) if entry.type == "run_closed"), None)
@@ -74,6 +74,8 @@ def feedback_packet(
 
     lines += ["", "## The outcome", answer.strip() or "(no report)", "", "## Your failed steps"]
     lines += [f"- round {rnd}: {kind}: {detail}" for rnd, kind, detail in failures] or ["(none)"]
+    if briefs:  # Process 4: after the run every brief is revealed
+        lines += ["", briefs]
     return "\n".join(lines)
 
 

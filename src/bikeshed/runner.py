@@ -12,7 +12,7 @@ from typing import Any
 from bikeshed.actions import NOTE_MAX, POLL, STEP, STEP_P2, THINK, Pass, PrivateMessage, WriteFile, target_refs
 from bikeshed.agent import StepOutcome, make_reader, make_validator, system_prompt, take_step
 from bikeshed.board import SYSTEM, Board, Entry, public
-from bikeshed.briefs import BriefSpec, assign, callout, too_many
+from bikeshed.briefs import BriefSpec, assign, callout, load_conflicts, reveal, too_many
 from bikeshed.briefs import load as load_briefs
 from bikeshed.briefs import save as save_briefs
 from bikeshed.config import RunSettings
@@ -453,6 +453,7 @@ class Runner:
                 "UPDATE runs SET status = 'closed', ended_reason = ? WHERE id = ?", (decision.reason, run_id)
             )
         who = make_who({i: self.store.public(i) for i in self.store.ids()})
-        write_report(self.runs_dir / run_id, goal, public(board.entries()), decision, who)
+        write_report(self.runs_dir / run_id, goal, public(board.entries()), decision, who,
+                     briefs=reveal(load_briefs(self.conn, run_id), load_conflicts(self.conn, run_id), who))
         events.emit("run_closed", reason=decision.reason, call_id=decision.call_id)
         return RunResult(run_id, "closed", decision.reason, decision.call_id)
