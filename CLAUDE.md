@@ -22,15 +22,33 @@ The CLI reads `bikeshed.toml` from the current directory (`-c` to override). The
 
 ```bash
 cd lab
-uv run bikeshed run --next --process 2   # next goal from the queue; 1 = everyone at once (default), 2 = think → react → poll
-uv run bikeshed run --resume <run-id>
-uv run bikeshed watch [run-id]           # read-only Textual TUI
-uv run bikeshed postrun <run-id>         # start/resume/retry the post-run cycle
-uv run bikeshed observe [--run <id>] [--no-judge]
-uv run bikeshed abandon <run-id>
+# setup
+uv run bikeshed init                     # bikeshed.toml (if missing), community repo + db, runs/
 uv run bikeshed doctor                   # backend reachability + claude -p leak check
-uv run bikeshed agents list|show|timeline|new|introduce|set-model|checkin
-uv run bikeshed goals list|add
+
+# agents (show/timeline are observer views)
+uv run bikeshed agents new <id> --model <backend> --temperament-file <f> [--control]   # control = reset to seed every run
+uv run bikeshed agents introduce <id>    # (re)write its first public profile
+uv run bikeshed agents set-model <id> <backend>   # refused while the agent is in an unclosed run
+uv run bikeshed agents checkin [--agent <id>]     # offer a name change, ask pronouns
+uv run bikeshed agents list | show <id> | timeline <agent> [--since <run-id>]
+
+# goals (category is Observer-only, never shown to agents)
+uv run bikeshed goals add "<text>" --category unsettled|underspecified [--id <id>]
+uv run bikeshed goals list               # benchmark, queue, what --next would take
+
+# runs
+uv run bikeshed run "<goal>" | --next    # --next = queue (or benchmark when due)
+    # --process 1|2 (1 = everyone at once, default; 2 = think → react → poll), --agent <id>..., --max-rounds N, --no-postrun
+uv run bikeshed run --resume <run-id>    # paused or interrupted run
+uv run bikeshed abandon <run-id> [-y]    # close for good; entries kept, no post-run
+uv run bikeshed postrun <run-id>         # start/resume/retry the post-run cycle
+
+# read-only (never reaches agents)
+uv run bikeshed watch [run-id]           # Textual TUI, latest run by default
+uv run bikeshed show <run-id>            # answer + minority report, flags harness changes
+uv run bikeshed observe [--run <id>] [--no-judge] [--twin <agent>]   # reports/charts → observer/; twin = compare with control
+uv run bikeshed export [--run <id>...] [--since YYYY-MM-DD] [--out <dir>]   # JSONL/CSV/MD → exports/<timestamp>/
 ```
 
 `lab/init-agents.sh [backend]` creates one agent per `lab/temperaments/<id>.md` (`e` is the control agent).
