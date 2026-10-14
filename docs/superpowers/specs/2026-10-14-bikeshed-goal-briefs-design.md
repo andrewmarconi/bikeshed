@@ -80,7 +80,7 @@ Each member received their own private brief; you can see only yours. The Scorer
 - Constraint ids are never shown to agents. Constraints appear as plain bullets.
 - The `# Current goal` footer is unchanged.
 - Process 2's think, react and poll views use the same builder and show the same sections.
-- The agent system prompts (`agent_system.md`, `process2_agent_system.md`) describe what the Scorer checks, and in a briefed run that description must stay true. Following the `$close_rule` pattern, a `$scorer_briefs` variable is empty for a run without briefs and otherwise adds, after "gives the concrete answer the goal asks for": "and conflicts with no constraint in any member's brief; if it does, its feedback names whose brief, not what the constraint says". The wording states the rule; it does not suggest how to act under it.
+- The agent system prompts (`agent_system.md`, `process2_agent_system.md`) describe what the Scorer checks, and in a briefed run that description must stay true. Following the `$close_rule` pattern, a `$scorer_briefs` variable is empty unless the run has constraints, and otherwise adds, after "it does not judge whether the answer is good.": "It also rejects a call whose synthesis conflicts with a constraint in any member's brief; its feedback then names whose brief, not what the constraint says." The wording states the rule; it does not suggest how to act under it.
 - A run without briefs produces byte-identical views, so the Process 1 golden recording does not change.
 - Privacy invariant, enforced by test like the existing ones: no agent's View, read results or prompts contain another member's private text or constraints.
 
@@ -123,7 +123,7 @@ New table `scorer_conflicts`: `run_id`, `call_id`, `constraint_id`. It records e
 
 Post-run reveals everything:
 
-- `feedback_packet` gains `## The briefs this run`: the shared brief and constraints, then each member's private brief and constraints under their name, then each call-out (call id, constraint text, whose brief). Every step built on the packet gets it (journal, review, responses, update), so a named review can cite who knew what and when they said it.
+- `feedback_packet` gains `## The briefs this run`: the shared brief and constraints, then each member's private brief and constraints under their name, then each call-out (call id, constraint text, whose brief). The journal and update steps get it through the packet, and the review step gets it appended to its transcript (its template is unchanged), so a named review can cite who knew what and when they said it. The responses step answers reviews and gets nothing new.
 - The narrative's account and `bikeshed show` include the same section.
 - The Method Library stores methods with the goal text only, never with briefs: briefs belong to one run and would mislead agents if retrieved in a later one.
 
