@@ -74,8 +74,12 @@ def _briefs(s: RunSection) -> list[str]:
     out += ["", "### Call-out reactions", ""]
     for r in b.reactions:
         out += [f"#### r{r.round}, after {s.who(r.named)} was named", ""]
+        if r.ended:
+            out += ["_The run ended before another round._", ""]
+            continue
         out += ["```text", *r.entries, "```"] if r.entries else ["_No entry referred to them._"]
-        out.append("")
+        said = {None: "not judged", True: "yes", False: "no"}[r.disclosed]
+        out += ["", f"Named member disclosed in r{r.round}: {said}", ""]
     if not b.reactions:
         out += ["_No member was named._", ""]
     if b.has_shared:
@@ -366,8 +370,9 @@ def render_summary(s: SummarySection) -> str:
                 for r in s.process4]
         out += ["", "| Category | Runs | Call-outs | Disclosed | Unprompted | After call-out | Fabricated | "
                 "Mean first round |", "|---|---|---|---|---|---|---|---|"]
-        for cat in sorted({r.category for r in s.process4}):
-            rows = [r for r in s.process4 if r.category == cat]
+        key = lambda r: r.category if r.process == 1 else f"{r.category} (P2)"  # as by_category does
+        for cat in sorted({key(r) for r in s.process4}):
+            rows = [r for r in s.process4 if key(r) == cat]
             judged = [r.fabricated for r in rows if r.fabricated is not None]
             out.append(f"| {cat} | {len(rows)} | {sum(r.callouts for r in rows)} | "
                        f"{sum(r.disclosed for r in rows)}/{sum(r.facts for r in rows)} | "

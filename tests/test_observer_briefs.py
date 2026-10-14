@@ -1,3 +1,5 @@
+import dataclasses
+
 from observer_helpers import add_briefs, add_conflict, add_entry, add_run
 
 from bikeshed.briefs import Brief, Constraint, RunBriefs
@@ -43,6 +45,45 @@ def test_reactions_are_next_round_entries_that_refer_to_the_named_member(communi
     [reaction] = pb.reactions(conn, closed_runs(conn)[0], who)
     assert (reaction.round, reaction.named) == (4, "b")
     assert len(reaction.entries) == 1 and "Bea, what is it?" in reaction.entries[0]
+
+
+def test_reaction_says_whether_the_named_member_disclosed_that_round(community):
+    from test_observer_report import section
+
+    _, conn = community
+    briefed_run(conn)
+    add_entry(conn, "r1", "b", "critique", {"target": 1, "about": "answer", "points": "The cap is $15 each."}, round=4)
+    run = closed_runs(conn)[0]
+
+    def fact(rnd):
+        return disclosure("b", [{"fact": "p1.c1", "disclosed": True, "quote": "The cap is $15 each.",
+                                 "relay_quote": ""}]) if rnd else disclosure("b", [
+            {"fact": "p1.c1", "disclosed": False, "quote": "", "relay_quote": ""}])
+
+    def lines(judgments):
+        sec = pb.section(conn, run, who, judgments)
+        return render_run(section(run=run, briefs=sec))
+
+    assert pb.section(conn, run, who, [fact(4)]).reactions[0].disclosed is True
+    assert "Named member disclosed in r4: yes" in lines([fact(4)])
+    assert pb.section(conn, run, who, [fact(0)]).reactions[0].disclosed is False
+    assert "Named member disclosed in r4: no" in lines([fact(0)])
+    assert pb.section(conn, run, who, []).reactions[0].disclosed is None
+    assert "Named member disclosed in r4: not judged" in lines([])
+
+
+def test_a_callout_in_the_last_round_says_the_run_ended(community):
+    from test_observer_report import section
+
+    _, conn = community
+    briefed_run(conn)
+    conn.execute("DELETE FROM entries WHERE round > 3")
+    run = closed_runs(conn)[0]
+    [reaction] = pb.reactions(conn, run, who)
+    assert reaction.ended is True
+    text = render_run(section(run=run, briefs=pb.section(conn, run, who, [])))
+    assert "_The run ended before another round._" in text
+    assert "No entry referred to them" not in text and "Named member disclosed" not in text
 
 
 def test_unbriefed_runs_have_no_section(community):
@@ -150,6 +191,9 @@ def test_run_stat_and_summary_table(community):
     unjudged = render_summary(summary_section(process4=[other, pb.RunStat("r3", "x", 0, 1, 0, 0, 0, None)]))
     assert "| distributed | 1 | 2 | 2/3 | 0 | 2 | – | 3.5 |" in unjudged
     assert "| x | 1 | 0 | 0/1 | 0 | 0 | – | – |" in unjudged
+    p2 = render_summary(summary_section(process4=[other, dataclasses.replace(other, tag="r4", process=2)]))
+    assert "| distributed | 1 | 2 | 2/3 | 0 | 2 | – | 3.5 |" in p2
+    assert "| distributed (P2) | 1 | 2 | 2/3 | 0 | 2 | – | 3.5 |" in p2
 
 
 def test_relay_counts_only_after_the_disclosure(community):

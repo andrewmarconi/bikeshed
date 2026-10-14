@@ -6,6 +6,7 @@ Read-only like the rest of the Observer. Nothing here reaches an agent.
 import json
 import re
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from bikeshed.board import SYSTEM, Board, Entry
@@ -43,6 +44,8 @@ class Reaction:
     round: int  # the round after the call-out
     named: str
     entries: tuple[str, ...]  # rendered entries from that round that refer to the named member
+    disclosed: bool | None = None  # whether the named member disclosed a fact in `round`; None: not judged
+    ended: bool = False  # the board has no entry at all in `round`: the run ended first
 
 
 def _strings(value: object):
@@ -67,7 +70,7 @@ def _refers(entry: Entry, agent_id: str, name: str, theirs: set[int]) -> bool:
     return any(pattern.search(text) for text in _strings(entry.payload))
 
 
-def reactions(conn: sqlite3.Connection, run: RunInfo, who: Who) -> list[Reaction]:
+def reactions(conn: sqlite3.Connection, run: RunInfo, who: Who, facts: Sequence["FactStat"] = ()) -> list[Reaction]:
     entries = Board(conn, run.id).entries()
     out: list[Reaction] = []
     seen: set[tuple[int, str]] = set()
@@ -79,7 +82,10 @@ def reactions(conn: sqlite3.Connection, run: RunInfo, who: Who) -> list[Reaction
         name = who(c.holder).rsplit(" (", 1)[0]
         found = [e for e in entries if e.round == c.round + 1 and e.author not in (c.holder, SYSTEM)
                  and _refers(e, c.holder, name, theirs)]
-        out.append(Reaction(c.round + 1, c.holder, tuple(render_entry(e, who) for e in found)))
+        theirs_judged = [f for f in facts if f.agent_id == c.holder]
+        out.append(Reaction(c.round + 1, c.holder, tuple(render_entry(e, who) for e in found),
+                            any(f.round == c.round + 1 for f in theirs_judged) if theirs_judged else None,
+                            not any(e.round == c.round + 1 for e in entries)))
     return out
 
 
@@ -185,9 +191,9 @@ def section(conn: sqlite3.Connection, run: RunInfo, who: Who, judgments: list[Ju
     briefs = load_briefs(conn, run.id)
     if briefs.empty:
         return None
+    facts = fact_stats(conn, run, who, judgments)
     return BriefsSection(
-        callouts=callouts(conn, run.id), reactions=reactions(conn, run, who),
-        facts=fact_stats(conn, run, who, judgments),
+        callouts=callouts(conn, run.id), reactions=reactions(conn, run, who, facts), facts=facts,
         fabrication=next((j for j in judgments if j.analysis == "fabrication"), None),
         has_shared=briefs.shared is not None, closed_by_consensus=run.ended_reason == "consensus")
 
@@ -203,6 +209,7 @@ class RunStat:
     after_callout: int
     fabricated: int | None  # None: no shared brief, or not judged
     rounds: tuple[int, ...] = ()  # round of first disclosure, for each disclosed fact whose round is known
+    process: int = 1
 
     @property
     def mean_round(self) -> float | None:
@@ -218,4 +225,4 @@ def run_stat(conn: sqlite3.Connection, run: RunInfo, who: Who, judgments: list[J
                    sum(f.disclosed for f in s.facts), sum(f.timing == "unprompted" for f in s.facts),
                    sum(f.timing == "after call-out" for f in s.facts),
                    len(fab.result["items"]) if fab is not None and fab.status == "ok" else None,
-                   tuple(f.round for f in s.facts if f.round is not None))
+                   tuple(f.round for f in s.facts if f.round is not None), run.process)
