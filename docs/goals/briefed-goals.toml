@@ -42,13 +42,13 @@ category = "distributed"
 shared = """
 The picnic is on Saturday at Riverside Park, from noon to 3pm, for the group and any guests. There is no fridge, grill or running water at the park.
 
-Everything comes from the shared pantry: a loaf of sourdough, a baguette, cheddar, brie, sliced ham, hummus, peanut butter, a jar of pesto, six apples, a bunch of grapes, a bag of mixed nuts, a pack of oat biscuits, carrots, cucumbers, cherry tomatoes, a carton of orange juice and two bottles of sparkling water.
+Everything comes from the shared pantry. From the fridge: cheddar, brie, sliced ham, hummus and a carton of orange juice. From the cupboard: a loaf of sourdough, a baguette, peanut butter, a jar of basil pesto (made with pine nuts), a bag of mixed nuts, a pack of oat biscuits (nut-free), six apples, a bunch of grapes, carrots, cucumbers, cherry tomatoes and two bottles of sparkling water.
 """
 shared_constraints = ["Use only food from the pantry list above."]
 
 [[goals.private]]
-text = "You packed this basket for the last picnic and know what fits in it."
-constraints = ["The basket holds at most 6 containers."]
+text = "You packed this basket for the last picnic."
+constraints = ["The basket holds at most 6 of the pantry items listed above; each item counts as one."]
 
 [[goals.private]]
 text = "You're bringing your cousin Sam to the picnic."
@@ -56,7 +56,7 @@ constraints = ["Sam has a severe nut allergy: nothing containing nuts or peanuts
 
 [[goals.private]]
 text = "You checked the forecast this morning: 31°C and sunny, and the usual spot has no shade until 2pm. You also found that the cooler bag is broken."
-constraints = ["Nothing that has to be kept cold, because there is no working cooler bag."]
+constraints = ["Nothing from the fridge, because there is no working cooler bag."]
 
 [[goals.private]]
 text = "You looked in the pantry last night. The brie is past its date and the baguette is stale; everything else is fine."
@@ -69,34 +69,34 @@ id = "offsite-briefed"
 text = "Choose the venue and dates for the team's two-day offsite."
 category = "distributed"
 shared = """
-The offsite is two consecutive weekdays in November for the five of you. These venues have replied:
+The offsite is two consecutive weekdays in November 2026 for the five of you. These venues have replied:
 
-- Harbour Lodge: by the sea, 2 hours by train. $380 per person for the two days, meals included. Free on 4-5, 11-12 and 25-26 November.
-- Pinecrest Retreat: in the hills, 3 hours by car; no train. $290 per person, meals included. Free on 11-12 and 18-19 November.
+- Harbour Lodge: by the sea, 2 hours by train. $380 per person for the two days, meals included. Free on Wed 4-Thu 5, Wed 11-Thu 12 and Wed 25-Thu 26 November.
+- Pinecrest Retreat: in the hills, 3 hours by car; no train. $290 per person, meals included. Free on Wed 11-Thu 12 and Wed 18-Thu 19 November.
 - The Foundry: a converted warehouse in the city centre, 20 minutes by metro. $240 per person, lunch only. Free on any weekday.
-- Lakeview Hotel: by a lake, 1.5 hours by train. $420 per person, meals included. Free on 18-19 and 25-26 November.
+- Lakeview Hotel: by a lake, 1.5 hours by train. $420 per person, meals included. Free on Wed 18-Thu 19 and Wed 25-Thu 26 November.
 
 All four have a meeting room with a projector.
 """
 shared_constraints = ["Choose one of the venues above and two consecutive weekdays on which it is free."]
 
 [[goals.private]]
-text = "You manage the team's budget for the year."
+text = "Finance told you the venue budget for the offsite."
 constraints = ["The venue may cost no more than $1,600 for all five people."]
 
 [[goals.private]]
-text = "You use a wheelchair. Last week you emailed the venues: Pinecrest's meeting room is up a flight of stairs; The Foundry and Harbour Lodge are step-free throughout; Lakeview has not replied."
-constraints = ["The venue must be step-free throughout."]
+text = "You use a wheelchair. Last week you emailed the venues about access."
+constraints = ["The venue must be one that has confirmed it is step-free throughout: The Foundry or Harbour Lodge. Pinecrest's meeting room is up a flight of stairs, and Lakeview has not replied."]
 
 [[goals.private]]
-text = "You are presenting at a conference in Lisbon from 10 to 13 November."
+text = "You are presenting at a conference in Lisbon from Tue 10 to Fri 13 November."
 constraints = ["The offsite cannot fall on 10-13 November."]
 
 [[goals.private]]
 text = "You don't drive, and nobody else on the team has a car in November."
 
 [[goals.private]]
-text = "The Foundry's events manager told you on the phone that the building closes for renovation from 16 to 30 November."
+text = "The Foundry's events manager told you on the phone that the building closes for renovation from Mon 16 to Mon 30 November."
 
 [[goals]]
 id = "film-night"

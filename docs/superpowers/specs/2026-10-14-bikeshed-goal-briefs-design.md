@@ -46,7 +46,7 @@ constraints = ["Sam has a severe nut allergy."]
 Two values join `unsettled` and `underspecified`, both Observer-only as before:
 
 - `distributed`: the private facts complement each other; together they make an answer possible.
-- `contested`: the private constraints conflict, so some member's constraint cannot be fully met.
+- `contested`: the private briefs hold facts that conflict, so some member's situation cannot be fully served.
 
 A goal with only a shared brief keeps whichever category fits, usually `underspecified`.
 
