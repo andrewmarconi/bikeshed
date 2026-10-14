@@ -1,0 +1,152 @@
+# Process 4 starter goals: copy the [[goals]] tables into the lab's community/goals.toml.
+# Categories are for the Observer only; no agent ever sees this file. Briefs reach agents only through their views.
+# In contested goals the conflicting facts are brief text; constraints must always be satisfiable together.
+
+[[goals]]
+id = "dinner-listed"
+text = "Choose where the group should go for dinner tonight."
+category = "underspecified"
+shared = """
+The group is meeting at Elm Street station at 7pm. These restaurants are open tonight within walking distance:
+
+- Casa Lupe (Mexican): 8-minute walk. Mains $14-19. Vegetarian dishes are marked on the menu. Takes reservations for groups of up to 6.
+- Noodle Bar 88 (Chinese): 5-minute walk. Mains $11-15. No reservations; the usual wait at 7pm is 30-40 minutes.
+- The Copper Pot (pub): 12-minute walk. Mains $16-24. The dining room is upstairs and there is no lift.
+- Saffron House (Indian): 15-minute walk. Mains $13-18. Several vegan dishes. Closes at 9:30pm.
+- Bistro Marguerite (French): 10-minute walk. Mains $26-38. Fully booked until 8:45pm.
+- Green Bowl (salads and grain bowls): 3-minute walk. Bowls $12-15. Counter service; 12 seats at shared tables.
+"""
+shared_constraints = ["Choose one of the restaurants listed above."]
+
+[[goals]]
+id = "sunday-listed"
+text = "Plan a Sunday for the group with $20 per person to spend."
+category = "underspecified"
+shared = """
+These are the options for Sunday:
+
+- Farmers' market: 9am-1pm, free entry. Coffee and a pastry cost about $7.
+- Botanic garden: 10am-5pm, $8 entry, free after 3pm.
+- City museum: 10am-6pm, $12 entry. A free guided tour starts at 2pm.
+- Bike hire by the river: $6 an hour.
+- Lakeside picnic area: free. The shop beside it sells sandwiches for $6.
+- Matinee at the Rialto cinema: 1:30pm or 4pm, $9.
+- Bus day pass: $5. Every option above is on a bus route; the market and the garden are a 20-minute walk apart.
+"""
+shared_constraints = ["Use only the options listed above.", "Spend no more than $20 per person in total, buses included."]
+
+[[goals]]
+id = "picnic-briefed"
+text = "Plan a picnic menu that has to fit in a single basket."
+category = "distributed"
+shared = """
+The picnic is on Saturday at Riverside Park, from noon to 3pm, for the group and any guests. There is no fridge, grill or running water at the park.
+
+Everything comes from the shared pantry: a loaf of sourdough, a baguette, cheddar, brie, sliced ham, hummus, peanut butter, a jar of pesto, six apples, a bunch of grapes, a bag of mixed nuts, a pack of oat biscuits, carrots, cucumbers, cherry tomatoes, a carton of orange juice and two bottles of sparkling water.
+"""
+shared_constraints = ["Use only food from the pantry list above."]
+
+[[goals.private]]
+text = "You packed this basket for the last picnic and know what fits in it."
+constraints = ["The basket holds at most 6 containers."]
+
+[[goals.private]]
+text = "You're bringing your cousin Sam to the picnic."
+constraints = ["Sam has a severe nut allergy: nothing containing nuts or peanuts."]
+
+[[goals.private]]
+text = "You checked the forecast this morning: 31°C and sunny, and the usual spot has no shade until 2pm. You also found that the cooler bag is broken."
+constraints = ["Nothing that has to be kept cold, because there is no working cooler bag."]
+
+[[goals.private]]
+text = "You looked in the pantry last night. The brie is past its date and the baguette is stale; everything else is fine."
+
+[[goals.private]]
+text = "You'll carry the basket on the 25-minute walk from the bus stop. Last time, the juice carton leaked over everything."
+
+[[goals]]
+id = "offsite-briefed"
+text = "Choose the venue and dates for the team's two-day offsite."
+category = "distributed"
+shared = """
+The offsite is two consecutive weekdays in November for the five of you. These venues have replied:
+
+- Harbour Lodge: by the sea, 2 hours by train. $380 per person for the two days, meals included. Free on 4-5, 11-12 and 25-26 November.
+- Pinecrest Retreat: in the hills, 3 hours by car; no train. $290 per person, meals included. Free on 11-12 and 18-19 November.
+- The Foundry: a converted warehouse in the city centre, 20 minutes by metro. $240 per person, lunch only. Free on any weekday.
+- Lakeview Hotel: by a lake, 1.5 hours by train. $420 per person, meals included. Free on 18-19 and 25-26 November.
+
+All four have a meeting room with a projector.
+"""
+shared_constraints = ["Choose one of the venues above and two consecutive weekdays on which it is free."]
+
+[[goals.private]]
+text = "You manage the team's budget for the year."
+constraints = ["The venue may cost no more than $1,600 for all five people."]
+
+[[goals.private]]
+text = "You use a wheelchair. Last week you emailed the venues: Pinecrest's meeting room is up a flight of stairs; The Foundry and Harbour Lodge are step-free throughout; Lakeview has not replied."
+constraints = ["The venue must be step-free throughout."]
+
+[[goals.private]]
+text = "You are presenting at a conference in Lisbon from 10 to 13 November."
+constraints = ["The offsite cannot fall on 10-13 November."]
+
+[[goals.private]]
+text = "You don't drive, and nobody else on the team has a car in November."
+
+[[goals.private]]
+text = "The Foundry's events manager told you on the phone that the building closes for renovation from 16 to 30 November."
+
+[[goals]]
+id = "film-night"
+text = "Choose the film and showtime the group sees at the cinema tonight."
+category = "contested"
+shared = """
+Tonight's listings at the Rialto, $11 a ticket:
+
+- The Long Tide (drama, 2h 40m): 6:30pm, 8:45pm
+- Paper Moons (animated comedy, 1h 35m): 6:00pm, 7:15pm, 9:30pm
+- Static (horror, 1h 50m): 8:00pm, 10:15pm
+- North of Here (documentary, 1h 30m): 7:00pm
+- Sundial (science fiction, 2h 10m, 3D only): 7:45pm, 9:00pm
+"""
+shared_constraints = ["Choose one of the films and showtimes listed above."]
+
+[[goals.private]]
+text = "You finish work at 7:30pm, and the cinema is 20 minutes from your office."
+
+[[goals.private]]
+text = "You have to be home by 10:30pm, and it takes 30 minutes to get home from the cinema."
+
+[[goals.private]]
+text = "3D films give you a bad headache."
+
+[[goals.private]]
+text = "You saw Paper Moons last weekend."
+
+[[goals.private]]
+text = "Horror films give you nightmares for days afterwards."
+
+[[goals]]
+id = "office-thermostat"
+text = "Agree on the temperature the shared office thermostat is set to this winter."
+category = "contested"
+shared = "The five of you share one open-plan office with one thermostat, which is set in whole degrees Celsius. It is currently set to 21°C."
+shared_constraints = ["Give one temperature in whole degrees Celsius."]
+
+[[goals.private]]
+text = "Your desk is under the air vent. At 21°C your hands go numb by mid-afternoon; at 23°C they don't."
+
+[[goals.private]]
+text = "You get headaches when the office is warmer than 21°C."
+
+[[goals.private]]
+text = "You read the building's rules for tenants."
+constraints = ["The thermostat cannot be set above 24°C or below 18°C."]
+
+[[goals.private]]
+text = "You sit by the window, which gets direct sun after 2pm."
+
+[[goals.private]]
+text = "You started a new medication last month that makes you feel the cold."
