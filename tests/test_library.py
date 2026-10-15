@@ -104,3 +104,14 @@ async def test_a_total_outage_raises_so_it_can_be_recorded(community, make_run):
     record_methods(conn, "r1", "G", entries)
     with pytest.raises(ModelError):
         await embed_missing(conn, FakeEmbedder(fail_times=99))
+
+
+async def test_retrieve_with_no_limit_returns_every_method_ranked(community, make_run):
+    store, conn = community
+    entries, *_ = board_run(conn, make_run, "r1")
+    record_methods(conn, "r1", "G", entries)
+    embedder = FakeEmbedder()
+    await embed_missing(conn, embedder)
+    found = await retrieve(conn, embedder, "how to rotate chores by burden", top_k=None)
+    assert len(found) == 3
+    assert [score for _, score in found] == sorted((score for _, score in found), reverse=True)

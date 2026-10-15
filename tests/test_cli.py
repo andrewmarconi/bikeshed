@@ -474,3 +474,74 @@ def test_run_next_stores_a_queue_goals_briefs_and_show_prints_the_reveal(project
     assert "Private fact one." in briefs_md
     shown = invoke("show", run_id, "-c", config)
     assert shown.exit_code == 0 and briefs_md.strip() in shown.output
+
+
+def insert_run(tmp_path, run_id, status):
+    from bikeshed.db import connect
+
+    conn = connect(tmp_path / "community" / "community.db")
+    conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at) VALUES (?, 'g', ?, '[\"a\"]', 't')",
+                 (run_id, status))
+    conn.commit()
+    return conn
+
+
+def test_run_refuses_while_another_run_is_unclosed(project):
+    tmp_path, config = project
+    make_agents(config, "a")
+    insert_run(tmp_path, "r1", "running")
+    result = invoke("run", "Pick a colour", "--max-rounds", "1", "-c", config)
+    assert result.exit_code != 0
+    assert "run r1 is running" in result.output
+    assert "bikeshed run --resume r1" in result.output and "bikeshed abandon r1" in result.output
+
+
+def test_resume_refuses_while_a_different_run_is_unclosed(project):
+    tmp_path, config = project
+    make_agents(config, "a")
+    insert_run(tmp_path, "r1", "paused")
+    insert_run(tmp_path, "r2", "paused")
+    result = invoke("run", "--resume", "r2", "-c", config)
+    assert result.exit_code != 0 and "run r1 is paused" in result.output
+
+
+def test_resume_of_an_unknown_id_reports_it_before_the_overlap_guard(project):
+    tmp_path, config = project
+    make_agents(config, "a")
+    insert_run(tmp_path, "r1", "paused")
+    result = invoke("run", "--resume", "nope", "-c", config)
+    assert result.exit_code != 0 and "no run 'nope'" in result.output
+
+
+def test_print_event_reports_control_drift(capsys):
+    cli._print_event({"event": "control_drift_found", "agent": "e", "files": ["self.md", "lessons.md"]})
+    assert "control e had drifted from its seed (self.md, lessons.md); reset" in capsys.readouterr().out
+
+
+def test_an_unfinished_postrun_blocks_the_next_run_but_not_itself(project):
+    tmp_path, config = project
+    make_agents(config, "a")
+    first = invoke("run", "Pick a colour", "--max-rounds", "1", "--no-postrun", "-c", config)
+    run_id = run_id_from(first.output)
+    events = tmp_path / "runs" / run_id / "events.jsonl"
+    events.write_text(events.read_text() + json.dumps({"event": "postrun_started"}) + "\n")
+    from bikeshed.db import connect
+
+    conn = connect(tmp_path / "community" / "community.db")
+    conn.execute("INSERT INTO postrun_steps (run_id, step, agent_id, status, updated_at) "
+                 "VALUES (?, 'journal', 'a', 'done', 't')", (run_id,))
+    conn.commit()
+    blocked = invoke("run", "Pick a colour", "--max-rounds", "1", "-c", config)
+    assert blocked.exit_code != 0 and f"bikeshed postrun {run_id}" in blocked.output
+    finished = invoke("postrun", run_id, "-c", config)
+    assert finished.exit_code == 0, finished.output
+    assert invoke("run", "Pick a colour", "--max-rounds", "1", "-c", config).exit_code == 0
+
+
+def test_postrun_refuses_while_another_run_is_unclosed(project):
+    tmp_path, config = project
+    make_agents(config, "a")
+    run_id = run_id_from(invoke("run", "Pick a colour", "--max-rounds", "1", "--no-postrun", "-c", config).output)
+    insert_run(tmp_path, "r9", "paused")
+    result = invoke("postrun", run_id, "-c", config)
+    assert result.exit_code != 0 and "run r9 is paused" in result.output

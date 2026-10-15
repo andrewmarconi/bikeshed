@@ -27,6 +27,7 @@ from bikeshed.observer.report import (
 from bikeshed.observer.store import ObserverStore
 from bikeshed.profiles import ProfileError, ProfileStore
 from bikeshed.provenance import provenance_changes
+from bikeshed.sequence import postrun_unfinished
 from bikeshed.view import Who, make_who
 
 Progress = Callable[[str], None]
@@ -140,7 +141,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
     conn = connect_readonly(cfg.db_path)
     out_dir = cfg.observer.dir
     ostore = ObserverStore(out_dir / "observer.db")
-    unfinished = [r.id for r in m.closed_runs(conn) if m.postrun_unfinished(conn, cfg.runs_dir, r.id)]
+    unfinished = [r.id for r in m.closed_runs(conn) if postrun_unfinished(conn, cfg.runs_dir, r.id)]
     runs = [r for r in m.closed_runs(conn) if r.id not in unfinished]
     if run_id in unfinished:
         raise ValueError(f"run {run_id!r} is still in its post-run; observe it when the post-run has finished")
@@ -255,7 +256,7 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
                    who: Who, answers: list[m.BenchmarkAnswer], out_dir: Path, twin: str | None,
                    judge_note: str | None, in_progress: list[str]) -> list[Path]:
     charts = _charts(conn, ostore, runs, who, out_dir) if len(runs) >= 2 else {}
-    found = m.twins(store)
+    found = store.twins()
     if twin is not None:
         found = {control: [twin] for control in found}
     twin_rows: dict[str, list] = {}

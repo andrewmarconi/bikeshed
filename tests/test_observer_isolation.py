@@ -10,7 +10,7 @@ from bikeshed.provenance import prompt_snapshot
 
 SRC = Path(bikeshed.__file__).parent
 AGENT_PATH = ["view.py", "agent.py", "runner.py", "board.py", "consensus.py", "actions.py", "introduce.py",
-              "checkin.py", "journal.py", "library.py", "norms.py", "reviews.py", "profiles.py", "briefs.py", "scorer.py",
+              "checkin.py", "journal.py", "library.py", "norms.py", "reviews.py", "profiles.py", "briefs.py", "scorer.py", "sequence.py",
               "prompts/__init__.py",
               *[f"postrun/{p.name}" for p in (SRC / "postrun").glob("*.py")]]
 

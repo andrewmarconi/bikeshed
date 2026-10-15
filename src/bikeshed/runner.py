@@ -86,6 +86,7 @@ class Runner:
         for agent_id in controls:
             if not self.store.has_seed_public(agent_id):
                 raise ValueError(f"control agent {agent_id} has no seed profile; run `bikeshed agents introduce {agent_id}`")
+        protected = self._protected(controls, agent_ids) if brief is not None else []
         # Reset before the run exists: a failed reset must not leave a run whose control agent kept its memory.
         name_restored = {agent_id: self.store.reset_to_seed(agent_id) for agent_id in controls}
         run_id = new_run_id()
@@ -100,7 +101,7 @@ class Runner:
             )
             Board(self.conn, run_id).append(0, SYSTEM, "goal", {"goal": goal})
             if brief is not None:
-                save_briefs(self.conn, run_id, assign(brief, agent_ids, seed))
+                save_briefs(self.conn, run_id, assign(brief, agent_ids, seed, protected=protected))
         self._workspace(run_id)
         events = self._events(run_id)
         events.emit("run_started", run_id=run_id, goal=goal, agents=list(agent_ids))
@@ -109,6 +110,13 @@ class Runner:
             if not name_restored[agent_id]:
                 events.emit("control_reset_name_kept", agent=agent_id)
         return run_id
+
+    def _protected(self, controls: Sequence[str], agent_ids: Sequence[str]) -> list[str]:
+        """The run's control agents and their twins in the run: the pair a control comparison needs."""
+        if not controls:
+            return []
+        twins = self.store.twins()
+        return sorted({*controls, *(t for c in controls for t in twins.get(c, []) if t in agent_ids)})
 
     async def run(self, run_id: str) -> RunResult:
         row = self.conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
@@ -119,6 +127,9 @@ class Runner:
         goal, agent_ids = row["goal"], json.loads(row["agent_ids"])
         seed = row["seed"]
         board, ws, events = Board(self.conn, run_id), self._workspace(run_id), self._events(run_id)
+        for agent_id in agent_ids:
+            if self.store.record(agent_id).control:
+                self._check_control(agent_id, events)
 
         last = self.conn.execute(
             "SELECT round, workspace_commit FROM rounds WHERE run_id = ? ORDER BY round DESC LIMIT 1", (run_id,)
@@ -127,7 +138,7 @@ class Runner:
         completed = last["round"] if last else 0
         self._discard_after(run_id, completed, events)
         self.conn.execute("UPDATE runs SET status = 'running' WHERE id = ?", (run_id,))
-        library = await self._library(run_id, goal, events)
+        library = await self._library(run_id, goal, agent_ids, events)
         briefs = load_briefs(self.conn, run_id)
         settled = await self._settle(run_id, goal, agent_ids, board, ws, events, completed,
                                      final=completed >= self.settings.max_rounds)
@@ -156,6 +167,18 @@ class Runner:
         settled = await self._settle(run_id, goal, agent_ids, board, ws, events, completed, final=True)
         assert settled is not None
         return settled
+
+    def _check_control(self, agent_id: str, events: EventLog) -> None:
+        """A control carries nothing between runs. Anything that reached it since its reset is recorded, then undone."""
+        drift = self.store.seed_drift(agent_id)
+        if not drift:
+            events.emit("control_checked", agent=agent_id)
+            return
+        events.emit("control_drift_found", agent=agent_id, files=drift)
+        restored = self.store.reset_to_seed(agent_id)
+        events.emit("control_reset", agent=agent_id)
+        if not restored:
+            events.emit("control_reset_name_kept", agent=agent_id)
 
     def _discard_after(self, run_id: str, completed: int, events: EventLog) -> None:
         """Remove what an interrupted round left behind, so that round replays from its start."""
@@ -187,7 +210,7 @@ class Runner:
         try:
             inputs = collect_inputs(agent_id=agent_id, goal=ctx.goal, round=ctx.round, board=ctx.board,
                                     store=self.store, workspace=ctx.ws, view_entries=self.settings.view_entries,
-                                    half_life=self.settings.reputation_half_life_runs, library=ctx.library,
+                                    half_life=self.settings.reputation_half_life_runs, library=ctx.library.get(agent_id, []),
                                     max_rounds=self.settings.max_rounds if ctx.process == 2 else None,
                                     close_rule=self.settings.close_rule, briefs=ctx.briefs)
             who = make_who(inputs.profiles)
@@ -221,18 +244,28 @@ class Runner:
         """A react turn: one posting action."""
         return await self._turn(agent_id, ctx, shape=STEP if ctx.process == 1 else STEP_P2)
 
-    async def _library(self, run_id: str, goal: str, events: EventLog) -> list[str]:
-        """Methods from earlier runs most similar to the goal, rendered for the View. Never fails the run."""
+    async def _library(self, run_id: str, goal: str, agent_ids: Sequence[str],
+                       events: EventLog) -> dict[str, list[str]]:
+        """Methods from earlier runs most similar to the goal, rendered per agent for the View. Never fails the run.
+
+        A control agent's list leaves out methods it wrote itself and fills back up from other members' methods."""
+        empty: dict[str, list[str]] = {agent_id: [] for agent_id in agent_ids}
         if self.embedder is None:
-            return []
+            return empty
+        k = self.library_top_k
         try:
-            found = await retrieve(self.conn, self.embedder, goal, self.library_top_k, exclude_run=run_id)
+            ranked = [] if k <= 0 else [m for m, _ in await retrieve(self.conn, self.embedder, goal, None,
+                                                                      exclude_run=run_id)]
         except ModelError as exc:
             events.emit("library_unavailable", detail=str(exc))
-            return []
-        events.emit("library_retrieved", methods=[method.id for method, _ in found])
+            return empty
+        common = ranked[:k]
+        chosen = {agent_id: ([m for m in ranked if m.author != agent_id][:k] if self.store.record(agent_id).control
+                             else common) for agent_id in agent_ids}
+        own = {agent_id: [m.id for m in methods] for agent_id, methods in chosen.items() if methods != common}
+        events.emit("library_retrieved", methods=[m.id for m in common], **({"control_methods": own} if own else {}))
         who = make_who({i: self.store.public(i) for i in self.store.ids()})
-        return render_methods([method for method, _ in found], who)
+        return {agent_id: render_methods(methods, who) for agent_id, methods in chosen.items()}
 
     def _fail(self, run_id: str, rnd: int, agent_id: str, kind: str, detail: str) -> None:
         self.conn.execute(

@@ -160,10 +160,9 @@ class ProfileStore:
     def has_seed_public(self, agent_id: str) -> bool:
         return (self._dir(agent_id) / SEED_DIR / "public.toml").exists()
 
-    def reset_to_seed(self, agent_id: str) -> bool:
-        """Restore a control agent to its seed. Returns False if its seed name was taken and its current name kept."""
-        directory = self._dir(agent_id)
-        seed = directory / SEED_DIR
+    def _seed_state(self, agent_id: str) -> tuple[dict[str, str], bool]:
+        """What a reset writes, file by file, and whether the seed name is free to restore."""
+        seed = self._dir(agent_id) / SEED_DIR
         if not (seed / "public.toml").exists() or not (seed / "temperament.md").exists():
             raise ProfileError(f"{agent_id} has no seed profile; run `bikeshed agents introduce {agent_id}`")
         profile = PublicProfile.model_validate(tomllib.loads((seed / "public.toml").read_text()))
@@ -174,12 +173,43 @@ class ProfileStore:
         current = self.public(agent_id)
         if taken and current:
             profile = profile.model_copy(update={"name": current.name})
-        (directory / "public.toml").write_text(_toml(profile.model_dump()))
-        (directory / "temperament.md").write_text((seed / "temperament.md").read_text())
-        for filename in PRIVATE_FILES[1:]:
-            (directory / filename).write_text("")
+        files = {"public.toml": _toml(profile.model_dump()), "temperament.md": (seed / "temperament.md").read_text()}
+        files.update({filename: "" for filename in PRIVATE_FILES[1:]})
+        return files, not taken
+
+    def reset_to_seed(self, agent_id: str) -> bool:
+        """Restore a control agent to its seed. Returns False if its seed name was taken and its current name kept."""
+        files, restored = self._seed_state(agent_id)
+        directory = self._dir(agent_id)
+        for filename, content in files.items():
+            (directory / filename).write_text(content)
         self._repo.commit([f"agents/{agent_id}"], f"reset control agent {agent_id} to seed", author="bikeshed")
-        return not taken
+        return restored
+
+    def seed_drift(self, agent_id: str) -> list[str]:
+        """A control agent's files that differ from what a reset would write. Writes nothing."""
+        files, _ = self._seed_state(agent_id)
+        directory = self._dir(agent_id)
+        return [name for name, content in files.items()
+                if not (directory / name).exists() or (directory / name).read_text() != content]
+
+    def twins(self) -> dict[str, list[str]]:
+        """Each control agent's twins: non-control agents whose first temperament equals the control's seed."""
+        def norm(text: str | None) -> str:
+            return " ".join((text or "").split())
+
+        out: dict[str, list[str]] = {}
+        for agent_id in self.ids():
+            if not self.record(agent_id).control:
+                continue
+            seed = self._dir(agent_id) / SEED_DIR / "temperament.md"
+            target = norm(seed.read_text()) if seed.exists() else None
+            out[agent_id] = sorted(
+                other for other in self.ids()
+                if other != agent_id and not self.record(other).control
+                and target and norm(self.first_version(other, "temperament.md")) == target
+            )
+        return out
 
     def history(self, agent_id: str) -> list[Commit]:
         """Commits to an agent's profile files, oldest first (journals and seed excluded)."""

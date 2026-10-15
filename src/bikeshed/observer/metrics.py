@@ -5,9 +5,8 @@ import sqlite3
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
 
-from bikeshed.profiles import SEED_DIR, ProfileStore
+from bikeshed.profiles import ProfileStore
 from bikeshed.provenance import provenance_changes
 from bikeshed.timeline import _rename
 from bikeshed.view import Who
@@ -61,27 +60,6 @@ def closed_runs(conn: sqlite3.Connection) -> list[RunInfo]:
                 r["process"] if "process" in r.keys() else 1)  # read-only: an older store is never migrated
         for r in rows
     ]
-
-
-def postrun_unfinished(conn: sqlite3.Connection, runs_dir: Path, run_id: str) -> bool:
-    """A closed run whose post-run cycle has started but not finished (running, paused, or interrupted)."""
-    started = conn.execute(
-        "SELECT 1 FROM postrun_steps WHERE run_id = ?1 UNION ALL "
-        "SELECT 1 FROM run_provenance WHERE run_id = ?1 AND phase = 'postrun' LIMIT 1", (run_id,)).fetchone()
-    if not started:
-        return False
-    events = runs_dir / run_id / "events.jsonl"
-    if not events.exists():
-        return False  # cannot tell; treat as finished rather than hide the run forever
-    last = None
-    for line in events.read_text().splitlines():
-        try:
-            name = json.loads(line).get("event", "")
-        except json.JSONDecodeError:
-            continue
-        if name.startswith("postrun_"):
-            last = name
-    return last is not None and last != "postrun_finished"
 
 
 def open_runs(conn: sqlite3.Connection) -> list[str]:
@@ -234,26 +212,6 @@ def identity_events(conn: sqlite3.Connection, store: ProfileStore, runs: list[Ru
             score = peer_scores(conn, prior[-1]).get(agent_id) if prior else None
             events.append(IdentityEvent(commit.at, agent_id, kind[0], kind[1], score))
     return sorted(events, key=lambda e: e.at)
-
-
-def _norm(text: str | None) -> str:
-    return " ".join((text or "").split())
-
-
-def twins(store: ProfileStore) -> dict[str, list[str]]:
-    """Each control agent's twins: non-control agents whose first temperament equals the control's seed."""
-    out: dict[str, list[str]] = {}
-    for agent_id in store.ids():
-        if not store.record(agent_id).control:
-            continue
-        seed = store.root / "agents" / agent_id / SEED_DIR / "temperament.md"
-        target = _norm(seed.read_text()) if seed.exists() else None
-        out[agent_id] = sorted(
-            other for other in store.ids()
-            if other != agent_id and not store.record(other).control
-            and target and _norm(store.first_version(other, "temperament.md")) == target
-        )
-    return out
 
 
 @dataclass

@@ -70,7 +70,7 @@ from observer_helpers import add_review  # noqa: E402
 
 from bikeshed.observer.metrics import (  # noqa: E402
     BenchmarkAnswer, benchmark_answers, by_category, dimension_scores, harness_changes, identity_events,
-    norm_events, peer_scores, self_peer_gap, twins,
+    norm_events, peer_scores, self_peer_gap,
 )
 from bikeshed.view import make_who  # noqa: E402
 
@@ -110,17 +110,6 @@ def test_identity_events_with_prior_peer_score(community):
     assert "rename" in kinds and "self.md" in kinds and "lessons.md" not in kinds
     rename = next(e for e in events if e.kind == "rename")
     assert rename.detail == "Alpha → Ash" and rename.prior_peer == 1.0
-
-
-def test_twins_match_the_controls_seed_temperament(tmp_path):
-    from bikeshed.profiles import ProfileStore
-
-    store = ProfileStore(tmp_path / "community")
-    store.create("d", "fake", "Wants evidence.")
-    store.create("x", "fake", "Something else.")
-    store.create("e", "fake", "Wants evidence.\n", control=True)
-    store.write_private("d", "temperament.md", "Rewritten later.")
-    assert twins(store) == {"e": ["d"]}
 
 
 def test_by_category_counts_endings_and_actions(community):

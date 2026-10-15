@@ -70,14 +70,25 @@ def too_many(briefs: int, agents: int) -> str:
             f"but the run has {agents} agent{'s' if agents != 1 else ''}")
 
 
-def assign(spec: BriefSpec, agent_ids: Sequence[str], seed: int) -> RunBriefs:
-    """Number the constraints and hand private brief k to the k-th member of a seeded shuffle."""
+def assign(spec: BriefSpec, agent_ids: Sequence[str], seed: int, protected: Sequence[str] = ()) -> RunBriefs:
+    """Number the constraints and hand private brief k to the k-th member of a seeded shuffle.
+
+    With fewer briefs than members, a protected member (a control agent or its twin) is never left without one:
+    it swaps places with the last unprotected member that still holds a brief."""
     if len(spec.private) > len(agent_ids):
         raise ValueError(too_many(len(spec.private), len(agent_ids)))
     shared = None if spec.shared is None else Brief(
         0, None, spec.shared, tuple(Constraint(f"s.c{i}", t) for i, t in enumerate(spec.shared_constraints, 1)))
     order = list(agent_ids)
     random.Random(f"{seed}-briefs").shuffle(order)
+    held = len(spec.private)
+    for i in range(held, len(order)):
+        if order[i] not in protected:
+            continue
+        j = next((j for j in range(held - 1, -1, -1) if order[j] not in protected), None)
+        if j is None:
+            break  # more protected members than briefs: the rest go without
+        order[i], order[j] = order[j], order[i]
     private = tuple(
         Brief(k, order[k - 1], text, tuple(Constraint(f"p{k}.c{i}", t) for i, t in enumerate(constraints, 1)))
         for k, (text, constraints) in enumerate(spec.private, 1))

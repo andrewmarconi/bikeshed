@@ -81,17 +81,25 @@ def collect_inputs(
     if round == 1:
         entries = [e for e in entries if not (e.round == 1 and e.author != agent_id)]
     private = store.private(agent_id)
+    control = store.record(agent_id).control
+    reputations = {i: reputation(board.conn, i, half_life) for i in store.ids()}
+    dimension_scores = {i: dimension_reputations(board.conn, i, half_life) for i in store.ids()}
+    earned = points(board.conn)
+    if control:  # a control starts every run at its seed: none of its own standing carries over
+        reputations[agent_id] = Reputation(None, 0)
+        dimension_scores[agent_id] = []
+        earned.pop(agent_id, None)
     return ViewInputs(
         agent_id=agent_id, goal=goal, round=round, entries=entries,
         own_notes={name: private[name] for name in _OWN_NOTES},
         profiles={i: store.public(i) for i in store.ids()},
         files=workspace.list_files(), view_entries=view_entries,
-        journals=() if store.record(agent_id).control else tuple(store.journals(agent_id, 2)),
+        journals=() if control else tuple(store.journals(agent_id, 2)),
         norms=_norms(store),
-        reputations={i: reputation(board.conn, i, half_life) for i in store.ids()},
+        reputations=reputations,
         library=tuple(library),
-        dimension_scores={i: dimension_reputations(board.conn, i, half_life) for i in store.ids()},
-        max_rounds=max_rounds, think_notes=notes, points=points(board.conn), close_rule=close_rule,
+        dimension_scores=dimension_scores,
+        max_rounds=max_rounds, think_notes=notes, points=earned, close_rule=close_rule,
         brief_sections=view_sections(briefs, agent_id),
     )
 

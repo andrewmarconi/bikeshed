@@ -2,7 +2,7 @@
 
 import asyncio
 import random
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -28,7 +28,7 @@ class RoundContext:
     board: Board
     ws: Workspace
     events: EventLog
-    library: list[str]
+    library: Mapping[str, list[str]]  # agent id -> methods from earlier runs, rendered for its View
     briefs: RunBriefs = EMPTY
 
     def rng(self, runner: "Runner", salt: str = "") -> Any:

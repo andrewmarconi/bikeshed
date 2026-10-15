@@ -127,9 +127,9 @@ async def embed_missing(conn: sqlite3.Connection, embedder: Embedder, batch: int
 
 
 async def retrieve(
-    conn: sqlite3.Connection, embedder: Embedder, goal: str, top_k: int, exclude_run: str | None = None,
+    conn: sqlite3.Connection, embedder: Embedder, goal: str, top_k: int | None, exclude_run: str | None = None,
 ) -> list[tuple[Method, float]]:
-    if top_k <= 0:
+    if top_k is not None and top_k <= 0:
         return []
     rows = conn.execute(
         "SELECT * FROM methods WHERE embedding IS NOT NULL AND run_id IS NOT ?", (exclude_run,)
@@ -138,7 +138,8 @@ async def retrieve(
         return []
     [query] = await _embed(embedder, [goal])
     scored = [(_method(row), _cosine(query, _unpack(row["embedding"]))) for row in rows]
-    return sorted(scored, key=lambda pair: pair[1], reverse=True)[:top_k]
+    ranked = sorted(scored, key=lambda pair: pair[1], reverse=True)
+    return ranked if top_k is None else ranked[:top_k]
 
 
 def render_methods(methods: Sequence[Method], who: Who, max_chars: int = 600) -> list[str]:
