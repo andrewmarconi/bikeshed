@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Bikeshed is a research harness: a local community of persistent LLM agents that work on goals together with no orchestrator, review each other by name, and evolve their own profiles, reputations and norms across runs. The answer to a goal is secondary; the subject of study is whether working styles and values emerge. `README.md` explains the idea in plain language; the authoritative design is in `docs/superpowers/specs/` (start with `2026-10-10-aiswarm-design.md`; later specs govern where they are more specific). The project was called AISwarm until 2026-10-12; dated specs and plans keep the old name and `aiswarm` paths, and so does the provenance of earlier runs.
+Bikeshed is a research harness: a local community of persistent LLM agents that work on goals together with no orchestrator, review each other by name, and evolve their own profiles, reputations and norms across runs. The answer to a goal is secondary; the subject of study is whether working styles and values emerge. `README.md` and the plain-language pages in `docs/` (`getting-started.md`, `how-it-works.md`, `processes.md`, `research-design.md`, `what-you-can-vary.md`, `commands.md`) explain the idea; the authoritative design is in `docs/superpowers/specs/` (start with `2026-10-10-aiswarm-design.md`; later specs govern where they are more specific). The project was called AISwarm until 2026-10-12; dated specs and plans keep the old name and `aiswarm` paths, and so does the provenance of earlier runs.
 
 ## Commands
 
