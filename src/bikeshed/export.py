@@ -169,10 +169,11 @@ def _run_row(conn: sqlite3.Connection, run_id: str) -> dict[str, Any]:
     types = [e["type"] for e in entries]
     votes = [json.loads(e["payload"]) for e in entries if e["type"] == "vote"]
     closed = next((json.loads(e["payload"]) for e in entries if e["type"] == "run_closed"), {})
-    start = conn.execute("SELECT * FROM run_provenance WHERE run_id = ? AND phase = 'start' ORDER BY id LIMIT 1",
-                         (run_id,)).fetchone()
-    config = _loads(start["config"]) if start else {}
-    models = _loads(start["models"]) if start else {}
+    rows = conn.execute("SELECT * FROM run_provenance WHERE run_id = ? AND phase IN ('start', 'resume') ORDER BY id",
+                        (run_id,)).fetchall()  # the run itself; post-run rows describe the cycle after it
+    start = next((r for r in rows if r["phase"] == "start"), None)
+    config = _loads(rows[-1]["config"]) if rows else {}  # the last start or resume: caps lowered at resume show
+    models = {m.get("model", "") for r in rows for m in (_loads(r["models"]) or {}).values()}
     reviews = conn.execute("SELECT is_self, overall FROM reviews WHERE run_id = ?", (run_id,)).fetchall()
     peer = [r["overall"] for r in reviews if not r["is_self"]]
     own = [r["overall"] for r in reviews if r["is_self"]]
@@ -182,7 +183,7 @@ def _run_row(conn: sqlite3.Connection, run_id: str) -> dict[str, Any]:
         "goal_category": run["goal_category"], "is_benchmark": run["is_benchmark"], "process": run["process"],
         "status": run["status"], "ended_reason": run["ended_reason"], "closing_call": closed.get("call_id", ""),
         "agents": ";".join(json.loads(run["agent_ids"])),
-        "models": ";".join(sorted({m.get("model", "") for m in models.values()})),
+        "models": ";".join(sorted(models)),
         "close_rule": (config.get("run") or {}).get("close_rule", ""),
         "max_rounds": (config.get("run") or {}).get("max_rounds", ""),
         "code_commit": start["code_commit"] if start else "", "code_dirty": start["code_dirty"] if start else "",

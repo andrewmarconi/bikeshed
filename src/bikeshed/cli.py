@@ -467,6 +467,8 @@ def show(run_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
     for name in ("answer.md", "minority.md", "briefs.md", "account.md", "narrative.md"):
         path = report / name
         if path.exists():
+            if name == "narrative.md":  # also covers narratives written before the header said so
+                typer.echo("(The narrative below is the narrator model's retelling, not checked against the record.)\n")
             typer.echo(path.read_text())
 
 

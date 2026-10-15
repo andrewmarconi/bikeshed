@@ -134,9 +134,13 @@ Ordered by how badly each one breaks the comparison.
 
    *Checked against the code:* the post-run cycle has no control handling at all. Nothing in `postrun/cycle.py` mentions controls, so `e`'s updates are committed under the same `"<id> updated <file>"` subjects as everyone else's. The reset itself is already labelled. `profiles.py:181` commits it as `reset control agent <id> to seed`, and the Observer's identity timeline recognises that as a `control reset` event (`observer/metrics.py:213`). The analysis that misreads it is `self_image` (fix 9), which diffs file snapshots and never looks at commit subjects. So the fix is mainly on the Observer side: the commits are already distinguishable.
 
+   *Done in sub-project C1 (`2026-10-15-bikeshed-gen4-measurement-corrections-design.md`):* the identity timeline marks a control agent's own changes "(control; reset before its next run)", and its Self-image section says it is compared with its seed. Both come from the agent's record, not commit text.
+
 9. **Observer: order after-run comparisons by time.** The `self_image` judge orders runs by creation, so it compared run 9 against run 8's later after-run cycle and reported reversals that never happened. Order by after-run timestamp, and treat a reset as a reset.
 
    *Checked against the code:* confirmed. `closed_runs` orders by `rowid`, which is creation order (`observer/metrics.py:57`). `self_image_inputs` (`observer/inputs.py:65`) takes the previous run in that order and reads "before" at that run's `end`. `run_end` includes the post-run steps (`metrics.py:47`). When run 8 was created first but its post-run finished after run 9's, run 9's "before" snapshot is *later* than its "now" snapshot, and the judge sees a reversal. Two changes are needed. Choose the earlier run by `end` (strictly before this run's snapshot), not by `rowid`. And when a `reset control agent` commit falls between the two snapshots, take "before" from the reset, or tell the judge about it.
+
+   *Done in sub-project C1:* "before" is the later of the end of the agent's latest run that ended before this one and its latest reset before this run ended.
 
 ## Answers to the open questions above
 
@@ -181,13 +185,19 @@ These came out of the generation 3 review (`learnings_gen3-v2.md` in the report 
     - **`think_vs_act`:** confirmed. `think_vs_act_inputs` (`observer/inputs.py:51`) hands the judge all of the agent's think notes in one block and all its public entries in another. The judge pairs them however it likes. Round labels (`[rN]`) are in the rendered entries, but nothing makes the judge pair a note with the move after it. Failed turns are recorded as `pass` entries with a `failure` payload, and they are public, so they land in "public actions" and can be read as divergence. `observer/process2.py:102` already knows how to spot these entries. The inputs just don't leave them out.
     - **`private_public`:** confirmed. `_journal` (`inputs.py:18`) joins every journal section for the run, "before" and "after", in time order, and `private_public_inputs` (`inputs.py:44`) passes all of it.
 
+    *C1 did two of these:* `think_vs_act` now pairs each note with the same round's moves and leaves out failed turns, and `private_public` reads only the "before" journal. Copying, credit accuracy and rule-gaming are sub-project C2. The disclosure and fabrication judges are checked by hand against the first generation 4 runs.
+
 15. **Export: `runs.csv` shows the start record only.** Its model column read DeepSeek for runs 8 and 9, which mostly ran on other models, and `max_rounds` shows the start value, not the caps lowered at resume. List every model a run used (from traces or every provenance row), and the final `max_rounds`.
 
     *Checked against the code:* confirmed. `_run_row` (`export.py:166`) reads only the first `run_provenance` row with `phase = 'start'` for both `models` and `max_rounds` (`export.py:172`–`187`). Resume and postrun provenance rows are ignored. The per-run Markdown summary uses the same row (`export.py:241`), so it has the same problem. Per-entry model is already exported from traces (`export.py:229`), so the data exists.
 
+    *Done in sub-project C1:* `models` is the union over start and resume provenance rows, and `max_rounds` and `close_rule` come from the last of them. `transcript.md` agrees.
+
 16. **Narrator: `narrative.md` was wrong on facts in at least seven runs** (1, 4, 5, 7, 9, 10 and 12). It credited the wrong agent, misstated which call won, and left out the run 12 rejection. Either check the narrative against the record before it's saved, or label it as unchecked wherever it appears.
 
     *Checked against the code:* the mechanism, not the seven runs. The narrator gets the code-built account, the answer and the minority report (`postrun/cycle.py:434`, `prompts/narrative_request.md`), and its reply is saved without any check. The account already includes Scorer rulings, rejections included (`report.py`, the "Scorer" section), so the run 12 rejection was in its input. Leaving it out was the narrator's error, not missing data. `narrative.md` already says "Written by the narrator model from the account" in its header, but nothing says it's unchecked. `bikeshed show` prints it straight after `account.md` with nothing to tell them apart (`cli.py:455`). The narrator never reaches agents (it's the last post-run step and the file is only in `report/`). So this affects only what the Observer and Andrew read, and the cheapest fix is the label.
+
+    *Done in sub-project C1:* the header says the narrative isn't checked against the record and that the account wins, and `bikeshed show` labels it the same way, including old narratives.
 
 17. **Is the norm list in the after-run context?** Proposal #14 restated Norm 1 almost word for word, and no voter noticed it was already law. Check whether the norm critique and vote steps show the adopted norms.
 
@@ -220,7 +230,8 @@ Each sub-project gets its own spec, plan and implementation. Anything that chang
 | A | Control integrity | Fixes 1–5, 7 (dealing briefs) | Yes | **Done** (merged 2026-10-15, `73a14b7`) |
 | F | Process 3 and naming | `docs/nomenclature-cleanup.md` | Yes (new `--process 3` value) | **Done** (merged 2026-10-15, `49e0480`) |
 | B | Agent environment | Fixes 10, 11, 12, 13 (decision) | Yes | **Done** (merged 2026-10-15, `8af1315`) |
-| C | Measurement | Fixes 7 (twin comparison), 8, 9, 14, 15, 16, 17 | No | Any time; re-run over generation 4 |
+| C1 | Measurement corrections | Fixes 8, 9, 14 (`think_vs_act`, `private_public`), 15, 16 | No | **In progress** |
+| C2 | New measurements | Fixes 7 (twin's brief slot), 14 (copying, credit accuracy, rule-gaming), 17 (norm overlap), library reuse from B | No | Any time; re-run over generation 4 |
 | D | Baseline run | Fix 6 | No (separate scratch community) | Before the first pizza benchmark of generation 4 |
 | E | Setup and procedure | Fix 0 (`f.md`), 18, sixth briefs, `view_entries` | Config and goals only | Repo side done in A; lab edits and model choice are Andrew's, after F |
 

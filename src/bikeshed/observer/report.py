@@ -41,6 +41,7 @@ class RunSection:
     rulings: list[RulingRow] = field(default_factory=list)  # the Scorer's rulings, in board order
     awards: list[Award] = field(default_factory=list)  # Scorer points awarded in this run
     briefs: BriefsSection | None = None  # briefed runs only
+    controls: frozenset[str] = frozenset()  # control agents in this run: their self-image is compared with their seed
 
 
 def _cell(text: str) -> str:
@@ -195,11 +196,14 @@ def _process2(s: RunSection) -> list[str]:
         + _order(p.order)
 
 
-def _per_agent(s: RunSection, title: str, analysis: str, body, none_without_judgment: str | None = None) -> list[str]:
+def _per_agent(s: RunSection, title: str, analysis: str, body, none_without_judgment: str | None = None,
+               notes: dict[str, str] | None = None) -> list[str]:
     out = [f"## {title}", ""]
     for agent in s.run.agent_ids:
         j = _find(s.judgments, analysis, agent)
         out.append(f"### {s.who(agent)}")
+        if notes and agent in notes:
+            out += [notes[agent], ""]
         if j is None and s.judge_note is None and none_without_judgment is not None:
             out += [none_without_judgment, ""]
             continue
@@ -208,6 +212,12 @@ def _per_agent(s: RunSection, title: str, analysis: str, body, none_without_judg
             continue
         out += body(j.result) + [""]
     return out
+
+
+def _tva_line(p: dict) -> str:
+    """One think-vs-act point; points judged before rounds were recorded have no round."""
+    prefix = f"[r{p['round']}] " if "round" in p else ""
+    return f"- {prefix}**{p['relation']}** — {p['about']}: think “{p['think_quote']}” / action “{p['action_quote']}”"
 
 
 def render_run(s: RunSection) -> str:
@@ -228,12 +238,13 @@ def render_run(s: RunSection) -> str:
         f"- {f['colleague']}: **{f['verdict']}** — journal: “{f['journal_quote']}” / review: “{f['review_quote']}”"
         for f in res["findings"]] or ["- no colleagues compared"], none_without_judgment="_gave no peer reviews_")
     if meeting_rounds(r.process):
-        out += _per_agent(s, "Think notes vs actions (private vs public)", "think_vs_act", lambda res: [
-            f"- **{p['relation']}** — {p['about']}: think “{p['think_quote']}” / action “{p['action_quote']}”"
-            for p in res["points"]] or ["- nothing to compare"], none_without_judgment="_wrote no think notes_")
+        out += _per_agent(s, "Think notes vs actions (private vs public)", "think_vs_act",
+                          lambda res: [_tva_line(p) for p in res["points"]] or ["- nothing to compare"],
+                          none_without_judgment="_wrote no think notes_")
     out += _per_agent(s, "Self-image", "self_image", lambda res: (
         [f"- {c['what']}: “{c['evidence']}”" for c in res["changes"]] or ["- no change"])
-        + [f"- private/public gap: **{res['private_public_gap']}** {res.get('gap_evidence', '')}".rstrip()])
+        + [f"- private/public gap: **{res['private_public_gap']}** {res.get('gap_evidence', '')}".rstrip()],
+        notes={agent: "_control: compared with its seed, not its previous run_" for agent in s.controls})
     if s.benchmark is not None:
         out += ["## Benchmark answer", "", s.benchmark.text, ""]
         j = _find(s.judgments, "benchmark", None)

@@ -85,6 +85,18 @@ def test_run_then_show(project):
     assert "Competing positions" in shown.output and "No consensus was reached" in shown.output
 
 
+def test_show_labels_the_narrative_as_unchecked(project):
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    result = invoke("run", "Pick a colour", "--max-rounds", "2", "--no-postrun", "-c", config)
+    run_id = run_id_from(result.output)
+    label = "(The narrative below is the narrator model's retelling, not checked against the record.)"
+    assert label not in invoke("show", run_id, "-c", config).output
+    (tmp_path / "runs" / run_id / "report" / "narrative.md").write_text("# Narrative\n\nNARRATIVE-TEXT\n")
+    shown = invoke("show", run_id, "-c", config).output
+    assert shown.index(label) < shown.index("NARRATIVE-TEXT")
+
+
 def test_run_refuses_agents_without_public_profile(project):
     tmp_path, config = project
     from bikeshed.profiles import ProfileStore
