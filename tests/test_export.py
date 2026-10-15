@@ -83,6 +83,29 @@ def test_runs_csv_summarises_each_run(tmp_path, community):
     assert set(rows) == {"r1", "r2"}
 
 
+def _provenance(conn, run_id, phase, model, max_rounds, commit="abc"):
+    conn.execute(
+        "INSERT INTO run_provenance (run_id, phase, code_commit, code_dirty, config, prompts, models, servers, seed, "
+        "fingerprint, captured_at) VALUES (?, ?, ?, 0, ?, '{}', ?, '{}', 1, 'f', 't')",
+        (run_id, phase, commit, json.dumps({"run": {"max_rounds": max_rounds, "close_rule": "critiqued"}}),
+         json.dumps({"a": {"backend": "x", "model": model}})))
+
+
+def test_runs_csv_lists_every_model_and_the_last_round_cap(tmp_path, community):
+    _, conn = community
+    _seed(conn)
+    _provenance(conn, "r1", "start", "deepseek", 12, commit="start-commit")
+    _provenance(conn, "r1", "resume", "qwen", 8, commit="resume-commit")
+    _provenance(conn, "r1", "postrun", "narrator-model", 8)
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    out = export(_cfg(tmp_path), tmp_path / "out")
+    rows = {r["run_id"]: r for r in csv.DictReader((out / "runs.csv").open())}
+    assert rows["r1"]["models"] == "deepseek;qwen" and rows["r1"]["max_rounds"] == "8"
+    assert rows["r1"]["code_commit"] == "start-commit"
+    assert rows["r2"]["models"] == "" and rows["r2"]["max_rounds"] == "" and rows["r2"]["code_commit"] == ""
+    assert "- models: deepseek;qwen;" in (out / "runs" / "r1" / "transcript.md").read_text()
+
+
 def test_each_run_gets_a_transcript_and_parsed_entries(tmp_path, community):
     _, conn = community
     _seed(conn)
