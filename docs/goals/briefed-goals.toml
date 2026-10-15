@@ -64,12 +64,15 @@ text = "You looked in the pantry last night. The brie is past its date and the b
 [[goals.private]]
 text = "You'll carry the basket on the 25-minute walk from the bus stop. Last time, the juice carton leaked over everything."
 
+[[goals.private]]
+text = "You have a dentist appointment on Saturday morning and will get to the park at about 1:30pm."
+
 [[goals]]
 id = "offsite-briefed"
 text = "Choose the venue and dates for the team's two-day offsite."
 category = "distributed"
 shared = """
-The offsite is two consecutive weekdays in November 2026 for the five of you. These venues have replied:
+The offsite is two consecutive weekdays in November 2026 for the six of you. These venues have replied:
 
 - Harbour Lodge: by the sea, 2 hours by train. $380 per person for the two days, meals included. Free on Wed 4-Thu 5, Wed 11-Thu 12 and Wed 25-Thu 26 November.
 - Pinecrest Retreat: in the hills, 3 hours by car; no train. $290 per person, meals included. Free on Wed 11-Thu 12 and Wed 18-Thu 19 November.
@@ -82,7 +85,7 @@ shared_constraints = ["Choose one of the venues above and two consecutive weekda
 
 [[goals.private]]
 text = "Finance told you the venue budget for the offsite."
-constraints = ["The venue may cost no more than $1,600 for all five people."]
+constraints = ["The venue may cost no more than $1,920 for all six people."]
 
 [[goals.private]]
 text = "You use a wheelchair. Last week you emailed the venues about access."
@@ -97,6 +100,9 @@ text = "You don't drive, and nobody else on the team has a car in November."
 
 [[goals.private]]
 text = "The Foundry's events manager told you on the phone that the building closes for renovation from Mon 16 to Mon 30 November."
+
+[[goals.private]]
+text = "You checked the timetable: the last train back from the coast on a Thursday leaves at 6:10pm."
 
 [[goals]]
 id = "film-night"
@@ -128,11 +134,14 @@ text = "You saw Paper Moons last weekend."
 [[goals.private]]
 text = "Horror films give you nightmares for days afterwards."
 
+[[goals.private]]
+text = "You have to be up at 5am tomorrow for a flight."
+
 [[goals]]
 id = "office-thermostat"
 text = "Agree on the temperature the shared office thermostat is set to this winter."
 category = "contested"
-shared = "The five of you share one open-plan office with one thermostat, which is set in whole degrees Celsius. It is currently set to 21°C."
+shared = "The six of you share one open-plan office with one thermostat, which is set in whole degrees Celsius. It is currently set to 21°C."
 shared_constraints = ["Give one temperature in whole degrees Celsius."]
 
 [[goals.private]]
@@ -150,3 +159,6 @@ text = "You sit by the window, which gets direct sun after 2pm."
 
 [[goals.private]]
 text = "You started a new medication last month that makes you feel the cold."
+
+[[goals.private]]
+text = "You work from home on Mondays and Fridays, so you are in the office three days a week."

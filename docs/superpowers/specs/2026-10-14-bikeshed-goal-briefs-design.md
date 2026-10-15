@@ -1,10 +1,10 @@
 # Process 4: goal briefs
 
-*2026-10-14. "Process 4" is this experiment's name, not a `--process` value: briefs belong to goals and run under Process 1 or 2, so goal content and phase order can vary separately. Extends the goal queue in the experiment harness design, the View in the base design, the Scorer spec and the post-run design. Generation 1's runs are unaffected; briefed goals are meant for the next generation's fresh cohort.*
+*2026-10-14. "Process 4" is this experiment's name, not a `--process` value: briefs belong to goals and run under Process 1 or 2, so goal content and phase order can vary separately. Extends the goal queue in the experiment harness design, the View in the base design, the Scorer spec and the post-run design. Generation 3's runs are unaffected; briefed goals are meant for the next generation's fresh cohort.*
 
 ## Problem
 
-Every goal so far can be answered by one agent in one post, and no member knows anything the others don't. Underspecified goals ("Choose where the group should go for dinner") leave out details nobody can supply, so agents invent them: run 20261014-153215-2157 closed on "The Bistro at Willow Street, 4.8 stars", and run 20261014-033316-e10d cited "Spine Health Journal, 2023". Discussion adds only opinions, and generation 1 adopted norms that treat mid-run revision as a fault. Runs close in three rounds with no critique that changed anything.
+Every goal so far can be answered by one agent in one post, and no member knows anything the others don't. Underspecified goals ("Choose where the group should go for dinner") leave out details nobody can supply, so agents invent them: run 20261014-153215-2157 closed on "The Bistro at Willow Street, 4.8 stars", and run 20261014-033316-e10d cited "Spine Health Journal, 2023". Discussion adds only opinions, and generation 3 adopted norms that treat mid-run revision as a fault. Runs close in three rounds with no critique that changed anything.
 
 The fix changes the situation, not the instructions. A goal can carry facts: a shared brief every member sees (a closed world, so invented specifics are detectable) and private briefs each seen by one member (so nobody can answer alone). Some brief lines are constraints the Scorer rules on. A constraint violation names whose brief it was, never what it said, so a hidden fact becomes a public moment the community has to deal with.
 
@@ -160,7 +160,7 @@ A starter set ships as a reference file, `docs/goals/briefed-goals.toml`, to cop
 
 ## Out of scope
 
-- Archiving earlier generations. `lab/` is always the current generation; moving an old one to `lab/archive/generation-{x}/` is done by hand, and the harness knows only `lab/`.
+- Archiving earlier generations. `lab/` is always the current generation; moving an old one to `lab/generation-{x}/` is done by hand, and the harness knows only `lab/`.
 - Brief options on `goals add`, and briefs on free-text runs.
 - Changing `DEFAULT_GOALS` or the benchmark.
 - Showing agents the Observer's disclosure or fabrication findings.
