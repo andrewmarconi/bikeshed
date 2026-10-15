@@ -10,6 +10,21 @@ from bikeshed.profiles import PRIVATE_MAX
 
 Text = Annotated[str, Field(min_length=1)]
 JournalText = Annotated[str, Field(min_length=1, max_length=JOURNAL_MAX)]
+_KEEP_WORDS = frozenset({"", "null", "none"})
+
+
+def _word(value: str) -> str:
+    return value.strip().strip("\"'").strip().casefold()
+
+
+def is_keep(value: object) -> bool:
+    """A field the model means to leave as it is: missing, blank, or null/none written as a string."""
+    return value is None or (isinstance(value, str) and _word(value) in _KEEP_WORDS)
+
+
+def keeps_pronouns(value: object) -> bool:
+    """Pronouns differ: an empty value means "rather not say", so only a missing value or "null" keeps them."""
+    return value is None or (isinstance(value, str) and _word(value) == "null")
 
 
 class _Reply(BaseModel):
@@ -47,10 +62,10 @@ class ResponsesReply(_Reply):
 
 
 class PublicReply(_Reply):
-    name: str
+    name: str | None = None
     pronouns: str | None = None
-    headline: str
-    introduction: str
+    headline: str | None = None
+    introduction: str | None = None
 
 
 class ProposalReply(_Reply):

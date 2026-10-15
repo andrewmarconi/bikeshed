@@ -25,6 +25,7 @@ from bikeshed.postrun.ask import ReplyError, ask
 from bikeshed.postrun.feedback import feedback_packet, interactions, transcript
 from bikeshed.postrun.replies import (
     JournalReply, NarrativeReply, NormCritiquesReply, NormVotesReply, ResponsesReply, ReviewReply, UpdateReply,
+    is_keep, keeps_pronouns,
 )
 from bikeshed.profiles import HEADLINE_MAX, INTRO_MAX, NAME_MAX, PRIVATE_MAX, PRONOUNS_MAX, ProfileError, ProfileStore
 from bikeshed.prompts import render
@@ -334,7 +335,7 @@ class PostRun:
             ("lessons.md", reply.lessons), ("self.md", reply.self_description),
             ("temperament.md", reply.temperament), ("peer-notes.md", reply.peer_notes),
         ):
-            if content is None:
+            if is_keep(content):
                 continue
             try:
                 self.store.write_private(agent_id, filename, content)
@@ -342,11 +343,18 @@ class PostRun:
                 rejected.append(f"{filename}: {exc}")
         if reply.public_profile is not None:
             profile = reply.public_profile
-            try:
-                self.store.set_public(agent_id, profile.name, profile.headline, profile.introduction,
-                                      pronouns=profile.pronouns)
-            except ProfileError as exc:
-                rejected.append(f"public profile: {exc}")
+            current = self.store.public(agent_id)
+            base = current.model_dump() if current else {}
+            changed = {field: getattr(profile, field) for field in ("name", "headline", "introduction")
+                       if not is_keep(getattr(profile, field))}
+            pronouns = None if keeps_pronouns(profile.pronouns) else profile.pronouns
+            if changed or pronouns is not None:
+                merged = {field: changed.get(field, base.get(field, "")) for field in ("name", "headline", "introduction")}
+                try:
+                    self.store.set_public(agent_id, merged["name"], merged["headline"], merged["introduction"],
+                                          pronouns=pronouns)
+                except ProfileError as exc:
+                    rejected.append(f"public profile: {exc}")
         if reply.proposal is not None and self._deliberation_started(ctx.run_id):
             rejected.append("proposal: Your proposal was not considered: this run's proposals had already been deliberated")
         elif reply.proposal is not None:

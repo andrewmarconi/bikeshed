@@ -10,6 +10,8 @@ from bikeshed.journal import journal_section
 from bikeshed.models.base import ModelError
 from bikeshed.models.fake import FakeModel
 from bikeshed.postrun import PostRun
+from bikeshed.postrun.replies import is_keep, keeps_pronouns
+from bikeshed.profiles import PRIVATE_MAX
 from bikeshed.reviews import responses_for, reviews_of
 
 
@@ -205,7 +207,7 @@ async def test_rejected_rewrites_keep_previous_versions_and_are_noted(tmp_path, 
     run_id = finished_run(conn, tmp_path, make_run)
     clients = {a: FakeModel(responder(postrun_reply)) for a in "bc"}
     clients["a"] = FakeModel(responder(postrun_reply, update=update_reply(
-        temperament="   ", self_description="KEPT-SELF",
+        temperament="t" * (PRIVATE_MAX + 1), self_description="KEPT-SELF",
         public_profile={"name": "bea", "headline": "h", "introduction": "i"})))
     result = await cycle(store, conn, tmp_path, clients).run(run_id)
     assert result.failed == 0
@@ -214,7 +216,7 @@ async def test_rejected_rewrites_keep_previous_versions_and_are_noted(tmp_path, 
     assert store.private("a")["self.md"] == "KEPT-SELF" and store.private("a")["lessons.md"] == "NEW-LESSONS"
     after = journal_section(conn, "a", run_id, "after")
     assert after.startswith("AFTER\n\nRejected changes (previous versions kept):\n")
-    assert "- temperament.md: temperament must not be empty" in after
+    assert f"- temperament.md: temperament.md exceeds {PRIVATE_MAX} characters" in after
     assert "- public profile: the name 'bea' is taken" in after
 
 
@@ -657,3 +659,48 @@ async def test_the_library_stores_no_brief_text(tmp_path, community, make_run, p
     assert rows
     stored = "\n".join(str(value) for row in rows for value in tuple(row))
     assert "MARK" not in stored
+
+
+def test_is_keep_reads_null_strings_and_blanks_as_keep():
+    for value in (None, "", "   ", "null", "NULL", " None ", '"null"', "'none'"):
+        assert is_keep(value), value
+    for value in ("Nullius in verba.", "nothing", "0"):
+        assert not is_keep(value), value
+    assert keeps_pronouns(None) and keeps_pronouns("null")
+    assert not keeps_pronouns("") and not keeps_pronouns("they/them")
+
+
+async def test_update_null_strings_keep_files_and_profile_fields(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    store.write_private("a", "self.md", "OLD-SELF")
+    store.write_private("a", "lessons.md", "OLD-LESSONS")
+    store.set_public("a", "Alpha", "Alpha headline", "I am Alpha.", pronouns="she/her")
+    store.set_public("b", "Bea", "Bea headline", "I am Bea.", pronouns="he/him")
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {"c": FakeModel(responder(postrun_reply))}
+    clients["a"] = FakeModel(responder(postrun_reply, update=update_reply(
+        lessons="null", self_description="NULL", temperament="none", peer_notes="  ",
+        public_profile={"name": "null", "headline": "Fresh headline", "introduction": None, "pronouns": "null"})))
+    clients["b"] = FakeModel(responder(postrun_reply, update=update_reply(
+        public_profile={"name": "Bea", "headline": "Bea headline", "introduction": "I am Bea.", "pronouns": ""})))
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    private = store.private("a")
+    assert private["self.md"] == "OLD-SELF" and private["lessons.md"] == "OLD-LESSONS"
+    assert private["temperament.md"].strip() == "Temperament of a." and private["peer-notes.md"] == ""
+    a = store.public("a")
+    assert (a.name, a.headline, a.introduction, a.pronouns, a.former_names) == \
+        ("Alpha", "Fresh headline", "I am Alpha.", "she/her", [])
+    assert store.public("b").pronouns == ""  # empty still means "rather not say"
+
+
+async def test_update_with_every_profile_field_null_writes_nothing(tmp_path, community, make_run, postrun_reply):
+    import subprocess
+
+    store, conn = community
+    run_id = finished_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "bc"}
+    clients["a"] = FakeModel(responder(postrun_reply, update=update_reply(
+        public_profile={"name": "null", "headline": "null", "introduction": "null"})))
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    log = subprocess.run(["git", "log", "--format=%s"], cwd=store.root, capture_output=True, text=True).stdout
+    assert log.splitlines().count("a updated public profile") == 1  # only the fixture's set_public
