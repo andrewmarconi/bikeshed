@@ -8,6 +8,7 @@ from textual.screen import ModalScreen
 from textual.timer import Timer
 from textual.widgets import RichLog, Static
 
+from bikeshed.phases import meeting_rounds
 from bikeshed.watch import render
 from bikeshed.watch.source import Watcher
 
@@ -115,7 +116,7 @@ class WatchApp(App):
                 self.feeds[line.pane].add(render.styled(line, colours), scroll_end=self.following and ends[line.pane])
             self.written = len(s.feed)
         post = render.show_postrun(s)
-        two = s.process == 2
+        two = meeting_rounds(s.process)
         self.right.display = two or post
         self.feeds["thinking"].display = two
         self.feeds["private"].display = two and not post

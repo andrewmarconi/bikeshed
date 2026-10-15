@@ -153,6 +153,13 @@ async def test_observe_reports_a_process_2_run(lab, community):
     assert "## Process 2" not in (lab.observer.dir / "runs" / "r1.md").read_text()
     summary = (lab.observer.dir / "summary.md").read_text()
     assert "debate (P2)" in summary and "## Process 2" in summary
+    add_run(conn, "r6", created=FUTURE, goal_id="tidy", process=3)
+    add_entry(conn, "r6", "a", "think", {"text": "Tidy first."}, round=1, visible_to=["a"])
+    add_entry(conn, "r6", "a", "propose", {"answer_summary": "Tidy", "method": "m"}, round=1)
+    await observe(lab, judge_client=FakeModel(judge_reply))
+    assert "## Process 3" in (lab.observer.dir / "runs" / "r6.md").read_text()
+    summary = (lab.observer.dir / "summary.md").read_text()
+    assert "tidy (P3)" in summary and "## Process 3" in summary and "## Process 2" in summary
 
 
 def _scored(conn):

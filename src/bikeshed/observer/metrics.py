@@ -36,7 +36,7 @@ class RunInfo:
     @property
     def tag(self) -> str:
         """The run's name in tables and charts. Process 1 is the baseline and stays unmarked."""
-        return self.label if self.process == 1 else f"{self.label} (P2)"
+        return self.label if self.process == 1 else f"{self.label} (P{self.process})"
 
     @property
     def category(self) -> str:
@@ -224,7 +224,7 @@ class CategoryStats:
 def by_category(conn: sqlite3.Connection, runs: list[RunInfo]) -> dict[str, CategoryStats]:
     stats: dict[str, CategoryStats] = {}
     for run in runs:
-        key = run.category if run.process == 1 else f"{run.category} (P2)"
+        key = run.category if run.process == 1 else f"{run.category} (P{run.process})"
         s = stats.setdefault(key, CategoryStats())
         s.runs += 1
         s.endings[run.ended_reason or "unknown"] += 1

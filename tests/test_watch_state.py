@@ -246,3 +246,10 @@ def test_has_table(community):
     from bikeshed.db import has_table
     store, conn = community
     assert has_table(conn, "scorer_points") and not has_table(conn, "nope")
+
+
+def test_process_3_steps_set_the_phase_like_process_2():
+    s = RunState("r1", "g", "r1", "ad hoc", 12, process=3)
+    s.apply({"event": "run_started", "agents": ["a"]})
+    s.apply({"event": "agent_step_started", "round": 2, "agent": "a", "phase": "poll"})
+    assert s.step_phase == "poll" and s.cards["a"].state == "polling…"

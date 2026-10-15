@@ -96,6 +96,7 @@ def summary_section(**kw):
 
 
 P2 = replace(RUN, process=2)
+P3 = replace(RUN, process=3)
 
 
 def test_run_report_names_the_process():
@@ -159,8 +160,8 @@ def test_process_1_run_report_has_no_process_2_sections():
 def test_summary_process_2_section():
     s = SummarySection(runs=[P2], who=who, charts={}, identity=[], norms=[], codebook=[], twins={}, categories={},
                        failed=[], benchmark=[], reciprocity=[], in_progress=[], judge_note=None,
-                       process2=Process2Summary([RecurringPair("a", "b", 2, 5)], {"b": Participation(objected=2)},
-                                                [OrderStat(1, 4, 3)]))
+                       meetings={2: Process2Summary([RecurringPair("a", "b", 2, 5)], {"b": Participation(objected=2)},
+                                                    [OrderStat(1, 4, 3)])})
     block = render_summary(s).split("## Process 2\n")[1]
     assert "- Alpha (a) → Bea (b): 2 runs, 5 messages" in block
     assert "| Bea (b) | 2 | 0 | 2 | 0 | 0 | 0 |" in block
@@ -172,7 +173,7 @@ def test_poll_and_order_tables_say_what_they_count():
     assert "times polled" in run and "asked again each round" in run
     s = SummarySection(runs=[P2], who=who, charts={}, identity=[], norms=[], codebook=[], twins={}, categories={},
                        failed=[], benchmark=[], reciprocity=[], in_progress=[], judge_note=None,
-                       process2=Process2Summary([], {}, [OrderStat(1, 4, 3)]))
+                       meetings={2: Process2Summary([], {}, [OrderStat(1, 4, 3)])})
     assert "Summed over all Process 2 runs, whatever their size" in render_summary(s)
 
 
@@ -216,3 +217,21 @@ def test_multi_line_feedback_stays_inside_its_list_item():
     text = render_run(section(rulings=[RulingRow(4, "a", False, "Missing:\n- a price\n# Next")]))
     assert "- call #4 by Alpha (a): **rejected** — Missing: - a price # Next" in text
     assert "\n# Next" not in text
+
+
+def test_process_3_run_report_and_tag():
+    text = render_run(section(run=P3, process2=P2_SECTION, judgments=[themes("a"), tva("a")]))
+    assert "## Process 3\n" in text and "## Process 2" not in text
+    assert "## Think notes vs actions (private vs public)" in text
+    assert P3.tag == "best-fruit (P3)" and P2.tag == "best-fruit (P2)" and RUN.tag == "best-fruit"
+
+
+def test_summary_has_one_section_per_meeting_process():
+    s = summary_section(runs=[P2, P3], meetings={
+        2: Process2Summary([RecurringPair("a", "b", 2, 5)], {}, []),
+        3: Process2Summary([RecurringPair("b", "a", 3, 7)], {}, [])})
+    text = render_summary(s)
+    two = text.split("## Process 2\n")[1].split("## Process 3\n")[0]
+    three = text.split("## Process 3\n")[1]
+    assert "Alpha (a) → Bea (b): 2 runs" in two and "Bea (b) → Alpha (a)" not in two
+    assert "Bea (b) → Alpha (a): 3 runs" in three and "Summed over all Process 3 runs" in three
