@@ -4,11 +4,11 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from bikeshed.observer.briefs import BriefsSection, RunStat
-from bikeshed.observer.copying import CallCredit, Match, NormOverlap, Reuse
+from bikeshed.observer.copying import NORM_FLOOR, CallCredit, Match, NormOverlap, Reuse
 from bikeshed.observer.metrics import (
     ACTIONS, PRE_ACTIONS, BenchmarkAnswer, CategoryStats, Credits, IdentityEvent, Influence, NormEvent, RunInfo,
 )
-from bikeshed.observer.overlap import THRESHOLDS
+from bikeshed.observer.overlap import SHINGLE, THRESHOLDS
 from bikeshed.observer.process2 import OrderStat, Participation, RecurringPair
 from bikeshed.observer.scoring import Award, RulingRow, SelfCredit
 from bikeshed.observer.store import Judgment
@@ -397,11 +397,14 @@ def _text_reuse(s: SummarySection) -> list[str]:
         out += [f"| #{m} | {shown} | {used} |" for m, shown, used in s.methods_shown]
     out += ["", "## Norm overlap", ""]
     if not s.norm_overlaps:
-        return out + ["_No proposal restates an adopted norm._", ""]
-    out += ["| Proposal | Run | Author | Overlaps | Match | Outcome |", "|---|---|---|---|---|---|"]
+        return out + [f"_No proposal shares at least {NORM_FLOOR:.0%} of its {SHINGLE}-word sequences with a norm "
+                      f"adopted before it._", ""]
+    out += ["| Proposal | Run | Author | Overlaps | Shared | Outcome |", "|---|---|---|---|---|---|"]
     clip = lambda t: _cell(t if len(t) <= 120 else t[:120] + "…")
-    out += [f"| #{o.proposal_id} | {o.run_id} | {s.who(o.author)} | #{o.norm_id} {clip(o.norm_text)} | {o.kind} | "
-            f"{o.status} |" for o in s.norm_overlaps]
+    out += [f"| #{o.proposal_id} | {o.run_id} | {s.who(o.author)} | #{o.norm_id} {clip(o.norm_text)} | "
+            f"{o.share:.0%} | {o.status} |" for o in s.norm_overlaps]
+    out += ["", f"_Shared: the share of a proposal's {SHINGLE}-word sequences found in the norm (100% when all of it "
+            f"is there). Listed from {NORM_FLOOR:.0%}._"]
     return out + [""]
 
 

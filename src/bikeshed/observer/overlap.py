@@ -23,6 +23,14 @@ def shingles(text: str) -> frozenset[tuple[str, ...]]:
     return frozenset(tuple(words[i:i + SHINGLE]) for i in range(len(words) - SHINGLE + 1))
 
 
+def share(text: str, source: str) -> float:
+    """The fraction of `text` found in `source`: 1.0 for an exact match, else the share of its sequences."""
+    if match(text, source) == "exact":
+        return 1.0
+    own = shingles(text)
+    return len(own & shingles(source)) / len(own) if own else 0.0
+
+
 def match(text: str, source: str) -> Kind | None:
     """How much of `text` comes from `source`: exact (all of it), partial (at least PARTIAL of its sequences), or None."""
     t, s = normalise(text), normalise(source)

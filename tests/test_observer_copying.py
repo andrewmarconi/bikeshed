@@ -130,8 +130,8 @@ def test_a_proposal_restating_an_earlier_adopted_norm_is_listed_with_its_outcome
     again = _proposal(conn, "r2", "b", "Norm: " + NORM, "rejected", "2000-02-01T00:00:00+00:00")
     _proposal(conn, "r2", "c", "rate clarity", "open", "2000-02-01T00:00:00+00:00", kind="dimension")
     (o,) = norm_overlaps(conn, closed_runs(conn))
-    # the proposal is longer than the norm, so most but not all of it comes from the norm: partial
-    assert (o.proposal_id, o.norm_id, o.kind, o.status, o.author) == (again, adopted, "partial", "rejected", "b")
+    assert (o.proposal_id, o.norm_id, o.status, o.author) == (again, adopted, "rejected", "b")
+    assert 0.5 <= o.share < 1  # the proposal is longer than the norm: most, not all, of it comes from the norm
 
 
 def test_a_norm_adopted_after_the_proposal_does_not_count(community):
@@ -141,3 +141,46 @@ def test_a_norm_adopted_after_the_proposal_does_not_count(community):
     _proposal(conn, "r1", "a", NORM, "adopted", "2000-02-01T00:00:00+00:00")
     _proposal(conn, "r2", "b", NORM, "rejected", "2000-01-01T00:00:00+00:00")
     assert [o for o in norm_overlaps(conn, closed_runs(conn)) if o.author == "b"] == []
+
+
+def test_a_copied_file_is_found_through_the_workspace(community, tmp_path):
+    from bikeshed.workspace import Workspace
+    _, conn = community
+    add_run(conn, "r1")
+    ws = Workspace(conn, "r1", tmp_path / "runs" / "r1" / "workspace")
+    first = ws.write("plan.md", 0, REASON, "a", "draft")
+    add_entry(conn, "r1", "a", "write_file", {"path": "plan.md", "version": first, "note": "draft"})
+    second = ws.write("mine.md", 0, "My plan: " + REASON, "b", "mine")
+    pasted = add_entry(conn, "r1", "b", "write_file", {"path": "mine.md", "version": second, "note": "mine"}, round=2)
+    found = [m for m in copies(conn, closed_runs(conn)[0], tmp_path / "runs") if m.entry_id == pasted]
+    assert [(m.field, m.source_author, m.kind) for m in found] == [("content", "a", "partial")]
+    assert copies(conn, closed_runs(conn)[0]) == []  # without the runs directory, file text is unknown
+
+
+def test_fix_17s_own_example_is_listed_with_its_share(community):
+    # generation 3, proposal #14 restating adopted norm #8 ("Norm 1"): 45% of its six-word sequences
+    _, conn = community
+    norm_1 = ("Proposals must anchor abstract frameworks and metaphors to verifiable constraints in initial drafts, "
+              "ensuring structural integrity and operational clarity. Reactive patching of environmental "
+              "vulnerabilities mid-run is prohibited. This aligns with the Law of Structural Resonance, promoting a "
+              "seamless synthesis and execution of plans.")
+    restated = ("All proposals must anchor abstract frameworks and metaphors to verifiable constraints in initial "
+                "drafts. Reactive patching of environmental vulnerabilities mid-run is prohibited. This promotes "
+                "structural integrity, operational clarity, and seamless synthesis of plans.")
+    add_run(conn, "r9", created="2000-01-01T00:00:00+00:00")
+    add_run(conn, "r10", created="2000-02-01T00:00:00+00:00")
+    _proposal(conn, "r9", "a", norm_1, "adopted", "2000-01-01T00:00:00+00:00")
+    _proposal(conn, "r10", "b", restated, "rejected", "2000-02-01T00:00:00+00:00")
+    (o,) = norm_overlaps(conn, closed_runs(conn))
+    assert o.author == "b" and round(o.share, 2) == 0.45
+
+
+def test_a_small_overlap_is_not_listed(community):
+    _, conn = community
+    add_run(conn, "r1", created="2000-01-01T00:00:00+00:00")
+    add_run(conn, "r2", created="2000-02-01T00:00:00+00:00")
+    _proposal(conn, "r1", "a", NORM, "adopted", "2000-01-01T00:00:00+00:00")
+    _proposal(conn, "r2", "b", "members should cite the entry they are responding to, and also always vote early "
+              "and keep every review short and kind and specific and about the work itself", "open",
+              "2000-02-01T00:00:00+00:00")
+    assert norm_overlaps(conn, closed_runs(conn)) == []

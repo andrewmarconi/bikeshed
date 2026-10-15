@@ -284,15 +284,16 @@ def test_summary_shows_copying_credit_gaps_library_reuse_and_norm_overlap():
     text = render_summary(summary_section(
         copying={2: Counter({("a", "b", "exact"): 3, ("a", "b", "partial"): 1})},
         credit_gaps={2: (1, 4)}, reuse={2: (2, 6)}, methods_shown=[(4, 5, 2)],
-        norm_overlaps=[NormOverlap(14, "r10", "a", 1, "Cite the entry you disagree with.", "partial", "rejected")]))
+        norm_overlaps=[NormOverlap(14, "r10", "a", 1, "Cite the entry you disagree with.", 0.45, "rejected")]))
     copying = text.split("## Copying\n")[1].split("\n## ")[0]
     assert "### Process 2" in copying and "| Alpha (a) | Bea (b) | 3 | 1 |" in copying
     assert "Process 2: 1 of 4 calls left out a copied source." in text
     lib = text.split("## Library reuse\n")[1].split("\n## ")[0]
     assert "Process 2: 2 of 6 shown methods reused." in lib and "| #4 | 5 | 2 |" in lib
     overlap = text.split("## Norm overlap\n")[1].split("\n## ")[0]
-    assert "| #14 | r10 | Alpha (a) | #1 Cite the entry you disagree with. | partial | rejected |" in overlap
+    assert "| #14 | r10 | Alpha (a) | #1 Cite the entry you disagree with. | 45% | rejected |" in overlap
 
 
 def test_summary_without_norm_overlap():
-    assert "_No proposal restates an adopted norm._" in render_summary(summary_section())
+    assert ("_No proposal shares at least 25% of its 6-word sequences with a norm adopted before it._"
+            in render_summary(summary_section()))

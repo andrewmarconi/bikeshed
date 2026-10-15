@@ -172,7 +172,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
             await _judge_run(judge, ostore, conn, store, runs, run, who, answers, progress, cfg.run.max_concurrent_calls)
         judgments = ostore.judgments(run.id)
         labels = {t["label"] for j in judgments if j.analysis == "themes" and j.status == "ok" for t in j.result["themes"]}
-        found = cp.copies(conn, run)
+        found = cp.copies(conn, run, cfg.runs_dir)
         section = RunSection(
             run=run, who=who, changes=provenance_changes(conn, run.id), mix=m.action_mix(conn, run),
             influence=m.influence(conn, run), credits=m.credits(conn, run.id), peer=m.peer_scores(conn, run.id),
@@ -302,7 +302,7 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
     shown_count: Counter = Counter()
     reused_count: Counter = Counter()
     for r in runs:
-        copied = cp.copies(conn, r)
+        copied = cp.copies(conn, r, runs_dir)
         copying.setdefault(r.process, Counter()).update((c.copier, c.source_author, c.kind) for c in copied)
         checks = cp.credit_accuracy(conn, r, copied)
         gaps, calls = credit_gaps.get(r.process, (0, 0))

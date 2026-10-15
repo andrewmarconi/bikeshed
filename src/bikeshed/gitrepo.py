@@ -83,6 +83,13 @@ class GitRepo:
     def is_dirty(self) -> bool:
         return bool(self._git("status", "--porcelain"))
 
+    def show_commit(self, commit: str, path: str) -> str | None:
+        """The file's content at one commit; None if it is not there. Reads only."""
+        try:
+            return self._git("show", f"{commit}:{path}")
+        except GitError:
+            return None
+
     def show_at(self, path: str, before: datetime | None = None) -> str | None:
         """The file's content at the last commit touching it (at or before `before`); None if it did not exist."""
         if self.head() is None:

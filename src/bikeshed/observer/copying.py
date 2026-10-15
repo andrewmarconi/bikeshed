@@ -9,9 +9,11 @@ from pathlib import Path
 from bikeshed.board import Board, Entry
 from bikeshed.db import has_table
 from bikeshed.events import read_events
+from bikeshed.gitrepo import GitRepo
 from bikeshed.observer.metrics import RunInfo
-from bikeshed.observer.overlap import match
+from bikeshed.observer.overlap import match, share
 
+NORM_FLOOR = 0.25  # norms are short and reworded: list any proposal sharing this much with an earlier adopted norm
 TEXT_FIELDS = ("answer_summary", "method", "points", "text", "reason", "change", "synthesis", "content")
 
 
@@ -27,9 +29,27 @@ class Match:
     same_round: bool   # in a blind phase a same-round match is convergence, not copying
 
 
-def _texts(entry: Entry) -> list[tuple[str, str]]:
-    return [(f, entry.payload[f]) for f in TEXT_FIELDS
-            if isinstance(entry.payload.get(f), str) and entry.payload[f].strip()]
+def file_texts(conn: sqlite3.Connection, run_id: str, runs_dir: Path | None) -> dict[tuple[str, int], str]:
+    """Each workspace file version's text, read from the run's workspace repo at the commit `files` records.
+    A write_file entry holds only the path and version; its text lives in the workspace. Reads only."""
+    root = runs_dir / run_id / "workspace" if runs_dir is not None else None
+    if root is None or not (root / ".git").exists():
+        return {}
+    repo = GitRepo(root)  # not GitRepo.init: never create anything
+    out = {}
+    for row in conn.execute("SELECT path, version, git_commit FROM files WHERE run_id = ?", (run_id,)):
+        if (text := repo.show_commit(row["git_commit"], row["path"])) is not None:
+            out[(row["path"], row["version"])] = text
+    return out
+
+
+def _texts(entry: Entry, files: dict[tuple[str, int], str] | None = None) -> list[tuple[str, str]]:
+    found = [(f, entry.payload[f]) for f in TEXT_FIELDS
+             if isinstance(entry.payload.get(f), str) and entry.payload[f].strip()]
+    if entry.type == "write_file" and files and (text := files.get((entry.payload.get("path"),
+                                                                     entry.payload.get("version")))):
+        found.append(("content", text))
+    return found
 
 
 def _copier(entry: Entry, members: set[str]) -> bool:
@@ -39,10 +59,12 @@ def _copier(entry: Entry, members: set[str]) -> bool:
     return entry.visible_to is None or entry.type == "private_message"
 
 
-def copies(conn: sqlite3.Connection, run: RunInfo) -> list[Match]:
+def copies(conn: sqlite3.Connection, run: RunInfo, runs_dir: Path | None = None) -> list[Match]:
+    """Without `runs_dir`, file writes have no text to compare."""
     entries = Board(conn, run.id).entries()
     members = set(run.agent_ids)
-    texts = {e.id: _texts(e) for e in entries}
+    files = file_texts(conn, run.id, runs_dir)
+    texts = {e.id: _texts(e, files) for e in entries}
     out = []
     for i, entry in enumerate(entries):
         if not _copier(entry, members):
@@ -130,13 +152,14 @@ class NormOverlap:
     author: str
     norm_id: int
     norm_text: str
-    kind: str
+    share: float  # of the proposal's word sequences found in the norm; 1.0 when it is all there
     status: str
 
 
 def norm_overlaps(conn: sqlite3.Connection, runs: list[RunInfo]) -> list[NormOverlap]:
-    """Norm and amendment proposals whose text overlaps a norm adopted before they were made. A norm is adopted in
-    its run's post-run, so "before" means its run ended (post-run included) before the proposal was created."""
+    """Norm and amendment proposals sharing at least NORM_FLOOR of their text with a norm adopted before they were
+    made, with the share shown rather than a yes or no. A norm is adopted in its run's post-run, so "before" means its
+    run ended (post-run included) before the proposal was created."""
     if not has_table(conn, "norm_proposals"):
         return []
     ends = {r.id: datetime.fromisoformat(r.end) for r in runs}
@@ -149,9 +172,9 @@ def norm_overlaps(conn: sqlite3.Connection, runs: list[RunInfo]) -> list[NormOve
         for n in adopted:
             if n["id"] == p["id"] or n["run_id"] not in ends or not ends[n["run_id"]] < made:
                 continue
-            kind = match(p["text"], n["text"])
-            if kind and (best is None or (kind == "exact" and best[1] != "exact")):
-                best = (n, kind)
+            got = share(p["text"], n["text"])
+            if got >= NORM_FLOOR and (best is None or got > best[1]):
+                best = (n, got)
         if best:
             out.append(NormOverlap(p["id"], p["run_id"], p["author"], best[0]["id"], best[0]["text"], best[1],
                                    p["status"]))

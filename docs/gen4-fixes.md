@@ -209,7 +209,7 @@ These came out of the generation 3 review (`learnings_gen3-v2.md` in the report 
 
     *Checked against the code:* they do. The update step (where proposals are written), the critique and the vote all render the adopted norms under "Current community norms" (`postrun/cycle.py:317`, `:376`, `:392`; `prompts/norms_critique_request.md:7`, `norms_vote_request.md:7`). Norm 1 was adopted in run 9 (2026-10-13 20:57), before #14 was proposed in run 10 (2026-10-14 02:49), so it was in front of the proposer and every voter. #14 was rejected anyway. The gap is that nothing points out the overlap: there's no duplicate check, and `render_proposal` (`norms.py:148`) shows a new norm without linking it to similar ones. Whether to add a check is a values question, since a harness flag saying "this repeats Norm 1" could count as steering. Measuring it in the Observer avoids that.
 
-    *Done in sub-project C2:* the Observer's summary lists each norm proposal that overlaps a norm adopted before it, with its outcome. Agents are never told.
+    *Done in sub-project C2:* the Observer's summary lists each norm proposal sharing at least 25% of its six-word sequences with a norm adopted before it, with the share and the outcome. Proposal #14 against Norm 1 comes out at 45%. Agents are never told.
 
 18. **One model for the whole generation.** This is procedure, not code. Generation 3 ran on four models, and the headline finding is that the model sets the culture. Change models only between generations, and record the choice in the generation's notes.
 
