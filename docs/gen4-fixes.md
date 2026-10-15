@@ -239,7 +239,7 @@ Each sub-project gets its own spec, plan and implementation. Anything that chang
 | F | Process 3 and naming | `docs/nomenclature-cleanup.md` | Yes (new `--process 3` value) | **Done** (merged 2026-10-15, `49e0480`) |
 | B | Agent environment | Fixes 10, 11, 12, 13 (decision) | Yes | **Done** (merged 2026-10-15, `8af1315`) |
 | C1 | Measurement corrections | Fixes 8, 9, 14 (`think_vs_act`, `private_public`), 15, 16 | No | **Done** (merged 2026-10-15, `49871f7`) |
-| C2 | New measurements | Fixes 7 (twin's brief slot), 14 (copying, credit accuracy, rule-gaming), 17 (norm overlap), library reuse from B | No | **In progress** |
+| C2 | New measurements | Fixes 7 (twin's brief slot), 14 (copying, credit accuracy, rule-gaming), 17 (norm overlap), library reuse from B | No | **Done** (merged 2026-10-15, `54a29a8`) |
 | D | Baseline run | Fix 6 | No (separate scratch community) | Before the first pizza benchmark of generation 4 |
 | E | Setup and procedure | Fix 0 (`f.md`), 18, sixth briefs, `view_entries` | Config and goals only | Repo side done in A; lab edits and model choice are Andrew's, after F |
 
