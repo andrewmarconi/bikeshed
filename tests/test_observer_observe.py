@@ -106,7 +106,8 @@ async def test_summary_compares_the_control_with_its_twin(lab, community):
     summary = (lab.observer.dir / "summary.md").read_text()
     section = summary.split("\n## Control vs twin\n")[1].split("\n## ")[0]
     assert "Bea (b)" in section
-    assert "| best-fruit | Bea (b) | 4.0 |" in section
+    assert "| best-fruit | Bea (b) | 4.0 |" in section and section.count("| – |") >= 2
+    assert "| brief |" in section
     assert "| dishwasher | e (e) | 2.0 |" in section
     assert (lab.observer.dir / "charts" / "control_e.png").exists()
 
@@ -306,3 +307,14 @@ async def test_a_judgment_whose_inputs_are_now_empty_is_dropped(lab, community):
     await observe(lab, judge_client=FakeModel(judge_reply))
     assert ObserverStore(lab.observer.dir / "observer.db").judgments("r7", "think_vs_act") == []
     assert "STALE" not in (lab.observer.dir / "runs" / "r7.md").read_text()
+
+
+async def test_observe_reports_copied_text(lab, community):
+    store, conn = community
+    reason = "it meets every constraint and nobody has objected to the plan so far"
+    add_run(conn, "r8", created=FUTURE, goal_id="copy")
+    add_entry(conn, "r8", "b", "vote", {"target": 1, "stance": "support", "reason": reason})
+    add_entry(conn, "r8", "a", "vote", {"target": 1, "stance": "support", "reason": reason}, round=2)
+    await observe(lab, judge_note="--no-judge")
+    report = (lab.observer.dir / "runs" / "r8.md").read_text()
+    assert "| Alpha (a) |" in report.split("## Copying\n")[1] and "earlier round" in report

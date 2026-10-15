@@ -37,7 +37,7 @@ A match is directional. It says how much of `text` comes from `source`, not the 
 
 - `answer_summary`, `method`;
 - `points`, `text`, `reason`, `change`, `synthesis`;
-- `content` (a file write).
+- `content` (a file write). A `write_file` entry holds only the path and version, so its text is read, read-only, from the run's workspace repo at the commit `files` records for that version.
 
 Think notes are private to their author and are never checked as copiers.
 
@@ -102,16 +102,18 @@ For each norm proposal of kind `norm` or `amendment`, compare its `text` with ea
 - Adopted norms are the `norm_proposals` rows with `status = 'adopted'` and kind `norm` or `amendment`.
 - `norm_proposals` has no adoption time. A norm is adopted during its own run's post-run (the norms_vote step), which `metrics.run_end` covers. So a norm counts as "adopted before" a proposal when its run's `run_end` is earlier than the proposal's `created_at`.
 
-The best match is kept, with exact before partial. Dimension proposals are not compared.
+The measure is the **share** of the proposal's 6-word sequences found in the norm (`overlap.share`; 1.0 when the whole proposal is there). The norm with the highest share is kept. A proposal is listed when that share is at least `NORM_FLOOR = 0.25`. Dimension proposals are not compared.
 
-**Report.** **Summary, "## Norm overlap":** one row per proposal that overlaps an earlier adopted norm. Columns:
+*Revised in the final review (2026-10-15).* The first version used the copying threshold (a partial match at 50%). But fix 17's own example, generation 3's proposal #14 restating adopted norm #8, shares 45% of its sequences, so it went unlisted. Norms are short and get reworded, so instead of fitting a threshold to one case, the report shows the share and lists from a low floor. The reader judges.
+
+**Report.** **Summary, "## Norm overlap":** one row per listed proposal. Columns:
 
 - the proposal (id, run, author);
 - the norm it overlaps (id and its text, clipped to 120 characters);
-- the match kind;
+- the share;
 - the proposal's outcome (`adopted`, `rejected`, `open`).
 
-With no overlaps it says "_No proposal restates an adopted norm._" The Observer doesn't call a proposal a duplicate; it shows the overlap.
+A note under the table explains the share. With no rows it says "_No proposal shares at least 25% of its 6-word sequences with a norm adopted before it._" The Observer doesn't call a proposal a duplicate; it shows the overlap.
 
 ## The twin's brief slot (fix 7)
 

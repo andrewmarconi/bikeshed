@@ -1,6 +1,7 @@
 from collections import Counter
 from dataclasses import replace
 
+from bikeshed.observer.copying import CallCredit, Match, NormOverlap, Reuse
 from bikeshed.observer.charts import marker_positions, network_chart, trend_chart
 from bikeshed.observer.metrics import BenchmarkAnswer, CategoryStats, Credits, Influence, RunInfo
 from bikeshed.observer.process2 import OrderStat, Participation, RecurringPair
@@ -256,3 +257,43 @@ def test_old_think_vs_act_points_without_round_still_render():
         {"relation": "agrees", "about": "pear", "think_quote": "x", "action_quote": "y"}]}, None, "claude-x", "p")
     text = render_run(section(run=P2, process2=P2_SECTION, judgments=[old]))
     assert "- **agrees** — pear: think “x” / action “y”" in text
+
+
+def test_run_report_shows_copying_credit_checks_and_library_reuse():
+    copied = [Match("a", 9, "vote", "reason", "b", 7, "exact", True)]
+    checks = [CallCredit(11, "a", ("b",), ("a", "c"), ("b",), ("c",))]
+    reuse = [Reuse(4, "r0", "b", ("a", "b"), (("a", 8, "partial"),)), Reuse(5, "r0", "b", ("a",), ())]
+    text = render_run(section(copies=copied, credit_checks=checks, reuse=reuse))
+    block = text.split("## Copying\n")[1].split("\n## ")[0]
+    assert "| Alpha (a) | #9 vote.reason | #7 Bea (b) | exact | same round |" in block
+    assert "_Matches: exact, or partial when at least 50%" in block
+    assert ("- #11 by Alpha (a): copied from Bea (b); credited Alpha (a), c; uncredited: Bea (b); "
+            "credited without matching text: c") in text
+    lib = text.split("## Library reuse\n")[1].split("\n## ")[0]
+    assert "- method #4 (run r0, by Bea (b)), shown to Alpha (a), Bea (b): reused by Alpha (a) in #8 (partial)" in lib
+    assert "- method #5 (run r0, by Bea (b)), shown to Alpha (a): not reused" in lib
+
+
+def test_run_report_without_copies_or_a_library_record():
+    text = render_run(section())
+    assert "_No copied text found._" in text.split("## Copying\n")[1]
+    assert "_Not recorded._" in text.split("## Library reuse\n")[1]
+
+
+def test_summary_shows_copying_credit_gaps_library_reuse_and_norm_overlap():
+    text = render_summary(summary_section(
+        copying={2: Counter({("a", "b", "exact"): 3, ("a", "b", "partial"): 1})},
+        credit_gaps={2: (1, 4)}, reuse={2: (2, 6)}, methods_shown=[(4, 5, 2)],
+        norm_overlaps=[NormOverlap(14, "r10", "a", 1, "Cite the entry you disagree with.", 0.45, "rejected")]))
+    copying = text.split("## Copying\n")[1].split("\n## ")[0]
+    assert "### Process 2" in copying and "| Alpha (a) | Bea (b) | 3 | 1 |" in copying
+    assert "Process 2: 1 of 4 calls left out a copied source." in text
+    lib = text.split("## Library reuse\n")[1].split("\n## ")[0]
+    assert "Process 2: 2 of 6 shown methods reused." in lib and "| #4 | 5 | 2 |" in lib
+    overlap = text.split("## Norm overlap\n")[1].split("\n## ")[0]
+    assert "| #14 | r10 | Alpha (a) | #1 Cite the entry you disagree with. | 45% | rejected |" in overlap
+
+
+def test_summary_without_norm_overlap():
+    assert ("_No proposal shares at least 25% of its 6-word sequences with a norm adopted before it._"
+            in render_summary(summary_section()))

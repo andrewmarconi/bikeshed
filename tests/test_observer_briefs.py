@@ -216,3 +216,15 @@ def test_fabrication_input_final_synthesis_follows_the_closing_call(community):
     call = briefed_run(conn)
     add_entry(conn, "r1", "system", "run_closed", {"call_id": call, "reason": "consensus"}, round=6)
     assert pb.fabrication_inputs(conn, closed_runs(conn)[0], who)["final synthesis"] == "Steak"
+
+
+def test_slot_label_names_the_slot_shared_only_or_unbriefed(community):
+    _, conn = community
+    add_run(conn, "r1")
+    add_briefs(conn, "r1", RunBriefs(Brief(0, None, "shared", ()), (Brief(1, "a", "private one", ()),)))
+    add_run(conn, "r2")
+    assert pb.slot_label(conn, "r1", "a") == "slot 1"
+    assert pb.slot_label(conn, "r1", "b") == "shared only"
+    assert pb.slot_label(conn, "r2", "a") == "–"
+    conn.execute("DROP TABLE run_briefs")
+    assert pb.slot_label(conn, "r1", "a") == "–"
