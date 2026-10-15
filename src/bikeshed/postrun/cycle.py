@@ -461,7 +461,8 @@ class PostRun:
         answer = await ask(self.narrator, render("narrator_system.md"), request, NarrativeReply)
         report.mkdir(parents=True, exist_ok=True)
         (report / "narrative.md").write_text(
-            "# Narrative\n\n_Written by the narrator model from the account. No agent ever sees this._\n\n"
+            "# Narrative\n\n_Written by the narrator model from the account and not checked against the record. "
+            "Where it disagrees with account.md, the account is right. No agent ever sees this._\n\n"
             + answer.reply.narrative.strip() + "\n"
         )
         return answer.reasoning

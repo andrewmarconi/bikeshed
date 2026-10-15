@@ -518,6 +518,8 @@ async def test_the_narrator_writes_a_user_only_narrative(tmp_path, community, ma
     assert (await post.run(run_id)).status == "done"
     text = (tmp_path / "runs" / run_id / "report" / "narrative.md").read_text()
     assert text.startswith("# Narrative\n") and "It went the way the account says." in text
+    assert "_Written by the narrator model from the account and not checked against the record. Where it disagrees " \
+           "with account.md, the account is right. No agent ever sees this._" in text
     request = narrator.calls[0][1][0]["content"]
     assert request.startswith("# Post-run: narrative") and "# Account" in request and "COMPETING-POSITIONS" in request
     for client in clients.values():
