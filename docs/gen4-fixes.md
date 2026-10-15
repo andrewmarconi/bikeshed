@@ -219,7 +219,7 @@ Each sub-project gets its own spec, plan and implementation. Anything that chang
 |---|---|---|---|---|
 | A | Control integrity | Fixes 1–5, 7 (dealing briefs) | Yes | **Done** (merged 2026-10-15, `73a14b7`) |
 | F | Process 3 and naming | `docs/nomenclature-cleanup.md` | Yes (new `--process 3` value) | **Done** (merged 2026-10-15, `49e0480`) |
-| B | Agent environment | Fixes 10, 11, 12, 13 (decision) | Yes | **In progress**; before generation 4 run 1 |
+| B | Agent environment | Fixes 10, 11, 12, 13 (decision) | Yes | **Done** (merged 2026-10-15, `8af1315`) |
 | C | Measurement | Fixes 7 (twin comparison), 8, 9, 14, 15, 16, 17 | No | Any time; re-run over generation 4 |
 | D | Baseline run | Fix 6 | No (separate scratch community) | Before the first pizza benchmark of generation 4 |
 | E | Setup and procedure | Fix 0 (`f.md`), 18, sixth briefs, `view_entries` | Config and goals only | Repo side done in A; lab edits and model choice are Andrew's, after F |
