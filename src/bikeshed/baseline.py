@@ -12,7 +12,7 @@ from typing import Any
 from bikeshed.briefs import RunBriefs
 from bikeshed.briefs import load as load_briefs
 from bikeshed.config import Config, RunSettings
-from bikeshed.db import connect, now_iso
+from bikeshed.db import connect, connect_readonly, now_iso
 from bikeshed.profiles import ProfileStore
 
 INFO_FILE = "baseline.toml"
@@ -90,15 +90,29 @@ def _changes(then: dict[str, Any], now: dict[str, Any]) -> list[str]:
             if k not in MACHINE_KEYS and k != "api_key" and now.get(k) != then[k]]
 
 
-def check_backends(source: Source, cfg: Config, variant: str | None = None) -> None:
+def _same(then: dict[str, Any], now: dict[str, Any]) -> bool:
+    """Same model settings on both sides, over every key either names (a key one side lacks counts as None)."""
+    keys = (then.keys() | now.keys()) - set(MACHINE_KEYS) - {"api_key", "backend"}
+    return all(then.get(k) == now.get(k) for k in keys)
+
+
+def check_backends(source: Source, cfg: Config, variant: str | None = None,
+                   started: dict[str, Any] | None = None) -> None:
     """Every agent runs on the backend it ran on then, with the same settings, or, for a variant, every agent runs on
-    `variant`; and the Scorer is the same one either way, so rulings stay comparable."""
+    `variant` (unchanged since the variant `started`, when it's resumed); and the Scorer is the same one either way,
+    so rulings stay comparable."""
     if variant is not None:
         if variant not in cfg.models:
             raise BaselineError(f"backend {variant!r} isn't in the config")
         if all(source.backends[a] == variant for a in source.agent_ids):
             raise BaselineError(f"every agent ran on {variant!r} in run {source.run_id}: that's a plain baseline, "
                                 "so drop --backend")
+        now = cfg.models[variant].model_dump(mode="json")
+        if all(_same(source.specs[a], now) for a in source.agent_ids):
+            raise BaselineError(f"{variant!r} has the settings every agent ran on in run {source.run_id}: that's a "
+                                "plain baseline under another name, so drop --backend")
+        if started is not None and (changed := _changes(started, now)):
+            raise BaselineError(f"backend {variant!r} changed since this variant started: {'; '.join(changed)}")
     else:
         for agent_id in source.agent_ids:
             name = source.backends[agent_id]
@@ -166,6 +180,22 @@ def read_info(directory: Path) -> dict[str, str]:
 
 def record_run(directory: Path, run_id: str) -> None:
     _write_info(directory, {**read_info(directory), "baseline_run": run_id})
+
+
+def started_spec(directory: Path) -> dict[str, Any] | None:
+    """The backend settings a baseline's agents started on, from its own start provenance; None before it started."""
+    db = directory / "community" / "community.db"
+    if not db.exists():
+        return None
+    conn = connect_readonly(db)
+    try:
+        row = conn.execute("SELECT models FROM run_provenance WHERE phase = 'start' ORDER BY id LIMIT 1").fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    first = next(iter(json.loads(row["models"]).values()))
+    return {k: v for k, v in first.items() if k != "backend"}
 
 
 def _write_info(directory: Path, info: dict[str, str]) -> None:

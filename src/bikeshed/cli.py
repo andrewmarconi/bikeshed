@@ -381,7 +381,7 @@ def baseline(
         else:
             source = bl.read_source(community, source_store, run_id)
             directory = bl.new_directory(bl.home(cfg), source.run_id, variant=backend is not None)
-        bl.check_backends(source, cfg, backend)
+        bl.check_backends(source, cfg, backend, started=bl.started_spec(directory) if resume and backend else None)
     except (bl.BaselineError, ProfileError) as exc:
         _fail(str(exc))
     kind = "variant" if backend else "baseline"

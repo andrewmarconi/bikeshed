@@ -3,7 +3,7 @@ import json
 import pytest
 
 from bikeshed.baseline import (
-    BaselineError, check_backends, new_directory, prepare, read_info, read_source, record_run, settings_for,
+    BaselineError, check_backends, new_directory, prepare, read_info, read_source, record_run, settings_for, started_spec,
 )
 from bikeshed.briefs import Brief, RunBriefs, save
 from bikeshed.config import Config
@@ -231,3 +231,45 @@ def test_prepare_variant_records_its_backend(community, tmp_path):
     assert (info["backend"], info["baseline_run"], info["source_run"]) == ("think", "x123", "r1")
     plain = prepare(new_directory(tmp_path / "baselines", "r1"), read_source(conn, store, "r1"))
     assert plain.record("a").model == "local" and "backend" not in read_info(tmp_path / "baselines" / "r1-b1")
+
+
+def test_variant_check_refuses_a_renamed_copy_of_the_source_backend(community, tmp_path):
+    store, conn = community
+    _closed(conn)
+    cfg = _cfg(tmp_path)
+    cfg.models["local"].thinking = False
+    _provenance(conn, "r1", "start", {}, spec=cfg.models["local"].model_dump(mode="json"))  # as provenance records it
+    cfg.models["copy"] = cfg.models["local"].model_copy(update={"timeout_s": 5})  # same model, a machine setting aside
+    with pytest.raises(BaselineError, match="plain baseline under another name"):
+        check_backends(read_source(conn, store, "r1"), cfg, "copy")
+    cfg.models["copy"].thinking = True
+    check_backends(read_source(conn, store, "r1"), cfg, "copy")
+
+
+def test_resumed_variant_refuses_a_backend_changed_since_it_started(community, tmp_path):
+    store, conn = community
+    _closed(conn)
+    _provenance(conn, "r1", "start", {})
+    cfg = _think(_cfg(tmp_path))
+    src = read_source(conn, store, "r1")
+    started = cfg.models["think"].model_dump(mode="json")
+    check_backends(src, cfg, "think", started=started)
+    cfg.models["think"].timeout_s = 5                          # a machine setting: never refused
+    check_backends(src, cfg, "think", started=started)
+    cfg.models["think"].thinking = False
+    with pytest.raises(BaselineError, match="changed since this variant started: thinking was True, now False"):
+        check_backends(src, cfg, "think", started=started)
+
+
+def test_started_spec_reads_the_variants_own_start_provenance(community, tmp_path):
+    store, conn = community
+    _closed(conn)
+    _provenance(conn, "r1", "start", {})
+    directory = new_directory(tmp_path / "baselines", "r1", variant=True)
+    prepare(directory, read_source(conn, store, "r1"), "think")
+    assert started_spec(directory) is None                     # introduced, not started
+    scratch = connect(directory / "community" / "community.db")
+    _closed(scratch, "x1")
+    _provenance(scratch, "x1", "start", {}, model="Think-Model", spec={"thinking": True})
+    scratch.commit()
+    assert started_spec(directory) == {"model": "Think-Model", "thinking": True}
