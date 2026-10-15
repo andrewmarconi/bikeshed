@@ -37,6 +37,9 @@ class Source:
     run: dict[str, Any]           # [run] settings from the last start or resume provenance
     backends: dict[str, str]      # agent -> backend name it ran on
     models: dict[str, str]        # agent -> model that backend named then
+    specs: dict[str, dict[str, Any]]  # agent -> that backend's full settings then (no api_key)
+    scorer: str | None            # the Scorer backend then (None in provenance from before the Scorer)
+    scorer_spec: dict[str, Any] | None
     briefs: RunBriefs
     temperaments: dict[str, str]  # agent -> first committed temperament.md
 
@@ -55,6 +58,11 @@ def read_source(conn: sqlite3.Connection, store: ProfileStore, run_id: str) -> S
         raise BaselineError(f"run {run_id} has no provenance, so its settings and models are unknown")
     started = next((p for p in prov if p["phase"] == "start"), prov[0])
     run_cfg = json.loads(prov[-1]["config"]).get("run") or {}
+    if missing_fields := [k for k in RUN_FIELDS if k != "process" and k not in run_cfg]:
+        raise BaselineError(f"run {run_id}'s provenance lacks {', '.join(missing_fields)}, so its settings are unknown")
+    run_cfg = {**run_cfg, "process": row["process"]}  # the run row is authoritative for the process
+    start_cfg = json.loads(started["config"])
+    scorer = (start_cfg.get("scorer") or {}).get("judge")
     models = json.loads(started["models"])
     agent_ids = tuple(json.loads(row["agent_ids"]))
     missing = [a for a in agent_ids if a not in models]
@@ -69,19 +77,36 @@ def read_source(conn: sqlite3.Connection, store: ProfileStore, run_id: str) -> S
     return Source(run_id, row["goal"], row["goal_id"], row["goal_category"], bool(row["is_benchmark"]), agent_ids,
                   row["seed"], {k: run_cfg[k] for k in RUN_FIELDS if k in run_cfg},
                   {a: models[a]["backend"] for a in agent_ids}, {a: models[a].get("model", "") for a in agent_ids},
+                  {a: {k: v for k, v in models[a].items() if k != "backend"} for a in agent_ids},
+                  scorer, (start_cfg.get("models") or {}).get(scorer) if scorer else None,
                   load_briefs(conn, run_id), temperaments)
 
 
+MACHINE_KEYS = ("timeout_s",)  # backend settings that don't change what a model produces
+
+
+def _changes(then: dict[str, Any], now: dict[str, Any]) -> list[str]:
+    return [f"{k} was {then[k]!r}, now {now.get(k)!r}" for k in sorted(then)
+            if k not in MACHINE_KEYS and k != "api_key" and now.get(k) != then[k]]
+
+
 def check_backends(source: Source, cfg: Config) -> None:
-    """Every agent must run on the backend it ran on then, and that backend must still name the same model."""
+    """Every agent runs on the backend it ran on then, with the same settings; and the Scorer is the same one."""
     for agent_id in source.agent_ids:
         name = source.backends[agent_id]
         backend = cfg.models.get(name)
         if backend is None:
             raise BaselineError(f"{agent_id} ran on backend {name!r}, which is no longer in the config")
-        now = backend.model_dump().get("model", "")
-        if now != source.models[agent_id]:
-            raise BaselineError(f"backend {name!r} now names {now!r}; {agent_id} ran on {source.models[agent_id]!r}")
+        if changed := _changes(source.specs[agent_id], backend.model_dump(mode="json")):
+            raise BaselineError(f"backend {name!r} changed since run {source.run_id}: {'; '.join(changed)}")
+    if source.scorer is None:
+        return
+    if cfg.scorer.judge != source.scorer:
+        raise BaselineError(f"the Scorer was {source.scorer!r} in run {source.run_id}, now {cfg.scorer.judge!r}")
+    now = cfg.models.get(source.scorer)
+    if source.scorer_spec and (now is None or (changed := _changes(source.scorer_spec, now.model_dump(mode="json")))):
+        detail = "it is no longer in the config" if now is None else "; ".join(changed)
+        raise BaselineError(f"the Scorer backend {source.scorer!r} changed since run {source.run_id}: {detail}")
 
 
 def settings_for(source: Source, cfg: Config) -> RunSettings:

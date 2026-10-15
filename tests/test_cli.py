@@ -631,7 +631,10 @@ def test_baseline_mirrors_a_run_in_a_scratch_room(project):
     source = connect(tmp_path / "community" / "community.db")
     seed = lambda c, r: c.execute("SELECT seed FROM runs WHERE id = ?", (r,)).fetchone()[0]
     assert seed(scratch, b_run) == seed(source, run_id)
-    assert scratch.execute("SELECT COUNT(*) FROM postrun_steps").fetchone()[0] == 0
+    for table in ("postrun_steps", "reviews", "journals"):
+        assert scratch.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0, table
+    from bikeshed.profiles import ProfileStore
+    assert not any(ProfileStore(home / "community").record(a).control for a in ("a", "b"))
     events = [e["event"] for e in read_events(home / "runs" / b_run / "events.jsonl")]
     assert "library_retrieved" not in events
     names = (home / "community" / "agents" / "a" / "public.toml").read_text()
@@ -681,3 +684,54 @@ def test_resume_finishes_introductions_then_runs(project, monkeypatch):
     assert f"baseline {run_id}-b1 closed" in resumed.output
     again = invoke("baseline", "--resume", f"{run_id}-b1", "-c", config)
     assert again.exit_code == 1 and "already closed" in again.output
+
+
+class _Failing:
+    """Wraps a client: calls whose system prompt or first message match `when` raise a model error."""
+    def __init__(self, inner, when):
+        self.inner, self.when = inner, when
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+    async def chat(self, system, messages, *args, **kwargs):
+        from bikeshed.models.base import ModelError
+        if self.when(system, messages[0]["content"]):
+            raise ModelError("server down")
+        return await self.inner.chat(system, messages, *args, **kwargs)
+
+
+def test_a_paused_baseline_resumes_without_new_introductions_and_closes(project, monkeypatch):
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    run_id = run_id_from(invoke("run", "Pick a colour", "--max-rounds", "2", "-c", config).output)
+    working = cli.make_client
+    monkeypatch.setattr(cli, "make_client", lambda backend, retries: _Failing(
+        working(backend, retries), lambda system, first: re.search(r"^# Round", first, re.M) is not None))
+    paused = invoke("baseline", run_id, "-c", config)
+    assert paused.exit_code == 0 and f"--resume {run_id}-b1" in paused.output and "paused" in paused.output
+    home = tmp_path / "baselines" / f"{run_id}-b1"
+    names = {a: (home / "community" / "agents" / a / "public.toml").read_text() for a in ("a", "b")}
+    monkeypatch.setattr(cli, "make_client", working)
+    resumed = invoke("baseline", "--resume", f"{run_id}-b1", "-c", config)
+    assert resumed.exit_code == 0 and f"baseline {run_id}-b1 closed" in resumed.output, resumed.output
+    assert {a: (home / "community" / "agents" / a / "public.toml").read_text() for a in ("a", "b")} == names
+    from bikeshed.db import connect
+    assert connect(home / "community" / "community.db").execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 1
+
+
+def test_resume_keeps_introductions_that_succeeded(project, monkeypatch):
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    run_id = run_id_from(invoke("run", "Pick a colour", "--max-rounds", "2", "-c", config).output)
+    working = cli.make_client
+    monkeypatch.setattr(cli, "make_client", lambda backend, retries: _Failing(
+        working(backend, retries), lambda system, first: "Tb." in system))
+    failed = invoke("baseline", run_id, "-c", config)
+    assert failed.exit_code == 1
+    home = tmp_path / "baselines" / f"{run_id}-b1" / "community" / "agents"
+    kept = (home / "a" / "public.toml").read_text()
+    assert not (home / "b" / "public.toml").exists()
+    monkeypatch.setattr(cli, "make_client", working)
+    assert invoke("baseline", "--resume", f"{run_id}-b1", "-c", config).exit_code == 0
+    assert (home / "a" / "public.toml").read_text() == kept and (home / "b" / "public.toml").exists()

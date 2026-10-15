@@ -10,12 +10,19 @@ from bikeshed.config import Config
 from bikeshed.db import connect
 
 
-def _provenance(conn, run_id, phase, run, model="CHANGE-ME"):
+FULL_RUN = {"process": 3, "max_rounds": 12, "close_rule": "critique", "view_entries": 15, "max_writes": 3,
+            "quorum_slack": 1, "stagnation_rounds": 2, "max_reads": 3}
+
+
+def _provenance(conn, run_id, phase, run, model="CHANGE-ME", spec=None, scorer=None):
+    config = {"run": {**FULL_RUN, **run}}
+    if scorer is not None:
+        config |= {"scorer": {"judge": scorer[0]}, "models": {scorer[0]: scorer[1]}}
     conn.execute(
         "INSERT INTO run_provenance (run_id, phase, code_commit, code_dirty, config, prompts, models, servers, seed, "
         "fingerprint, captured_at) VALUES (?, ?, 'abc', 0, ?, '{}', ?, '{}', 1, 'f', 't')",
-        (run_id, phase, json.dumps({"run": run}),
-         json.dumps({a: {"backend": "local", "model": model} for a in "abc"})))
+        (run_id, phase, json.dumps(config),
+         json.dumps({a: {"backend": "local", "model": model, **(spec or {})} for a in "abc"})))
 
 
 def _closed(conn, run_id="r1", seed=77, status="closed"):
@@ -107,3 +114,50 @@ def test_prepare_builds_a_scratch_room_of_seed_agents(community, tmp_path):
     assert read_info(first)["source_run"] == "r1" and "baseline_run" not in read_info(first)
     record_run(first, "x123")
     assert read_info(first)["baseline_run"] == "x123"
+
+
+def test_process_comes_from_the_run_row(community, tmp_path):
+    store, conn = community
+    _closed(conn)                                  # runs.process = 3
+    _provenance(conn, "r1", "start", {"process": 2})
+    assert settings_for(read_source(conn, store, "r1"), _cfg(tmp_path)).process == 3
+
+
+def test_a_run_whose_provenance_lacks_a_setting_is_refused(community):
+    store, conn = community
+    _closed(conn)
+    conn.execute(
+        "INSERT INTO run_provenance (run_id, phase, code_commit, code_dirty, config, prompts, models, servers, seed, "
+        "fingerprint, captured_at) VALUES ('r1', 'start', 'abc', 0, ?, '{}', ?, '{}', 1, 'f', 't')",
+        (json.dumps({"run": {"max_rounds": 12}}), json.dumps({a: {"backend": "local", "model": "CHANGE-ME"} for a in "abc"})))
+    with pytest.raises(BaselineError, match="close_rule"):
+        read_source(conn, store, "r1")
+
+
+def test_check_backends_refuses_a_changed_backend_setting(community, tmp_path):
+    store, conn = community
+    _closed(conn)
+    _provenance(conn, "r1", "start", {}, spec={"thinking": False, "context_window": 32768, "timeout_s": 600})
+    cfg = _cfg(tmp_path)
+    cfg.models["local"].thinking, cfg.models["local"].context_window = False, 32768
+    cfg.models["local"].timeout_s = 30                      # a machine setting: never refused
+    check_backends(read_source(conn, store, "r1"), cfg)
+    cfg.models["local"].thinking = True
+    with pytest.raises(BaselineError, match="thinking"):
+        check_backends(read_source(conn, store, "r1"), cfg)
+
+
+def test_check_backends_refuses_a_different_scorer(community, tmp_path):
+    store, conn = community
+    _closed(conn)
+    _provenance(conn, "r1", "start", {}, scorer=("judge", {"kind": "openai", "base_url": "http://x/v1", "model": "J"}))
+    cfg = _cfg(tmp_path)
+    cfg.models["judge"] = cfg.models["local"].model_copy(update={"model": "J"})
+    cfg.scorer.judge = "judge"
+    check_backends(read_source(conn, store, "r1"), cfg)
+    cfg.models["judge"] = cfg.models["local"].model_copy(update={"model": "Other-Judge"})
+    with pytest.raises(BaselineError, match="Scorer"):
+        check_backends(read_source(conn, store, "r1"), cfg)
+    cfg.scorer.judge = "local"
+    with pytest.raises(BaselineError, match="Scorer"):
+        check_backends(read_source(conn, store, "r1"), cfg)
