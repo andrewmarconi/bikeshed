@@ -26,6 +26,7 @@ from bikeshed.profiles import PRIVATE_FILES, ProfileError, ProfileStore
 from bikeshed.provenance import capture, probe_server, provenance_changes, provenance_rows
 from bikeshed.reviews import dimension_reputations, ratings_for, render_review, reputation, responses_for, reviews_of
 from bikeshed.runner import Runner
+from bikeshed.sequence import blocking
 from bikeshed.timeline import resolve_agent, timeline
 from bikeshed.view import make_who
 from bikeshed.watch.app import WatchApp
@@ -277,6 +278,8 @@ def run(
     store = ProfileStore(cfg.community_dir)
     conn = connect(cfg.db_path)
     selected = None
+    if (blocker := blocking(conn, cfg.runs_dir, run_id=resume)) is not None:
+        _fail(blocker.message())
     if resume:
         if goal or next_:
             _fail("give --resume or a goal/--next, not both")
@@ -397,6 +400,8 @@ def postrun(run_id: str, config: ConfigOpt = DEFAULT_PATH) -> None:
         _fail(f"no run {run_id!r}")
     if row["status"] != "closed":
         _fail(f"run {run_id} is not closed; finish it with `bikeshed run --resume {run_id}`")
+    if (blocker := blocking(conn, cfg.runs_dir, run_id=run_id, for_postrun=True)) is not None:
+        _fail(blocker.message())
     clients = _clients(cfg, store, json.loads(row["agent_ids"]))
     backends = {a: store.record(a).model for a in json.loads(row["agent_ids"])}
     narrator, embedder = _support(cfg)
