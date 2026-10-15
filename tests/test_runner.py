@@ -392,3 +392,55 @@ async def test_resume_discards_what_an_interrupted_round_left_behind(tmp_path, c
     events = read_events(tmp_path / "runs" / run_id / "events.jsonl")
     assert {"event": "round_discarded", "round": 1, "entries": 1}.items() <= next(
         e for e in events if e["event"] == "round_discarded").items()
+
+
+async def test_control_library_list_leaves_out_its_own_methods(tmp_path, community, runner_factory, make_run):
+    from bikeshed.library import embed_missing, record_methods
+    from bikeshed.models.fake import FakeEmbedder
+
+    store, conn = community
+    add_control(store)
+    make_run(conn, "old", ("b", "d"))
+    old = Board(conn, "old")
+    old.append(0, SYSTEM, "goal", {"goal": "Pick a colour"})
+    old.append(1, "d", "propose", {"answer_summary": "x", "method": "OWN-METHOD pick a colour"})
+    old.append(1, "b", "propose", {"answer_summary": "x", "method": "OTHER-METHOD draw lots"})
+    conn.execute("UPDATE runs SET status = 'closed' WHERE id = 'old'")
+    record_methods(conn, "old", "Pick a colour", old.entries())
+    embedder = FakeEmbedder()
+    await embed_missing(conn, embedder)
+    reply = json.dumps({"action": {"type": "pass"}})
+    clients = {"a": FakeModel([reply]), "d": FakeModel([reply])}
+    runner = runner_factory(store, conn, clients, max_rounds=1)
+    runner.embedder, runner.library_top_k = embedder, 1
+    run_id = runner.start("Pick a colour", ["a", "d"])
+    await runner.run(run_id)
+    seen_by_a = clients["a"].calls[0][1][0]["content"]
+    seen_by_d = clients["d"].calls[0][1][0]["content"]
+    assert "OWN-METHOD" in seen_by_a and "OTHER-METHOD" not in seen_by_a
+    assert "OTHER-METHOD" in seen_by_d and "OWN-METHOD" not in seen_by_d
+    event = next(e for e in read_events(tmp_path / "runs" / run_id / "events.jsonl")
+                 if e["event"] == "library_retrieved")
+    assert list(event["control_methods"]) == ["d"] and len(event["methods"]) == 1
+
+
+async def test_control_library_list_is_shorter_when_only_its_own_methods_exist(tmp_path, community, runner_factory,
+                                                                                make_run):
+    from bikeshed.library import embed_missing, record_methods
+    from bikeshed.models.fake import FakeEmbedder
+
+    store, conn = community
+    add_control(store)
+    make_run(conn, "old", ("d",))
+    old = Board(conn, "old")
+    old.append(0, SYSTEM, "goal", {"goal": "Pick a colour"})
+    old.append(1, "d", "propose", {"answer_summary": "x", "method": "OWN-METHOD pick a colour"})
+    conn.execute("UPDATE runs SET status = 'closed' WHERE id = 'old'")
+    record_methods(conn, "old", "Pick a colour", old.entries())
+    embedder = FakeEmbedder()
+    await embed_missing(conn, embedder)
+    seen = FakeModel([json.dumps({"action": {"type": "pass"}})])
+    runner = runner_factory(store, conn, {"d": seen}, max_rounds=1)
+    runner.embedder = embedder
+    await runner.run(runner.start("Pick a colour", ["d"]))
+    assert "# Methods from earlier runs" not in seen.calls[0][1][0]["content"]

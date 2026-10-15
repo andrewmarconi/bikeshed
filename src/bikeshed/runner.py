@@ -130,7 +130,7 @@ class Runner:
         completed = last["round"] if last else 0
         self._discard_after(run_id, completed, events)
         self.conn.execute("UPDATE runs SET status = 'running' WHERE id = ?", (run_id,))
-        library = await self._library(run_id, goal, events)
+        library = await self._library(run_id, goal, agent_ids, events)
         briefs = load_briefs(self.conn, run_id)
         settled = await self._settle(run_id, goal, agent_ids, board, ws, events, completed,
                                      final=completed >= self.settings.max_rounds)
@@ -202,7 +202,7 @@ class Runner:
         try:
             inputs = collect_inputs(agent_id=agent_id, goal=ctx.goal, round=ctx.round, board=ctx.board,
                                     store=self.store, workspace=ctx.ws, view_entries=self.settings.view_entries,
-                                    half_life=self.settings.reputation_half_life_runs, library=ctx.library,
+                                    half_life=self.settings.reputation_half_life_runs, library=ctx.library.get(agent_id, []),
                                     max_rounds=self.settings.max_rounds if ctx.process == 2 else None,
                                     close_rule=self.settings.close_rule, briefs=ctx.briefs)
             who = make_who(inputs.profiles)
@@ -236,18 +236,28 @@ class Runner:
         """A react turn: one posting action."""
         return await self._turn(agent_id, ctx, shape=STEP if ctx.process == 1 else STEP_P2)
 
-    async def _library(self, run_id: str, goal: str, events: EventLog) -> list[str]:
-        """Methods from earlier runs most similar to the goal, rendered for the View. Never fails the run."""
+    async def _library(self, run_id: str, goal: str, agent_ids: Sequence[str],
+                       events: EventLog) -> dict[str, list[str]]:
+        """Methods from earlier runs most similar to the goal, rendered per agent for the View. Never fails the run.
+
+        A control agent's list leaves out methods it wrote itself and fills back up from other members' methods."""
+        empty: dict[str, list[str]] = {agent_id: [] for agent_id in agent_ids}
         if self.embedder is None:
-            return []
+            return empty
+        k = self.library_top_k
         try:
-            found = await retrieve(self.conn, self.embedder, goal, self.library_top_k, exclude_run=run_id)
+            ranked = [] if k <= 0 else [m for m, _ in await retrieve(self.conn, self.embedder, goal, None,
+                                                                      exclude_run=run_id)]
         except ModelError as exc:
             events.emit("library_unavailable", detail=str(exc))
-            return []
-        events.emit("library_retrieved", methods=[method.id for method, _ in found])
+            return empty
+        common = ranked[:k]
+        chosen = {agent_id: ([m for m in ranked if m.author != agent_id][:k] if self.store.record(agent_id).control
+                             else common) for agent_id in agent_ids}
+        own = {agent_id: [m.id for m in methods] for agent_id, methods in chosen.items() if methods != common}
+        events.emit("library_retrieved", methods=[m.id for m in common], **({"control_methods": own} if own else {}))
         who = make_who({i: self.store.public(i) for i in self.store.ids()})
-        return render_methods([method for method, _ in found], who)
+        return {agent_id: render_methods(methods, who) for agent_id, methods in chosen.items()}
 
     def _fail(self, run_id: str, rnd: int, agent_id: str, kind: str, detail: str) -> None:
         self.conn.execute(
