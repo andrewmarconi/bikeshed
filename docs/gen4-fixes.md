@@ -130,6 +130,8 @@ Ordered by how badly each one breaks the comparison.
 
    *Checked against the code:* the slot is already recorded. `run_briefs` stores `agent_id` per slot (`briefs.py:87`). `briefs.assign` (`briefs.py:73`) deals private brief k to the k-th member of a seeded shuffle of all agent ids, with nothing to tell control from twin. When a goal has fewer private briefs than members, the control sometimes gets no private brief at all. Neither `observer/briefs.py` nor the twin comparison (`observe.py:260`) looks at the control's slot. So the gap is on the comparison side, plus the choice of whether to fix the slot at assignment. Fixing the slot would change `assign`, which is part of the run's recorded behaviour.
 
+   *Done in sub-project C2 (`2026-10-15-bikeshed-gen4-new-measurements-design.md`):* the control-vs-twin table shows each agent's brief per run: its slot, "shared only", or "–" when the run had no briefs.
+
 8. **Label the control's after-run updates.** `e` still journals and rewrites its profile after every run, and the reset then wipes that work. Keep it: it shows how far one cycle moves a blank agent. Label it so the Observer stops reading a reset as `e`'s own change, as it did in runs 7 and 14.
 
    *Checked against the code:* the post-run cycle has no control handling at all. Nothing in `postrun/cycle.py` mentions controls, so `e`'s updates are committed under the same `"<id> updated <file>"` subjects as everyone else's. The reset itself is already labelled. `profiles.py:181` commits it as `reset control agent <id> to seed`, and the Observer's identity timeline recognises that as a `control reset` event (`observer/metrics.py:213`). The analysis that misreads it is `self_image` (fix 9), which diffs file snapshots and never looks at commit subjects. So the fix is mainly on the Observer side: the commits are already distinguishable.
@@ -162,6 +164,8 @@ These came out of the generation 3 review (`learnings_gen3-v2.md` in the report 
 
     *Decided in sub-project B:* ranking stays similarity-only. Each method's reception is already in its label, so agents can weigh it themselves. Logging which retrieved text reappears moves to sub-project C, with fix 14's copy metric. Brief facts can't leak through method text into a run where they are still private: queue goals run once, and post-run reveals every brief to every member. A briefed goal must not be re-run within a generation.
 
+    *Library reuse measured in sub-project C2:* per run, which shown methods reappear in proposals or refines; across runs, how often each method was shown and reused.
+
 12. **A refine doesn't change the call's text, and agents vote as though it does.** Run 5: `d` supported #229 because "my refinement (#233) successfully embedded" checks that #229 never contained. Run 7: `c` praised patches #358 didn't have. Either make an accepted refine produce a new version of the call, or make the view say plainly that a refine leaves the call's text unchanged.
 
     *Checked against the code:* confirmed. A refine is stored as its own entry (`target`, `change`, `reason`) with a ref to the target (`runner.py:281`, `actions.py:42`), and nothing ever changes the target entry. There's also no such thing as an "accepted" refine: nothing records whether a refine was taken up. The action list in `agent_system.md:18` and `process2_agent_system.md:22` gives the refine shape with no description, unlike propose, adopt and the others. So the prompt never says what a refine does. Any entry can be the target of a refine, including a `call_consensus`. The only target check is that a vote must target a call (`agent.py:126`). Making a refine produce a new version of the call would mean changing what voters are voting on, because votes attach to one call id. Saying plainly in the prompt that a refine is a separate entry is the smaller change. It's a prompt change, so it changes the Process 1 golden recording.
@@ -187,6 +191,8 @@ These came out of the generation 3 review (`learnings_gen3-v2.md` in the report 
 
     *C1 did two of these:* `think_vs_act` now pairs each note with the same round's moves and leaves out failed turns, and `private_public` reads only the "before" journal. Copying, credit accuracy and rule-gaming are sub-project C2. The disclosure and fabrication judges are checked by hand against the first generation 4 runs.
 
+    *C2 did copying and credit accuracy:* six-word-sequence matching against earlier entries the copier could see, tagged same round or earlier round; per call, copied sources that weren't credited. Rule-gaming in private notes is deferred to its own spec, to be calibrated on generation 4 think notes.
+
 15. **Export: `runs.csv` shows the start record only.** Its model column read DeepSeek for runs 8 and 9, which mostly ran on other models, and `max_rounds` shows the start value, not the caps lowered at resume. List every model a run used (from traces or every provenance row), and the final `max_rounds`.
 
     *Checked against the code:* confirmed. `_run_row` (`export.py:166`) reads only the first `run_provenance` row with `phase = 'start'` for both `models` and `max_rounds` (`export.py:172`–`187`). Resume and postrun provenance rows are ignored. The per-run Markdown summary uses the same row (`export.py:241`), so it has the same problem. Per-entry model is already exported from traces (`export.py:229`), so the data exists.
@@ -202,6 +208,8 @@ These came out of the generation 3 review (`learnings_gen3-v2.md` in the report 
 17. **Is the norm list in the after-run context?** Proposal #14 restated Norm 1 almost word for word, and no voter noticed it was already law. Check whether the norm critique and vote steps show the adopted norms.
 
     *Checked against the code:* they do. The update step (where proposals are written), the critique and the vote all render the adopted norms under "Current community norms" (`postrun/cycle.py:317`, `:376`, `:392`; `prompts/norms_critique_request.md:7`, `norms_vote_request.md:7`). Norm 1 was adopted in run 9 (2026-10-13 20:57), before #14 was proposed in run 10 (2026-10-14 02:49), so it was in front of the proposer and every voter. #14 was rejected anyway. The gap is that nothing points out the overlap: there's no duplicate check, and `render_proposal` (`norms.py:148`) shows a new norm without linking it to similar ones. Whether to add a check is a values question, since a harness flag saying "this repeats Norm 1" could count as steering. Measuring it in the Observer avoids that.
+
+    *Done in sub-project C2:* the Observer's summary lists each norm proposal that overlaps a norm adopted before it, with its outcome. Agents are never told.
 
 18. **One model for the whole generation.** This is procedure, not code. Generation 3 ran on four models, and the headline finding is that the model sets the culture. Change models only between generations, and record the choice in the generation's notes.
 
@@ -231,7 +239,7 @@ Each sub-project gets its own spec, plan and implementation. Anything that chang
 | F | Process 3 and naming | `docs/nomenclature-cleanup.md` | Yes (new `--process 3` value) | **Done** (merged 2026-10-15, `49e0480`) |
 | B | Agent environment | Fixes 10, 11, 12, 13 (decision) | Yes | **Done** (merged 2026-10-15, `8af1315`) |
 | C1 | Measurement corrections | Fixes 8, 9, 14 (`think_vs_act`, `private_public`), 15, 16 | No | **Done** (merged 2026-10-15, `49871f7`) |
-| C2 | New measurements | Fixes 7 (twin's brief slot), 14 (copying, credit accuracy, rule-gaming), 17 (norm overlap), library reuse from B | No | Any time; re-run over generation 4 |
+| C2 | New measurements | Fixes 7 (twin's brief slot), 14 (copying, credit accuracy, rule-gaming), 17 (norm overlap), library reuse from B | No | **In progress** |
 | D | Baseline run | Fix 6 | No (separate scratch community) | Before the first pizza benchmark of generation 4 |
 | E | Setup and procedure | Fix 0 (`f.md`), 18, sixth briefs, `view_entries` | Config and goals only | Repo side done in A; lab edits and model choice are Andrew's, after F |
 
