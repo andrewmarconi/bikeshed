@@ -5,7 +5,7 @@ from bikeshed.observer.baselines import find
 from bikeshed.profiles import ProfileStore
 
 
-def make_baseline(home, name, source, *, closed=True, recorded=True):
+def make_baseline(home, name, source, *, closed=True, recorded=True, backend=None):
     directory = home / name
     store = ProfileStore(directory / "community")
     for agent_id, label in [("a", "Ash"), ("b", "Birch")]:
@@ -18,7 +18,8 @@ def make_baseline(home, name, source, *, closed=True, recorded=True):
                      round=2)
     add_entry(conn, "x1", "system", "run_closed", {"reason": "consensus", "call_id": call}, round=2)
     (directory / "runs").mkdir()
-    info = f'source_run = "{source}"\ncreated_at = "t"\n' + ('baseline_run = "x1"\n' if recorded else "")
+    info = (f'source_run = "{source}"\ncreated_at = "t"\n' + ('baseline_run = "x1"\n' if recorded else "")
+            + (f'backend = "{backend}"\n' if backend else ""))
     (directory / "baseline.toml").write_text(info)
     return directory
 
@@ -36,3 +37,15 @@ def test_find_skips_open_unrecorded_and_missing(tmp_path):
     make_baseline(tmp_path / "baselines", "r1-b1", "r1", closed=False)
     make_baseline(tmp_path / "baselines", "r1-b2", "r1", recorded=False)
     assert find(tmp_path / "baselines") == []
+
+
+def test_find_reads_a_variant_backend(tmp_path):
+    make_baseline(tmp_path / "baselines", "r1-v1", "r1", backend="qwen3-14b")
+    (b,) = find(tmp_path / "baselines")
+    assert (b.backend, b.label) == ("qwen3-14b", "variant (qwen3-14b)")
+
+
+def test_find_reads_a_plain_baseline_without_backend(tmp_path):
+    make_baseline(tmp_path / "baselines", "r1-b1", "r1")
+    (b,) = find(tmp_path / "baselines")
+    assert (b.backend, b.label) == (None, "baseline")

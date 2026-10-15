@@ -415,12 +415,16 @@ def _text_reuse(s: SummarySection) -> list[str]:
 def _baselines(s: RunSection) -> list[str]:
     if not s.baselines:
         return []
-    out = ["## Baseline", "", "_The same goal, settings, seed and briefs in a fresh room: no norms, library or history._",
-           "", "| Baseline | Ending | Rounds | Calls | Rulings (accepted/rejected) | Copied |", "|---|---|---|---|---|---|"]
-    out += [f"| {b.id} | {b.run.ended_reason or 'unknown'} | {b.rounds} | {b.calls} | {b.accepted}/{b.rejected} | "
-            f"{b.copied} |" for b in s.baselines]
+    note = "_The same goal, settings, seed and briefs in a fresh room: no norms, library or history."
+    if any(b.backend for b in s.baselines):
+        note += " A variant runs every agent on the backend in its Model column."
+    out = ["## Baseline", "", note + "_", "",
+           "| Baseline | Model | Ending | Rounds | Calls | Rulings (accepted/rejected) | Copied |",
+           "|---|---|---|---|---|---|---|"]
+    out += [f"| {b.id} | {b.backend or 'as run'} | {b.run.ended_reason or 'unknown'} | {b.rounds} | {b.calls} | "
+            f"{b.accepted}/{b.rejected} | {b.copied} |" for b in s.baselines]
     for b in s.baselines:
-        out += ["", f"### {b.id} answer", "", b.answer.text]
+        out += ["", f"### {b.id} answer ({b.label})", "", b.answer.text]
     return out + [""]
 
 
@@ -435,14 +439,16 @@ def _baseline_vs_community(s: SummarySection) -> list[str]:
         run, answer, mix = s.rooms[source]
         out += [f"### {run.tag}", "", f"- community: {run.ended_reason or 'unknown'}; answer:", "", answer.text, ""]
         for b in found:
-            out += [f"- {b.id}: {b.run.ended_reason or 'unknown'}, {b.rounds} rounds; answer:", "", b.answer.text, ""]
+            out += [f"- {b.id} ({b.label}): {b.run.ended_reason or 'unknown'}, {b.rounds} rounds; answer:", "",
+                    b.answer.text, ""]
         agents = list(dict.fromkeys(a for _, a in pairs)) or list(run.agent_ids)
         out += ["| Room | Agent | " + " | ".join(TWIN_ACTIONS) + " |", "|---" * (len(TWIN_ACTIONS) + 2) + "|"]
         for a in agents:
             label = s.who(a) + (" (control)" if a in s.twins else " (twin)" if any(a in t for t in s.twins.values()) else "")
             out.append(f"| community | {label} | " + " | ".join(str(mix.get(a, Counter()).get(x, 0)) for x in TWIN_ACTIONS) + " |")
             for b in found:
-                out.append(f"| {b.id} | {a} | " + " | ".join(str(b.mix.get(a, Counter()).get(x, 0)) for x in TWIN_ACTIONS) + " |")
+                out.append(f"| {b.id} ({b.label}) | {a} | "
+                           + " | ".join(str(b.mix.get(a, Counter()).get(x, 0)) for x in TWIN_ACTIONS) + " |")
         out.append("")
     return out
 
