@@ -12,7 +12,7 @@ from typing import Any
 from bikeshed.actions import NOTE_MAX, POLL, STEP, STEP_P2, THINK, Pass, PrivateMessage, WriteFile, target_refs
 from bikeshed.agent import StepOutcome, make_reader, make_validator, system_prompt, take_step
 from bikeshed.board import SYSTEM, Board, Entry, public
-from bikeshed.briefs import BriefSpec, assign, callout, load_conflicts, reveal, too_many
+from bikeshed.briefs import BriefSpec, RunBriefs, assign, callout, load_conflicts, reveal, too_many
 from bikeshed.briefs import load as load_briefs
 from bikeshed.briefs import save as save_briefs
 from bikeshed.config import RunSettings
@@ -71,11 +71,15 @@ class Runner:
     def start(
         self, goal: str, agent_ids: Sequence[str], *, goal_id: str | None = None,
         goal_category: str | None = None, is_benchmark: bool = False, process: int = 1,
-        brief: BriefSpec | None = None,
+        brief: BriefSpec | None = None, seed: int | None = None, briefs: RunBriefs | None = None,
     ) -> str:
+        """`seed` and `briefs` let a baseline run repeat a recorded run's seed and brief deal exactly."""
         if process not in (1, 2, 3):
             raise ValueError("process must be 1, 2 or 3")
-        if process == 3 and brief is None and not is_benchmark:
+        if brief is not None and briefs is not None:
+            raise ValueError("give a brief to deal or a dealt brief, not both")
+        briefed = brief is not None or (briefs is not None and not briefs.empty)
+        if process == 3 and not briefed and not is_benchmark:
             raise ValueError("process 3 runs briefed goals and this goal has none; only the benchmark runs unbriefed "
                              "(use --process 2 for an unbriefed goal)")
         if not agent_ids:
@@ -83,6 +87,8 @@ class Runner:
         unknown = [a for a in agent_ids if a not in self.store.ids()]
         if unknown:
             raise ValueError(f"unknown agents: {unknown}")
+        if briefs is not None and (strangers := sorted({b.agent_id for b in briefs.private} - set(agent_ids))):
+            raise ValueError(f"the brief deal names agents not in this run: {strangers}")
         if brief is not None and len(brief.private) > len(agent_ids):
             raise ValueError(too_many(len(brief.private), len(agent_ids)))
         controls = [a for a in agent_ids if self.store.record(a).control]
@@ -93,7 +99,7 @@ class Runner:
         # Reset before the run exists: a failed reset must not leave a run whose control agent kept its memory.
         name_restored = {agent_id: self.store.reset_to_seed(agent_id) for agent_id in controls}
         run_id = new_run_id()
-        seed = secrets.randbits(32)
+        seed = secrets.randbits(32) if seed is None else seed
         (self.runs_dir / run_id).mkdir(parents=True)
         with transaction(self.conn):
             self.conn.execute(
@@ -105,6 +111,8 @@ class Runner:
             Board(self.conn, run_id).append(0, SYSTEM, "goal", {"goal": goal})
             if brief is not None:
                 save_briefs(self.conn, run_id, assign(brief, agent_ids, seed, protected=protected))
+            elif briefs is not None and not briefs.empty:
+                save_briefs(self.conn, run_id, briefs)
         self._workspace(run_id)
         events = self._events(run_id)
         events.emit("run_started", run_id=run_id, goal=goal, agents=list(agent_ids))
