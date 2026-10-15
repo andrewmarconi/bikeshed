@@ -306,3 +306,14 @@ async def test_a_judgment_whose_inputs_are_now_empty_is_dropped(lab, community):
     await observe(lab, judge_client=FakeModel(judge_reply))
     assert ObserverStore(lab.observer.dir / "observer.db").judgments("r7", "think_vs_act") == []
     assert "STALE" not in (lab.observer.dir / "runs" / "r7.md").read_text()
+
+
+async def test_observe_reports_copied_text(lab, community):
+    store, conn = community
+    reason = "it meets every constraint and nobody has objected to the plan so far"
+    add_run(conn, "r8", created=FUTURE, goal_id="copy")
+    add_entry(conn, "r8", "b", "vote", {"target": 1, "stance": "support", "reason": reason})
+    add_entry(conn, "r8", "a", "vote", {"target": 1, "stance": "support", "reason": reason}, round=2)
+    await observe(lab, judge_note="--no-judge")
+    report = (lab.observer.dir / "runs" / "r8.md").read_text()
+    assert "| Alpha (a) |" in report.split("## Copying\n")[1] and "earlier round" in report

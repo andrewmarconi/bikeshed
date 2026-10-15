@@ -4,9 +4,11 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from bikeshed.observer.briefs import BriefsSection, RunStat
+from bikeshed.observer.copying import CallCredit, Match, Reuse
 from bikeshed.observer.metrics import (
     ACTIONS, PRE_ACTIONS, BenchmarkAnswer, CategoryStats, Credits, IdentityEvent, Influence, NormEvent, RunInfo,
 )
+from bikeshed.observer.overlap import THRESHOLDS
 from bikeshed.observer.process2 import OrderStat, Participation, RecurringPair
 from bikeshed.observer.scoring import Award, RulingRow, SelfCredit
 from bikeshed.observer.store import Judgment
@@ -42,6 +44,9 @@ class RunSection:
     awards: list[Award] = field(default_factory=list)  # Scorer points awarded in this run
     briefs: BriefsSection | None = None  # briefed runs only
     controls: frozenset[str] = frozenset()  # control agents in this run: their self-image is compared with their seed
+    copies: list[Match] = field(default_factory=list)
+    credit_checks: list[CallCredit] = field(default_factory=list)
+    reuse: list[Reuse] | None = None  # None: the run's events don't record a library retrieval
 
 
 def _cell(text: str) -> str:
@@ -146,6 +151,45 @@ def _credits(s: RunSection) -> list[str]:
     return out
 
 
+def _credit_checks(s: RunSection) -> list[str]:
+    if not s.credit_checks:
+        return []
+    names = lambda ids: ", ".join(s.who(a) for a in ids) or "no one"
+    out = ["", "### Credit accuracy", ""]
+    for c in s.credit_checks:
+        line = f"- #{c.call_id} by {s.who(c.caller)}: copied from {names(c.copied)}; credited {names(c.credited)}"
+        if c.uncredited:
+            line += f"; uncredited: {names(c.uncredited)}"
+        if c.unmatched:
+            line += f"; credited without matching text: {names(c.unmatched)}"
+        out.append(line)
+    return out
+
+
+def _copying(s: RunSection) -> list[str]:
+    out = ["## Copying", ""]
+    if not s.copies:
+        return out + ["_No copied text found._", "", THRESHOLDS, ""]
+    out += ["| Copier | Entry | Source | Match | Round |", "|---|---|---|---|---|"]
+    out += [f"| {s.who(m.copier)} | #{m.entry_id} {m.entry_type}.{m.field} | #{m.source_id} {s.who(m.source_author)} | "
+            f"{m.kind} | {'same round' if m.same_round else 'earlier round'} |" for m in s.copies]
+    return out + ["", THRESHOLDS, ""]
+
+
+def _library(s: RunSection) -> list[str]:
+    out = ["## Library reuse", ""]
+    if s.reuse is None:
+        return out + ["_Not recorded._", ""]
+    if not s.reuse:
+        return out + ["_No methods were shown._", ""]
+    for r in s.reuse:
+        shown = ", ".join(s.who(a) for a in r.shown_to)
+        used = "; ".join(f"{s.who(a)} in #{e} ({k})" for a, e, k in r.reused_by)
+        out.append(f"- method #{r.method_id} (run {r.method_run}, by {s.who(r.method_author)}), shown to {shown}: "
+                   + (f"reused by {used}" if used else "not reused"))
+    return out + ["", THRESHOLDS, ""]
+
+
 def _scorer_run(s: RunSection) -> list[str]:
     out = ["## Scorer", ""]
     if not s.rulings:
@@ -228,7 +272,8 @@ def render_run(s: RunSection) -> str:
            f"- **Process:** {r.process}"]
     if s.changes:
         out += ["", "> **Harness changed:** " + "; ".join(s.changes)]
-    out += [""] + _metrics(s) + [""] + _dimensions(s) + _credits(s) + [""] + _scorer_run(s) + _briefs(s)
+    out += [""] + _metrics(s) + [""] + _dimensions(s) + _credits(s) + _credit_checks(s) + [""] + _scorer_run(s) \
+        + _briefs(s) + _copying(s) + _library(s)
     if s.process2 is not None:
         out += _process2(s)
     out += _per_agent(s, "Themes", "themes", lambda res: [

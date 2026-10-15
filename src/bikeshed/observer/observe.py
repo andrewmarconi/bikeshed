@@ -12,6 +12,7 @@ from bikeshed.config import Config
 from bikeshed.db import connect_readonly
 from bikeshed.models.base import ModelClient, limit_clients
 from bikeshed.observer import briefs as pb
+from bikeshed.observer import copying as cp
 from bikeshed.observer import metrics as m
 from bikeshed.observer import process2 as p2
 from bikeshed.observer import scoring as sc
@@ -171,6 +172,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
             await _judge_run(judge, ostore, conn, store, runs, run, who, answers, progress, cfg.run.max_concurrent_calls)
         judgments = ostore.judgments(run.id)
         labels = {t["label"] for j in judgments if j.analysis == "themes" and j.status == "ok" for t in j.result["themes"]}
+        found = cp.copies(conn, run)
         section = RunSection(
             run=run, who=who, changes=provenance_changes(conn, run.id), mix=m.action_mix(conn, run),
             influence=m.influence(conn, run), credits=m.credits(conn, run.id), peer=m.peer_scores(conn, run.id),
@@ -181,6 +183,8 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
             rulings=sc.rulings(conn, run.id), awards=sc.awards(conn, run.id),
             briefs=pb.section(conn, run, who, judgments),
             controls=frozenset(a for a in run.agent_ids if a in known and store.record(a).control),
+            copies=found, credit_checks=cp.credit_accuracy(conn, run, found),
+            reuse=cp.library_reuse(conn, run, cfg.runs_dir),
         )
         path = out_dir / "runs" / f"{run.id}.md"
         path.parent.mkdir(parents=True, exist_ok=True)
