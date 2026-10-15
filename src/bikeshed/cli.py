@@ -264,7 +264,7 @@ def run(
     resume: Annotated[str | None, typer.Option(help="Resume a paused or interrupted run.")] = None,
     agent: Annotated[list[str] | None, typer.Option("--agent", help="Agent ids to include (default: all).")] = None,
     max_rounds: Annotated[int | None, typer.Option(help="Override the round budget.")] = None,
-    process: Annotated[int | None, typer.Option("--process", help="1: everyone acts at once (default). 2: think, then react in turn, with a poll.")] = None,
+    process: Annotated[int | None, typer.Option("--process", help="1: everyone acts at once (default). 2: think, then react in turn, with a poll. 3: as 2, on a goal with briefs (only the benchmark runs unbriefed).")] = None,
     no_postrun: Annotated[bool, typer.Option("--no-postrun", help="Skip the post-run cycle.")] = False,
     config: ConfigOpt = DEFAULT_PATH,
 ) -> None:
@@ -275,8 +275,8 @@ def run(
     if cfg.scorer.judge is None:
         _fail('no [scorer] configured: add a [scorer] section with judge = "<model backend>" to the config')
     scorer_client = make_client(cfg.models[cfg.scorer.judge], cfg.run.model_retries)
-    if process is not None and process not in (1, 2):
-        _fail("--process must be 1 or 2")
+    if process is not None and process not in (1, 2, 3):
+        _fail("--process must be 1, 2 or 3")
     store = ProfileStore(cfg.community_dir)
     conn = connect(cfg.db_path)
     selected = None

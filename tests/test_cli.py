@@ -386,7 +386,7 @@ def test_run_with_process_2_records_it_and_resume_keeps_it(project):
     assert provenance["run"]["process"] == 2
     rejected = invoke("run", "--resume", run_id, "--process", "1", "-c", config)
     assert rejected.exit_code != 0 and "keeps its process" in rejected.output
-    assert invoke("run", "G", "--process", "3", "-c", config).exit_code != 0
+    assert invoke("run", "G", "--process", "4", "-c", config).exit_code != 0
 
 
 def test_abandon_closes_a_dead_run_and_keeps_its_record(project):
@@ -545,3 +545,13 @@ def test_postrun_refuses_while_another_run_is_unclosed(project):
     insert_run(tmp_path, "r9", "paused")
     result = invoke("postrun", run_id, "-c", config)
     assert result.exit_code != 0 and "run r9 is paused" in result.output
+
+
+def test_process_3_refuses_a_free_text_goal(project):
+    tmp_path, config = project
+    make_agents(config, "a")
+    result = invoke("run", "Pick a colour", "--process", "3", "-c", config)
+    assert result.exit_code != 0
+    assert "process 3 runs briefed goals and this goal has none" in result.output and "--process 2" in result.output
+    rejected = invoke("run", "Pick a colour", "--process", "4", "-c", config)
+    assert rejected.exit_code != 0 and "--process must be 1, 2 or 3" in rejected.output

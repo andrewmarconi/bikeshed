@@ -33,7 +33,7 @@ Backend = Annotated[OpenAIBackend | ClaudeCliBackend, Field(discriminator="kind"
 
 class RunSettings(BaseModel):
     max_rounds: int = Field(12, ge=1)
-    process: Literal[1, 2] = 1  # 1: all act at once; 2: think, then react in turn (with a poll)
+    process: Literal[1, 2, 3] = 1  # 1: all act at once; 2: think, then react in turn (with a poll); 3: as 2, on briefed goals
     quorum_slack: int = Field(1, ge=0)
     # what a supported call needs besides its quorum: a critique by a non-caller, or one full round on the board
     close_rule: Literal["critique", "stood_round"] = "critique"

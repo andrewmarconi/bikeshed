@@ -21,7 +21,7 @@ from bikeshed.db import now_iso, transaction
 from bikeshed.events import EventLog
 from bikeshed.library import render_methods, retrieve
 from bikeshed.models.base import Embedder, ModelClient, ModelError
-from bikeshed.phases import RoundContext, phases
+from bikeshed.phases import RoundContext, meeting_rounds, phases
 from bikeshed.profiles import ProfileStore
 from bikeshed.prompts import render
 from bikeshed.report import write_report
@@ -73,8 +73,11 @@ class Runner:
         goal_category: str | None = None, is_benchmark: bool = False, process: int = 1,
         brief: BriefSpec | None = None,
     ) -> str:
-        if process not in (1, 2):
-            raise ValueError("process must be 1 or 2")
+        if process not in (1, 2, 3):
+            raise ValueError("process must be 1, 2 or 3")
+        if process == 3 and brief is None and not is_benchmark:
+            raise ValueError("process 3 runs briefed goals and this goal has none; only the benchmark runs unbriefed "
+                             "(use --process 2 for an unbriefed goal)")
         if not agent_ids:
             raise ValueError("a run needs at least one agent")
         unknown = [a for a in agent_ids if a not in self.store.ids()]
@@ -211,7 +214,7 @@ class Runner:
             inputs = collect_inputs(agent_id=agent_id, goal=ctx.goal, round=ctx.round, board=ctx.board,
                                     store=self.store, workspace=ctx.ws, view_entries=self.settings.view_entries,
                                     half_life=self.settings.reputation_half_life_runs, library=ctx.library.get(agent_id, []),
-                                    max_rounds=self.settings.max_rounds if ctx.process == 2 else None,
+                                    max_rounds=self.settings.max_rounds if meeting_rounds(ctx.process) else None,
                                     close_rule=self.settings.close_rule, briefs=ctx.briefs)
             who = make_who(inputs.profiles)
             template = "agent_system.md" if ctx.process == 1 else "process2_agent_system.md"
@@ -223,7 +226,7 @@ class Runner:
             client = self.clients[agent_id]
             budget = max(2_000, int(client.context_window * 3 * 0.75) - len(system) - len(request))
             view = build_view(inputs, budget_chars=budget, opening_hint=phase is None)
-            writer = (lambda action: self._pre_write(ctx, agent_id, action)) if ctx.process == 2 and phase is None \
+            writer = (lambda action: self._pre_write(ctx, agent_id, action)) if meeting_rounds(ctx.process) and phase is None \
                 else None
             outcome = await take_step(
                 client=client, system=system, view=f"{view}\n\n{request}" if request else view, round=ctx.round,
