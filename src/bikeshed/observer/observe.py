@@ -256,7 +256,7 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
                    who: Who, answers: list[m.BenchmarkAnswer], out_dir: Path, twin: str | None,
                    judge_note: str | None, in_progress: list[str]) -> list[Path]:
     charts = _charts(conn, ostore, runs, who, out_dir) if len(runs) >= 2 else {}
-    found = m.twins(store)
+    found = store.twins()
     if twin is not None:
         found = {control: [twin] for control in found}
     twin_rows: dict[str, list] = {}

@@ -6,7 +6,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from bikeshed.profiles import SEED_DIR, ProfileStore
+from bikeshed.profiles import ProfileStore
 from bikeshed.provenance import provenance_changes
 from bikeshed.timeline import _rename
 from bikeshed.view import Who
@@ -212,26 +212,6 @@ def identity_events(conn: sqlite3.Connection, store: ProfileStore, runs: list[Ru
             score = peer_scores(conn, prior[-1]).get(agent_id) if prior else None
             events.append(IdentityEvent(commit.at, agent_id, kind[0], kind[1], score))
     return sorted(events, key=lambda e: e.at)
-
-
-def _norm(text: str | None) -> str:
-    return " ".join((text or "").split())
-
-
-def twins(store: ProfileStore) -> dict[str, list[str]]:
-    """Each control agent's twins: non-control agents whose first temperament equals the control's seed."""
-    out: dict[str, list[str]] = {}
-    for agent_id in store.ids():
-        if not store.record(agent_id).control:
-            continue
-        seed = store.root / "agents" / agent_id / SEED_DIR / "temperament.md"
-        target = _norm(seed.read_text()) if seed.exists() else None
-        out[agent_id] = sorted(
-            other for other in store.ids()
-            if other != agent_id and not store.record(other).control
-            and target and _norm(store.first_version(other, "temperament.md")) == target
-        )
-    return out
 
 
 @dataclass

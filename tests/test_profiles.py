@@ -234,3 +234,37 @@ def test_file_at_and_first_version(store):
     assert store.first_version("a", "temperament.md") == "Curious and blunt."
     assert store.file_at("a", "nope.md", None) is None
     assert store.first_version("a", "nope.md") is None
+
+
+def test_seed_drift_is_empty_after_a_reset_and_names_what_changed(control_store):
+    control_store.reset_to_seed("e")
+    assert control_store.seed_drift("e") == []
+    control_store.write_private("e", "lessons.md", "Learned.")
+    control_store.write_private("e", "temperament.md", "Changed.")
+    control_store.set_public("e", "Evelyn", "Eve headline", "I am Eve.")
+    assert control_store.seed_drift("e") == ["public.toml", "temperament.md", "lessons.md"]
+    control_store.reset_to_seed("e")
+    assert control_store.seed_drift("e") == []
+
+
+def test_seed_drift_ignores_a_kept_name(control_store):
+    control_store.set_public("e", "Evelyn", "Eve headline", "I am Eve.")
+    control_store.set_public("a", "Eve", "Ash headline", "I am Ash.")
+    assert control_store.reset_to_seed("e") is False
+    assert control_store.seed_drift("e") == []
+
+
+def test_seed_drift_without_a_seed_fails(tmp_path):
+    s = ProfileStore(tmp_path / "community")
+    s.create("e", "local", "Seed.", control=True)
+    with pytest.raises(ProfileError, match="no seed profile"):
+        s.seed_drift("e")
+
+
+def test_twins_match_the_controls_seed_temperament(tmp_path):
+    store = ProfileStore(tmp_path / "community")
+    store.create("d", "fake", "Wants evidence.")
+    store.create("x", "fake", "Something else.")
+    store.create("e", "fake", "Wants evidence.\n", control=True)
+    store.write_private("d", "temperament.md", "Rewritten later.")
+    assert store.twins() == {"e": ["d"]}
