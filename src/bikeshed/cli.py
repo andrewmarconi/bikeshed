@@ -247,6 +247,8 @@ def _print_event(event: dict[str, Any]) -> None:
         typer.echo(f"  #{event['entry']} {event['agent']} {event['type']}{suffix}")
     elif kind == "run_paused":
         typer.echo(f"paused: {event['detail']}")
+    elif kind == "control_drift_found":
+        typer.echo(f"control {event['agent']} had drifted from its seed ({', '.join(event['files'])}); reset")
     elif kind == "postrun_started":
         typer.echo("— post-run —")
     elif kind == "postrun_step_finished":
@@ -278,8 +280,6 @@ def run(
     store = ProfileStore(cfg.community_dir)
     conn = connect(cfg.db_path)
     selected = None
-    if (blocker := blocking(conn, cfg.runs_dir, run_id=resume)) is not None:
-        _fail(blocker.message())
     if resume:
         if goal or next_:
             _fail("give --resume or a goal/--next, not both")
@@ -288,9 +288,13 @@ def run(
             _fail(f"no run {resume!r}")
         if process is not None:
             _fail("a resumed run keeps its process; drop --process")
+        if (blocker := blocking(conn, cfg.runs_dir, run_id=resume)) is not None:
+            _fail(blocker.message())
         cfg.run.process = row["process"]
         agent_ids = json.loads(row["agent_ids"])
     else:
+        if (blocker := blocking(conn, cfg.runs_dir, run_id=None)) is not None:
+            _fail(blocker.message())
         if process is not None:
             cfg.run.process = process
         if next_ and goal:

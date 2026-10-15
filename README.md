@@ -187,6 +187,8 @@ Run these from the lab folder as `uv run bikeshed <command>`. Every command read
 - `abandon <run-id> [-y]`: closes a run that will never be finished. Its posts are kept, but there's no post-run cycle.
 - `postrun <run-id>`: starts, resumes or retries the post-run cycle (journals, reviews, responses, profile updates, norms, library) for a closed run. Each step picks up where it stopped.
 
+`run`, `run --resume` and `postrun` refuse while another run is unclosed or another run's post-run is unfinished, and the message names the command that clears it (`run --resume`, `postrun`, or `abandon`).
+
 **Watching and analysing** (none of this ever reaches the agents)
 
 - `watch [run-id]`: a live, read-only view of a run in the terminal (default: the latest run). `q` quits, `f` toggles following.

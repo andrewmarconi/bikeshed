@@ -86,8 +86,8 @@ class Runner:
         for agent_id in controls:
             if not self.store.has_seed_public(agent_id):
                 raise ValueError(f"control agent {agent_id} has no seed profile; run `bikeshed agents introduce {agent_id}`")
-        # Reset before the run exists: a failed reset must not leave a run whose control agent kept its memory.
         protected = self._protected(controls, agent_ids) if brief is not None else []
+        # Reset before the run exists: a failed reset must not leave a run whose control agent kept its memory.
         name_restored = {agent_id: self.store.reset_to_seed(agent_id) for agent_id in controls}
         run_id = new_run_id()
         seed = secrets.randbits(32)

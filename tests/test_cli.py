@@ -505,6 +505,19 @@ def test_resume_refuses_while_a_different_run_is_unclosed(project):
     assert result.exit_code != 0 and "run r1 is paused" in result.output
 
 
+def test_resume_of_an_unknown_id_reports_it_before_the_overlap_guard(project):
+    tmp_path, config = project
+    make_agents(config, "a")
+    insert_run(tmp_path, "r1", "paused")
+    result = invoke("run", "--resume", "nope", "-c", config)
+    assert result.exit_code != 0 and "no run 'nope'" in result.output
+
+
+def test_print_event_reports_control_drift(capsys):
+    cli._print_event({"event": "control_drift_found", "agent": "e", "files": ["self.md", "lessons.md"]})
+    assert "control e had drifted from its seed (self.md, lessons.md); reset" in capsys.readouterr().out
+
+
 def test_an_unfinished_postrun_blocks_the_next_run_but_not_itself(project):
     tmp_path, config = project
     make_agents(config, "a")
