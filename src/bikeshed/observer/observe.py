@@ -11,6 +11,8 @@ from pathlib import Path
 from bikeshed.config import Config
 from bikeshed.db import connect_readonly
 from bikeshed.models.base import ModelClient, limit_clients
+from bikeshed.baseline import home as baseline_home
+from bikeshed.observer import baselines as bs
 from bikeshed.observer import briefs as pb
 from bikeshed.observer import copying as cp
 from bikeshed.observer import metrics as m
@@ -158,6 +160,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
     in_progress = m.open_runs(conn) + [f"{r} (post-run)" for r in unfinished]
     who = make_who({i: store.public(i) for i in store.ids()})
     known = set(store.ids())
+    found_baselines = bs.find(baseline_home(cfg))
     answers = m.benchmark_answers(conn, runs, who)
     judge = None if judge_client is None else _judges(cfg, ostore, judge_client, analysis_clients or {}, retry_failed)
     note = judge_note if judge is None else None
@@ -185,6 +188,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
             controls=frozenset(a for a in run.agent_ids if a in known and store.record(a).control),
             copies=found, credit_checks=cp.credit_accuracy(conn, run, found),
             reuse=cp.library_reuse(conn, run, cfg.runs_dir),
+            baselines=[b for b in found_baselines if b.source_run == run.id],
         )
         path = out_dir / "runs" / f"{run.id}.md"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -194,7 +198,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
     if run_id is None:
         progress(f"summary across {len(runs)} runs" + (": drawing charts" if len(runs) >= 2 else ""))
         summary = _write_summary(conn, store, ostore, runs, who, answers, out_dir, twin, note, in_progress,
-                                 cfg.runs_dir)
+                                 cfg.runs_dir, found_baselines)
         written += summary
         progress(f"  wrote {summary[-1]} and {len(summary) - 1} chart{'s' if len(summary) != 2 else ''}")
     all_judgments = [j for r in targets for j in ostore.judgments(r.id)]
@@ -267,7 +271,8 @@ def _charts(conn: sqlite3.Connection, ostore: ObserverStore, runs: list[m.RunInf
 
 def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: ObserverStore, runs: list[m.RunInfo],
                    who: Who, answers: list[m.BenchmarkAnswer], out_dir: Path, twin: str | None,
-                   judge_note: str | None, in_progress: list[str], runs_dir: Path) -> list[Path]:
+                   judge_note: str | None, in_progress: list[str], runs_dir: Path,
+                   found_baselines: list[bs.Baseline]) -> list[Path]:
     charts = _charts(conn, ostore, runs, who, out_dir) if len(runs) >= 2 else {}
     found = store.twins()
     if twin is not None:
@@ -315,6 +320,10 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
             reused_count.update(x.method_id for x in got if x.reused_by)
     credit_gaps = {p: v for p, v in credit_gaps.items() if v[1]}
     methods_shown = sorted(((mid, n, reused_count[mid]) for mid, n in shown_count.items()), key=lambda t: (-t[1], t[0]))
+    by_source: dict[str, list[bs.Baseline]] = {}
+    for b in found_baselines:
+        by_source.setdefault(b.source_run, []).append(b)
+    rooms = {r.id: (r, m.run_answer(conn, r, who), m.action_mix(conn, r)) for r in runs if r.id in by_source}
     rulings = [x for r in runs for x in sc.rulings(conn, r.id)]
     scorer = ScorerSummary(
         accepted=sum(x.accepted for x in rulings), rejected=sum(not x.accepted for x in rulings),
@@ -327,7 +336,7 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
         twins=found, categories=m.by_category(conn, runs), failed=ostore.failed(), benchmark=answers,
         reciprocity=m.credit_pairs(conn, runs), in_progress=in_progress, judge_note=judge_note, twin_rows=twin_rows,
         meetings=meetings, scorer=scorer, copying=copying, credit_gaps=credit_gaps, reuse=reuse,
-        methods_shown=methods_shown, norm_overlaps=cp.norm_overlaps(conn, runs),
+        methods_shown=methods_shown, norm_overlaps=cp.norm_overlaps(conn, runs), baselines=by_source, rooms=rooms,
         briefed=[st for r in runs if (st := pb.run_stat(conn, r, who, ostore.judgments(r.id))) is not None],
     )
     path = out_dir / "summary.md"

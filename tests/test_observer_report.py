@@ -1,6 +1,7 @@
 from collections import Counter
 from dataclasses import replace
 
+from bikeshed.observer.baselines import Baseline
 from bikeshed.observer.copying import CallCredit, Match, NormOverlap, Reuse
 from bikeshed.observer.charts import marker_positions, network_chart, trend_chart
 from bikeshed.observer.metrics import BenchmarkAnswer, CategoryStats, Credits, Influence, RunInfo
@@ -297,3 +298,25 @@ def test_summary_shows_copying_credit_gaps_library_reuse_and_norm_overlap():
 def test_summary_without_norm_overlap():
     assert ("_No proposal shares at least 25% of its 6-word sequences with a norm adopted before it._"
             in render_summary(summary_section()))
+
+
+def _baseline(source="r1"):
+    run = RunInfo("x1", "Pick a fruit.", "best-fruit", "unsettled", False, "consensus", ("a", "b"), "t", "t")
+    return Baseline("r1-b1", source, run, 2, 1, 1, 0, BenchmarkAnswer("x1", True, "Mango."),
+                    {"a": Counter(propose=1), "b": Counter(vote=1)}, 3)
+
+
+def test_run_report_shows_its_baselines():
+    text = render_run(section(baselines=[_baseline()]))
+    block = text.split("## Baseline\n")[1].split("\n## ")[0]
+    assert "| r1-b1 | consensus | 2 | 1 | 1/0 | 3 |" in block and "Mango." in block
+
+
+def test_summary_compares_baseline_with_control_and_twin():
+    text = render_summary(summary_section(
+        twins={"a": ["b"]}, baselines={"r1": [_baseline()]},
+        rooms={"r1": (RUN, BenchmarkAnswer("r1", False, "- Alpha (a): Pear"), {"a": Counter(propose=2)})}))
+    block = text.split("## Baseline vs community\n")[1].split("\n## ")[0]
+    assert "### best-fruit" in block and "Pear" in block and "Mango." in block
+    assert "| community | Alpha (a) (control) | 2 |" in block
+    assert "| r1-b1 | a | 1 |" in block
