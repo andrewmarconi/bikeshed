@@ -119,6 +119,9 @@ class Runner:
         goal, agent_ids = row["goal"], json.loads(row["agent_ids"])
         seed = row["seed"]
         board, ws, events = Board(self.conn, run_id), self._workspace(run_id), self._events(run_id)
+        for agent_id in agent_ids:
+            if self.store.record(agent_id).control:
+                self._check_control(agent_id, events)
 
         last = self.conn.execute(
             "SELECT round, workspace_commit FROM rounds WHERE run_id = ? ORDER BY round DESC LIMIT 1", (run_id,)
@@ -156,6 +159,18 @@ class Runner:
         settled = await self._settle(run_id, goal, agent_ids, board, ws, events, completed, final=True)
         assert settled is not None
         return settled
+
+    def _check_control(self, agent_id: str, events: EventLog) -> None:
+        """A control carries nothing between runs. Anything that reached it since its reset is recorded, then undone."""
+        drift = self.store.seed_drift(agent_id)
+        if not drift:
+            events.emit("control_checked", agent=agent_id)
+            return
+        events.emit("control_drift_found", agent=agent_id, files=drift)
+        restored = self.store.reset_to_seed(agent_id)
+        events.emit("control_reset", agent=agent_id)
+        if not restored:
+            events.emit("control_reset_name_kept", agent=agent_id)
 
     def _discard_after(self, run_id: str, completed: int, events: EventLog) -> None:
         """Remove what an interrupted round left behind, so that round replays from its start."""
