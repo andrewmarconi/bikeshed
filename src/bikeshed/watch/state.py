@@ -8,6 +8,7 @@ from typing import Any
 from bikeshed.board import Board, Entry
 from bikeshed.consensus import call_status
 from bikeshed.db import has_table
+from bikeshed.phases import meeting_rounds
 from bikeshed.postrun import STEPS
 from bikeshed.profiles import ProfileStore
 from bikeshed.reviews import reputation
@@ -145,7 +146,7 @@ class RunState:
     label: str
     category: str
     max_rounds: int
-    process: int = 1  # 2: think, then react in turn, with a poll
+    process: int = 1  # 2 and 3: think, then react in turn, with a poll
     phase: str = "waiting"
     round: int = 0
     closed_reason: str | None = None
@@ -180,7 +181,7 @@ class RunState:
         elif name == "round_started":
             self.phase, self.round = "rounds", int(event.get("round", self.round))
         elif name == "agent_step_started":
-            if self.process == 2:
+            if meeting_rounds(self.process):
                 phase = event.get("phase")
                 self.step_phase = phase or "react"
                 self.card(event["agent"]).state = {"think": "thinking…", "poll": "polling…"}.get(phase, "speaking…")

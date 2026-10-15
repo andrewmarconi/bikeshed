@@ -25,6 +25,7 @@ from bikeshed.observer.report import (
     Process2Section, Process2Summary, RunSection, ScorerSummary, SummarySection, render_run, render_summary,
 )
 from bikeshed.observer.store import ObserverStore
+from bikeshed.phases import meeting_rounds
 from bikeshed.profiles import ProfileError, ProfileStore
 from bikeshed.provenance import provenance_changes
 from bikeshed.sequence import postrun_unfinished
@@ -58,7 +59,7 @@ async def _judge_run(judge: Callable[[str], Judge], ostore: ObserverStore, conn:
         specs.append(("themes", agent, themes_inputs(conn, store, run, agent)))
         if (pp := private_public_inputs(conn, run, agent, who)) is not None:
             specs.append(("private_public", agent, pp))
-        if run.process == 2 and (tva := think_vs_act_inputs(conn, run, agent, who)) is not None:
+        if meeting_rounds(run.process) and (tva := think_vs_act_inputs(conn, run, agent, who)) is not None:
             specs.append(("think_vs_act", agent, tva))
         specs.append(("self_image", agent, self_image_inputs(store, runs, run, agent)))
         if (di := pb.disclosure_inputs(conn, run, agent, who)) is not None:
@@ -96,7 +97,7 @@ async def _judge_run(judge: Callable[[str], Judge], ostore: ObserverStore, conn:
 
 def _process2_section(conn: sqlite3.Connection, run: m.RunInfo, who: Who, out_dir: Path,
                       written: list[Path]) -> Process2Section | None:
-    if run.process != 2:
+    if not meeting_rounds(run.process):
         return None
     network = p2.pm_network(conn, run)
     chart = None
@@ -274,12 +275,14 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
             charts[f"Control vs twin: {who(control)}"] = trend_chart(
                 out_dir / "charts" / f"control_{control}.png", f"Peer score: {who(control)} (control) vs twin",
                 [r.tag for r in compared], series, m.harness_changes(conn, compared), "mean peer rating")
-    p2_runs = [r for r in runs if r.process == 2]
-    process2 = Process2Summary(
-        p2.recurring_pairs(conn, p2_runs),
-        p2.combine_participation([p2.poll_participation(conn, r) for r in p2_runs]),
-        p2.combine_order([p2.speaking_order(conn, r) for r in p2_runs]),
-    ) if p2_runs else None
+    meetings: dict[int, Process2Summary] = {}
+    for process in sorted({r.process for r in runs if meeting_rounds(r.process)}):
+        group = [r for r in runs if r.process == process]  # never sum one generation's rounds into another's
+        meetings[process] = Process2Summary(
+            p2.recurring_pairs(conn, group),
+            p2.combine_participation([p2.poll_participation(conn, r) for r in group]),
+            p2.combine_order([p2.speaking_order(conn, r) for r in group]),
+        )
     rulings = [x for r in runs for x in sc.rulings(conn, r.id)]
     scorer = ScorerSummary(
         accepted=sum(x.accepted for x in rulings), rejected=sum(not x.accepted for x in rulings),
@@ -291,8 +294,8 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
         identity=m.identity_events(conn, store, runs), norms=m.norm_events(conn), codebook=ostore.codes(),
         twins=found, categories=m.by_category(conn, runs), failed=ostore.failed(), benchmark=answers,
         reciprocity=m.credit_pairs(conn, runs), in_progress=in_progress, judge_note=judge_note, twin_rows=twin_rows,
-        process2=process2, scorer=scorer,
-        process4=[st for r in runs if (st := pb.run_stat(conn, r, who, ostore.judgments(r.id))) is not None],
+        meetings=meetings, scorer=scorer,
+        briefed=[st for r in runs if (st := pb.run_stat(conn, r, who, ostore.judgments(r.id))) is not None],
     )
     path = out_dir / "summary.md"
     path.parent.mkdir(parents=True, exist_ok=True)

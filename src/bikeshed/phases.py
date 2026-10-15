@@ -115,9 +115,14 @@ async def poll(runner: "Runner", ctx: RoundContext) -> str | None:
     return None
 
 
+def meeting_rounds(process: int) -> bool:
+    """Processes 2 and 3 run each round as think, then react in turn, then a poll. They differ only in their goals."""
+    return process in (2, 3)
+
+
 def phases(process: int, round: int) -> list[Phase]:
     if process == 1:
         return [simultaneous_act]
-    if process == 2:
+    if meeting_rounds(process):
         return [think, simultaneous_act if round == 1 else sequential_act, poll]
     raise ValueError(f"unknown process {process}")

@@ -1,4 +1,5 @@
 # Process 4: Goal Briefs Implementation Plan
+> This feature is now part of Process 3; see `docs/superpowers/specs/2026-10-15-bikeshed-process3-design.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

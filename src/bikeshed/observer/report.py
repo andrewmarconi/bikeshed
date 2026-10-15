@@ -10,6 +10,7 @@ from bikeshed.observer.metrics import (
 from bikeshed.observer.process2 import OrderStat, Participation, RecurringPair
 from bikeshed.observer.scoring import Award, RulingRow, SelfCredit
 from bikeshed.observer.store import Judgment
+from bikeshed.phases import meeting_rounds
 from bikeshed.view import Who
 
 
@@ -36,10 +37,10 @@ class RunSection:
     benchmark: BenchmarkAnswer | None
     judge_note: str | None  # why nothing was judged (no judge configured / --no-judge), else None
     dimensions: dict[str, dict[str, float]] = field(default_factory=dict)  # agent -> adopted dimension -> peer mean
-    process2: Process2Section | None = None  # only for Process 2 runs
+    process2: Process2Section | None = None  # only for runs with Process 2's rounds (processes 2 and 3)
     rulings: list[RulingRow] = field(default_factory=list)  # the Scorer's rulings, in board order
     awards: list[Award] = field(default_factory=list)  # Scorer points awarded in this run
-    briefs: BriefsSection | None = None  # Process 4 runs only
+    briefs: BriefsSection | None = None  # briefed runs only
 
 
 def _cell(text: str) -> str:
@@ -58,7 +59,7 @@ def _briefs(s: RunSection) -> list[str]:
     b = s.briefs
     if b is None:
         return []
-    out = ["## Briefs (Process 4)", "", "### Scorer call-outs", ""]
+    out = ["## Briefs", "", "### Scorer call-outs", ""]
     out += [f"- call #{c.call_id} (r{c.round}): “{c.constraint}” — "
             + (f"{s.who(c.holder)}'s private brief" if c.holder else "the shared brief") for c in b.callouts] \
         or ["_None._"]
@@ -181,7 +182,7 @@ def _order(stats: list[OrderStat], note: str = "") -> list[str]:
 
 def _process2(s: RunSection) -> list[str]:
     p = s.process2
-    out = ["## Process 2", "", "### Private messages", ""]
+    out = [f"## Process {s.run.process}", "", "### Private messages", ""]
     if not p.network:
         out += ["_No private messages._", ""]
     else:
@@ -226,7 +227,7 @@ def render_run(s: RunSection) -> str:
     out += _per_agent(s, "Private journal vs public reviews", "private_public", lambda res: [
         f"- {f['colleague']}: **{f['verdict']}** — journal: “{f['journal_quote']}” / review: “{f['review_quote']}”"
         for f in res["findings"]] or ["- no colleagues compared"], none_without_judgment="_gave no peer reviews_")
-    if r.process == 2:
+    if meeting_rounds(r.process):
         out += _per_agent(s, "Think notes vs actions (private vs public)", "think_vs_act", lambda res: [
             f"- **{p['relation']}** — {p['about']}: think “{p['think_quote']}” / action “{p['action_quote']}”"
             for p in res["points"]] or ["- nothing to compare"], none_without_judgment="_wrote no think notes_")
@@ -257,8 +258,8 @@ def render_run(s: RunSection) -> str:
 @dataclass
 class Process2Summary:
     pairs: list[RecurringPair]  # who wrote privately to whom in two or more runs
-    participation: dict[str, Participation]  # summed over Process 2 runs
-    order: list[OrderStat]  # summed by position over Process 2 runs
+    participation: dict[str, Participation]  # summed over one process's runs
+    order: list[OrderStat]  # summed by position over one process's runs
 
 
 @dataclass
@@ -286,9 +287,9 @@ class SummarySection:
     judge_note: str | None
     # control id -> rows of (run label, agent id, mean peer score, action counts) for the control and its twins
     twin_rows: dict[str, list[tuple[str, str, float | None, Counter]]] = field(default_factory=dict)
-    process2: Process2Summary | None = None  # None when no Process 2 run has closed
+    meetings: dict[int, Process2Summary] = field(default_factory=dict)  # process -> summary; processes are never summed together
     scorer: ScorerSummary | None = None
-    process4: list[RunStat] = field(default_factory=list)  # one row per run that had briefs
+    briefed: list[RunStat] = field(default_factory=list)  # one row per run that had briefs
 
 
 TWIN_ACTIONS = ("propose", "critique", "adopt", "vote", "call_consensus", "failed")
@@ -361,31 +362,30 @@ def render_summary(s: SummarySection) -> str:
     out += [f"- {run}: {s.who(g)} → {s.who(r)}" for run, g, r in s.reciprocity] or ["_No credits yet._"]
     if s.scorer is not None:
         out += [""] + _scorer_summary(s.scorer, s.who)
-    if s.process4:
+    if s.briefed:
         head = ["| Call-outs | Disclosed | Unprompted | After call-out | Fabricated | Mean first round |",
                 "|---|---|---|---|---|---|"]
-        out += ["", "## Process 4", "", "| Run | Category |" + head[0][1:], "|---|---|" + head[1]]
+        out += ["", "## Briefed runs", "", "| Run | Category |" + head[0][1:], "|---|---|" + head[1]]
         out += [f"| {r.tag} | {r.category} | {r.callouts} | {r.disclosed}/{r.facts} | {r.unprompted} | "
                 f"{r.after_callout} | {'–' if r.fabricated is None else r.fabricated} | {_fmt1(r.mean_round)} |"
-                for r in s.process4]
+                for r in s.briefed]
         out += ["", "| Category | Runs | Call-outs | Disclosed | Unprompted | After call-out | Fabricated | "
                 "Mean first round |", "|---|---|---|---|---|---|---|---|"]
-        key = lambda r: r.category if r.process == 1 else f"{r.category} (P2)"  # as by_category does
-        for cat in sorted({key(r) for r in s.process4}):
-            rows = [r for r in s.process4 if key(r) == cat]
+        key = lambda r: r.category if r.process == 1 else f"{r.category} (P{r.process})"  # as by_category does
+        for cat in sorted({key(r) for r in s.briefed}):
+            rows = [r for r in s.briefed if key(r) == cat]
             judged = [r.fabricated for r in rows if r.fabricated is not None]
             out.append(f"| {cat} | {len(rows)} | {sum(r.callouts for r in rows)} | "
                        f"{sum(r.disclosed for r in rows)}/{sum(r.facts for r in rows)} | "
                        f"{sum(r.unprompted for r in rows)} | {sum(r.after_callout for r in rows)} | "
                        f"{sum(judged) if judged else '–'} | "
                        f"{_fmt1(_mean([n for r in rows for n in r.rounds]))} |")
-    if s.process2 is not None:
-        p = s.process2
-        out += ["", "## Process 2", "", "### Recurring private-message pairs", ""]
+    for process, p in sorted(s.meetings.items()):
+        out += ["", f"## Process {process}", "", "### Recurring private-message pairs", ""]
         out += [f"- {s.who(r.sender)} → {s.who(r.recipient)}: {r.runs} runs, {r.messages} messages" for r in p.pairs] \
             or ["_None yet._"]
         out += [""] + _participation(p.participation, s.who) + _order(
-            p.order, " Summed over all Process 2 runs, whatever their size.")
+            p.order, f" Summed over all Process {process} runs, whatever their size.")
     out += ["", "## Codebook", ""]
     out += [f"- **{name}**: {description}" for name, description in s.codebook] or ["_Empty._"]
     out += ["", "## Not judged", ""]

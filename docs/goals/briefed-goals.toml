@@ -1,4 +1,4 @@
-# Process 4 starter goals: copy the [[goals]] tables into the lab's community/goals.toml.
+# Process 3 starter goals: copy the [[goals]] tables into the lab's community/goals.toml.
 # Categories are for the Observer only; no agent ever sees this file. Briefs reach agents only through their views.
 # In contested goals the conflicting facts are brief text; constraints must always be satisfiable together.
 

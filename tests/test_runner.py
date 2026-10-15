@@ -372,8 +372,26 @@ async def test_start_records_the_process(community, runner_factory):
     assert conn.execute("SELECT process FROM runs WHERE id = ?", (runner.start("G", AGENTS),)).fetchone()[0] == 1
     assert conn.execute("SELECT process FROM runs WHERE id = ?",
                         (runner.start("G", AGENTS, process=2),)).fetchone()[0] == 2
-    with pytest.raises(ValueError, match="process must be 1 or 2"):
+    from bikeshed.briefs import BriefSpec
+
+    assert conn.execute("SELECT process FROM runs WHERE id = ?",
+                        (runner.start("G", AGENTS, process=3, brief=BriefSpec("Shared.")),)).fetchone()[0] == 3
+    with pytest.raises(ValueError, match="process must be 1, 2 or 3"):
+        runner.start("G", AGENTS, process=4)
+
+
+def test_process_3_needs_briefs_except_for_the_benchmark(community, runner_factory):
+    from bikeshed.briefs import BriefSpec
+
+    store, conn = community
+    runner = runner_factory(store, conn, {})
+    with pytest.raises(ValueError, match="process 3 runs briefed goals and this goal has none"):
         runner.start("G", AGENTS, process=3)
+    assert conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
+    assert runner.start("Pick a topping.", AGENTS, process=3, is_benchmark=True)
+    assert runner.start("G", AGENTS, process=3, brief=BriefSpec("Shared."))
+    for process in (1, 2):  # briefs stay allowed under the other processes
+        assert runner.start("G", AGENTS, process=process, brief=BriefSpec("Shared."))
 
 
 async def test_resume_discards_what_an_interrupted_round_left_behind(tmp_path, community, scripted, runner_factory):

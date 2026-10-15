@@ -436,3 +436,24 @@ async def test_messages_followed_by_pass_still_stagnate(community, process2, run
     runner = runner_factory(store, conn, clients, max_rounds=6)
     result = await runner.run(runner.start("G", AGENTS, process=2))
     assert result.reason == "stagnation"
+
+
+async def test_process_3_runs_process_2_rounds_and_records_3(tmp_path, community, process2, runner_factory):
+    from bikeshed.briefs import BriefSpec
+
+    store, conn = community
+    shape, steps, run_ids = {}, {}, {}
+    for process in (2, 3):
+        clients = {a: process2(react={1: propose(a.upper())}) for a in AGENTS}
+        runner = runner_factory(store, conn, clients, max_rounds=2)
+        run_ids[process] = runner.start("G", AGENTS, process=process, brief=BriefSpec("Shared facts."))
+        await runner.run(run_ids[process])
+        shape[process] = [(r["round"], r["author"], r["type"]) for r in conn.execute(
+            "SELECT round, author, type FROM entries WHERE run_id = ? ORDER BY id", (run_ids[process],))]
+        steps[process] = [(e["round"], e["agent"], e.get("phase"))
+                          for e in read_events(tmp_path / "runs" / run_ids[process] / "events.jsonl")
+                          if e["event"] == "agent_step_started"]
+    assert shape[3] == shape[2] and steps[3] == steps[2]
+    assert any(phase == "think" for _, _, phase in steps[3]) and any(t == "think" for _, _, t in shape[3])
+    assert conn.execute("SELECT process FROM runs WHERE id = ?", (run_ids[3],)).fetchone()[0] == 3
+

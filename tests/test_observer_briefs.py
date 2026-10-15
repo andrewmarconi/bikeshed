@@ -105,7 +105,7 @@ def test_the_run_report_shows_callouts_and_reactions(community):
     briefed_run(conn)
     run = closed_runs(conn)[0]
     text = render_run(section(run=run, briefs=pb.section(conn, run, who, [])))
-    assert "## Briefs (Process 4)" in text
+    assert "## Briefs\n" in text
     assert "“Spend at most $15.” — Bea (b)'s private brief" in text
     assert "“Choose from the list.” — the shared brief" in text
     assert "Closed by consensus after the call-outs: no" in text
@@ -184,16 +184,18 @@ def test_run_stat_and_summary_table(community):
                                                               "what": "x"}]}, None, "m", "p")])
     assert stat == pb.RunStat("r1", "distributed", 1, 2, 1, 1, 0, 1, (1,))
     other = pb.RunStat("r2", "distributed", 2, 3, 2, 0, 2, None, (3, 4))
-    text = render_summary(summary_section(process4=[stat, other]))
-    assert "## Process 4" in text and "| r1 | distributed | 1 | 1/2 | 1 | 0 | 1 | 1.0 |" in text
+    text = render_summary(summary_section(briefed=[stat, other]))
+    assert "## Briefed runs" in text and "| r1 | distributed | 1 | 1/2 | 1 | 0 | 1 | 1.0 |" in text
     assert "| r2 | distributed | 2 | 2/3 | 0 | 2 | – | 3.5 |" in text
     assert "| distributed | 2 | 3 | 3/5 | 1 | 2 | 1 | 2.7 |" in text  # mean over facts; fabricated over judged runs
-    unjudged = render_summary(summary_section(process4=[other, pb.RunStat("r3", "x", 0, 1, 0, 0, 0, None)]))
+    unjudged = render_summary(summary_section(briefed=[other, pb.RunStat("r3", "x", 0, 1, 0, 0, 0, None)]))
     assert "| distributed | 1 | 2 | 2/3 | 0 | 2 | – | 3.5 |" in unjudged
     assert "| x | 1 | 0 | 0/1 | 0 | 0 | – | – |" in unjudged
-    p2 = render_summary(summary_section(process4=[other, dataclasses.replace(other, tag="r4", process=2)]))
+    p2 = render_summary(summary_section(briefed=[other, dataclasses.replace(other, tag="r4", process=2)]))
     assert "| distributed | 1 | 2 | 2/3 | 0 | 2 | – | 3.5 |" in p2
     assert "| distributed (P2) | 1 | 2 | 2/3 | 0 | 2 | – | 3.5 |" in p2
+    p3 = render_summary(summary_section(briefed=[dataclasses.replace(other, tag="r5", process=3)]))
+    assert "| distributed (P3) | 1 | 2 | 2/3 | 0 | 2 | – | 3.5 |" in p3
 
 
 def test_relay_counts_only_after_the_disclosure(community):
