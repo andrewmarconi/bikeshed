@@ -1,9 +1,11 @@
+from datetime import datetime
+
 from observer_helpers import add_entry, add_journal, add_review, add_run
 
 from bikeshed.observer.inputs import (
-    benchmark_inputs, private_public_inputs, self_image_inputs, themes_inputs, think_vs_act_inputs,
+    before_moment, benchmark_inputs, private_public_inputs, self_image_inputs, themes_inputs, think_vs_act_inputs,
 )
-from bikeshed.observer.metrics import BenchmarkAnswer, closed_runs
+from bikeshed.observer.metrics import BenchmarkAnswer, RunInfo, closed_runs
 from bikeshed.view import make_who
 
 FUTURE = "2099-01-01T00:00:00+00:00"  # after every fixture commit; git cannot parse far-future dates like 2999
@@ -87,3 +89,41 @@ def test_think_vs_act_inputs_none_without_think_notes(community):
     add_entry(conn, "r1", "a", "propose", {"answer_summary": "Pear", "method": "m"})
     who = make_who({i: store.public(i) for i in store.ids()})
     assert think_vs_act_inputs(conn, closed_runs(conn)[0], "a", who) is None
+
+
+def _info(run_id, end, agents=("a",)):
+    return RunInfo(run_id, "g", None, None, False, "budget", tuple(agents), end, end)
+
+
+def test_before_is_the_latest_run_that_ended_earlier_not_the_one_created_earlier(community):
+    store, _ = community
+    created_first = _info("x1", "2000-01-02T03:00:00+00:00")   # created first, finished last
+    created_second = _info("x2", "2000-01-02T02:00:00+00:00")
+    runs = [created_first, created_second]                      # closed_runs order: creation
+    assert before_moment(store, runs, created_second, "a") is None
+    assert before_moment(store, runs, created_first, "a") == datetime.fromisoformat(created_second.end)
+
+
+def test_a_control_agents_before_is_its_reset(community):
+    store, _ = community
+    store.create("e", "fake", "Seed.", control=True)
+    store.set_public("e", "Eve", "Eve headline", "I am Eve.")
+    store.save_seed_public("e")
+    store.write_private("e", "self.md", "Changed by a cycle.")
+    store.reset_to_seed("e")
+    reset = next(c.at for c in reversed(store.history("e")) if c.subject == "reset control agent e to seed")
+    earlier = _info("x1", "2000-01-01T00:00:00+00:00", agents=("e",))
+    now = _info("x2", FUTURE, agents=("e",))
+    assert before_moment(store, [earlier, now], now, "e") == reset
+
+
+def test_a_reset_after_the_run_is_not_its_before(community):
+    store, _ = community
+    store.create("e", "fake", "Seed.", control=True)
+    store.set_public("e", "Eve", "Eve headline", "I am Eve.")
+    store.save_seed_public("e")
+    store.write_private("e", "self.md", "Changed.")
+    store.reset_to_seed("e")                                    # committed now, after both runs below
+    earlier = _info("x1", "2000-01-01T00:00:00+00:00", agents=("e",))
+    this = _info("x2", "2000-01-02T00:00:00+00:00", agents=("e",))
+    assert before_moment(store, [earlier, this], this, "e") == datetime.fromisoformat(earlier.end)

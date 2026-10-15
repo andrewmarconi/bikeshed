@@ -62,14 +62,25 @@ def think_vs_act_inputs(conn: sqlite3.Connection, run: RunInfo, agent_id: str, w
             "private messages sent": show([e for e in own if e.type == "private_message"])}
 
 
+def before_moment(store: ProfileStore, runs: list[RunInfo], run: RunInfo, agent_id: str) -> datetime | None:
+    """When an agent's "before" snapshot is read: the later of the end of its latest run that ended before this one,
+    and its latest reset to seed before this run ended. Runs are compared by when they ended, not when they began."""
+    end = datetime.fromisoformat(run.end)
+    ends = [datetime.fromisoformat(r.end) for r in runs
+            if r.id != run.id and agent_id in r.agent_ids and datetime.fromisoformat(r.end) < end]
+    resets = [c.at for c in store.history(agent_id)
+              if c.subject == f"reset control agent {agent_id} to seed" and c.at < end]
+    moments = ends + resets
+    return max(moments) if moments else None
+
+
 def self_image_inputs(store: ProfileStore, runs: list[RunInfo], run: RunInfo, agent_id: str) -> dict[str, str]:
-    index = next(i for i, r in enumerate(runs) if r.id == run.id)
-    earlier = [r for r in runs[:index] if agent_id in r.agent_ids]
     now = _after(run)
     out = {"self.md now": store.file_at(agent_id, "self.md", now) or NONE,
            "public profile now": store.file_at(agent_id, "public.toml", now) or NONE}
-    if earlier:
-        then = _after(earlier[-1])
+    moment = before_moment(store, runs, run, agent_id)
+    if moment is not None:
+        then = moment + timedelta(seconds=1)
         out["self.md before"] = store.file_at(agent_id, "self.md", then) or NONE
         out["public profile before"] = store.file_at(agent_id, "public.toml", then) or NONE
     else:
