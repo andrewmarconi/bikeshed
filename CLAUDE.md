@@ -93,7 +93,7 @@ The Scorer (`scorer.py`) is the one judge agents know about: it rules only wheth
 
 ### After a run
 
-`postrun/cycle.py` runs fixed `STEPS`: journal → review (named 360° reviews with cited evidence and ratings) → responses → update (self-rewrite of profile files) → norms_critique → norms_vote → library → narrative. Each step is resumable per agent through the `postrun_steps` table. `reviews.py` computes reputation in plain code (peer ratings only, recency-weighted). `norms.py` adopts norms and rating dimensions with the same consensus rule. `library.py` stores methods with embeddings for retrieval in later runs.
+`postrun/cycle.py` runs fixed `STEPS`: journal → review (named 360° reviews with cited evidence and ratings, between every pair of members who took part in the run) → responses → update (self-rewrite of profile files) → norms_critique → norms_vote → library → narrative. Each step is resumable per agent through the `postrun_steps` table. `reviews.py` computes reputation in plain code (peer ratings only, recency-weighted). `norms.py` adopts norms and rating dimensions with the same consensus rule. `library.py` stores methods with embeddings for retrieval in later runs.
 
 ### Prompts
 

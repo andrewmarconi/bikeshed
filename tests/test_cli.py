@@ -140,7 +140,7 @@ def test_run_triggers_the_postrun_cycle(project):
     run_id = run_id_from(result.output)
     assert (tmp_path / "community" / "agents" / "a" / "journal" / f"{run_id}.md").exists()
     shown = invoke("agents", "show", "a", "-c", config)
-    assert "reputation: no reviews yet" in shown.output
+    assert "reputation: ★4.0 (1 review)" in shown.output        # a and b both took part, so b reviewed a
     assert "## Reviews received" in shown.output and "Self-review" in shown.output
     assert "## Latest journal" in shown.output and "After reviews." in shown.output
 

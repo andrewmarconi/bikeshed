@@ -152,15 +152,23 @@ These came out of the generation 3 review (`learnings_gen3-v2.md` in the report 
 
 10. **Review pairs come from refs, so reviews form a star around whoever made the call.** `interactions()` (`postrun/feedback.py:9`) links two members only when one entry refers to another, or when they wrote the same file. Once everyone votes on one call, everyone's only link is to its caller. In runs 13 and 14 every peer review ran to or from the caller, and in run 14 that was `d`, who had copied `b`'s proposal word for word; `b`, the author, got one review. Consider linking every pair of members who both took part in a run, or adding a link from a call to the authors of the entries it copies or cites.
 
+    *Done in sub-project B (`2026-10-15-bikeshed-gen4-agent-environment-design.md`):* every member who took part in the run (a public entry other than a pass, or a workspace file) reviews every other member who took part. Refs no longer decide the pairs.
+
 11. **Library retrieval ranks by similarity alone.** `retrieve()` (`library.py:129`) sorts every embedded method by cosine similarity to the goal, with no weight for reception. In generation 3 it mostly returned methods that were never adopted (method #4 seven times), and handed a $20 Sunday plan to the offsite run. Weight by reception (adopted, in the winning answer), and log which retrieved text reappears in proposals. Separately, the spec stores methods with the goal text only, but the method *text* is written by an agent who may have quoted its private brief. Check that brief facts can't reach a later run through method text.
+
+    *Decided in sub-project B:* ranking stays similarity-only. Each method's reception is already in its label, so agents can weigh it themselves. Logging which retrieved text reappears moves to sub-project C, with fix 14's copy metric. Brief facts can't leak through method text into a run where they are still private: queue goals run once, and post-run reveals every brief to every member. A briefed goal must not be re-run within a generation.
 
 12. **A refine doesn't change the call's text, and agents vote as though it does.** Run 5: `d` supported #229 because "my refinement (#233) successfully embedded" checks that #229 never contained. Run 7: `c` praised patches #358 didn't have. Either make an accepted refine produce a new version of the call, or make the view say plainly that a refine leaves the call's text unchanged.
 
     *Checked against the code:* confirmed. A refine is stored as its own entry (`target`, `change`, `reason`) with a ref to the target (`runner.py:281`, `actions.py:42`), and nothing ever changes the target entry. There's also no such thing as an "accepted" refine: nothing records whether a refine was taken up. The action list in `agent_system.md:18` and `process2_agent_system.md:22` gives the refine shape with no description, unlike propose, adopt and the others. So the prompt never says what a refine does. Any entry can be the target of a refine, including a `call_consensus`. The only target check is that a vote must target a call (`agent.py:126`). Making a refine produce a new version of the call would mean changing what voters are voting on, because votes attach to one call id. Saying plainly in the prompt that a refine is a separate entry is the smaller change. It's a prompt change, so it changes the Process 1 golden recording.
 
+    *Done in sub-project B:* both action lists now say a refine is "a change to an entry, posted as its own entry; the target's text stays as it was." Refines are still stored and voted on as before.
+
 13. **Agents see earlier moves within the same round, and copy them.** Run 12: six entries share one reason. Run 14: three agents post `b`'s vote reason word for word. Decide whether to change this (blind votes within a round) or only measure it. Measuring it is fix 14.
 
     *Checked against the code:* this is Process 2 working as designed, not a bug. All of generation 3 ran under Process 2 (`runs.process = 2` for every run in `lab/`). From round 2, its react phase is `sequential_act` (`phases.py:77`): "Agents speak one at a time in a seeded order; each sees what was said before its turn." Round 1 react, the think phase and the poll are all simultaneous, and their results are posted only after everyone has finished. Process 1 is fully simultaneous. Run 14's events confirm it. In round 2, `d` posted call #1257, then `b`, `a` and `e` voted one after another in the react phase (#1258–1260), each able to see the votes before it. `c` voted in the poll (#1262) after all of those. So blind votes within a round would change the Process 2 spec, which chose sequential react on purpose. Alternatives are a separate process variant, or keeping the design and measuring the effect through fix 14 and the existing `speaking_order` metric (`observer/process2.py:92`).
+
+    *Decided in sub-project B:* no change. Process 3 keeps Process 2's sequential react, so generation 4's rounds match generation 3's. Sub-project C measures the effect (fix 14 and `speaking_order`).
 
 14. **Observer: measure what shaped generation 3's outcomes.**
     - Add: copying (exact and n-gram matches against earlier entries and the library), credit accuracy (does a call credit the entries it copies?), and rule-gaming in private notes.
@@ -210,8 +218,8 @@ Each sub-project gets its own spec, plan and implementation. Anything that chang
 | | Sub-project | Covers | Changes what agents experience? | Status |
 |---|---|---|---|---|
 | A | Control integrity | Fixes 1–5, 7 (dealing briefs) | Yes | **Done** (merged 2026-10-15, `73a14b7`) |
-| F | Process 3 and naming | `docs/nomenclature-cleanup.md` | Yes (new `--process 3` value) | **Next** |
-| B | Agent environment | Fixes 10, 11, 12, 13 (decision) | Yes | Before generation 4 run 1 |
+| F | Process 3 and naming | `docs/nomenclature-cleanup.md` | Yes (new `--process 3` value) | **Done** (merged 2026-10-15, `49e0480`) |
+| B | Agent environment | Fixes 10, 11, 12, 13 (decision) | Yes | **In progress**; before generation 4 run 1 |
 | C | Measurement | Fixes 7 (twin comparison), 8, 9, 14, 15, 16, 17 | No | Any time; re-run over generation 4 |
 | D | Baseline run | Fix 6 | No (separate scratch community) | Before the first pizza benchmark of generation 4 |
 | E | Setup and procedure | Fix 0 (`f.md`), 18, sixth briefs, `view_entries` | Config and goals only | Repo side done in A; lab edits and model choice are Andrew's, after F |
