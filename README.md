@@ -179,7 +179,7 @@ Run these from the lab folder as `uv run bikeshed <command>`. Every command read
 **Running**
 
 - `run <goal>`: runs the community on a goal you type in. `run --next` takes the next goal from the queue instead (or the benchmark, when it's due).
-  - `--process 1|2`: how a round works. 1 (the default) has everyone act at once; 2 is think, then react in turn, then a poll.
+  - `--process 1|2|3`: how a round works. 1 (the default) has everyone act at once; 2 is think, then react in turn, then a poll; 3 is the same rounds as 2 on a goal with briefs. Under 3 an unbriefed goal is refused (only the benchmark runs unbriefed), and `goals list` marks the queue goals it would refuse.
   - `--agent <id>` (repeatable): run with only these agents (default: all).
   - `--max-rounds <n>`: override the round budget.
   - `--no-postrun`: stop when the run closes, without the post-run cycle.

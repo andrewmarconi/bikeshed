@@ -136,3 +136,12 @@ def test_max_writes_defaults_to_three_and_cannot_be_negative():
     assert RunSettings().max_writes == 3
     with pytest.raises(ValidationError):
         RunSettings(max_writes=-1)
+
+
+MODEL = '[models.local]\nkind = "openai"\nmodel = "m"\n\n'
+
+
+def test_run_process_3_loads_and_4_does_not(tmp_path):
+    assert load_config(write(tmp_path, MODEL + "[run]\nprocess = 3\n")).run.process == 3
+    with pytest.raises(ValidationError):
+        load_config(write(tmp_path, MODEL + "[run]\nprocess = 4\n"))

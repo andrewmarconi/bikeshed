@@ -304,6 +304,9 @@ def run(
                 selected = next_goal(conn, load_goals(cfg.community_dir / GOALS_FILE))
             except GoalError as exc:
                 _fail(str(exc))
+            if cfg.run.process == 3 and selected.brief is None and not selected.is_benchmark:
+                _fail(f"goal {selected.id} has no briefs and this lab runs process 3; add briefs to it in goals.toml "
+                      "or take it out of the queue")
             goal = selected.text
             typer.echo(f"goal ({selected.id}, {selected.category}): {goal}")
         if not goal:
@@ -369,7 +372,7 @@ def goals_list(config: ConfigOpt = DEFAULT_PATH) -> None:
     used = used_goals(conn)
     for g in gf.goals:
         mark = f"used by {used[g.id]}" if g.id in used else "unused"
-        briefs = brief_mark(g)
+        briefs = brief_mark(g) or ("unbriefed: process 3 refuses it" if cfg.run.process == 3 else "")
         typer.echo(f"{g.id}\t{g.category}\t{mark}\t{g.text}" + (f"\t[{briefs}]" if briefs else ""))
     try:
         typer.echo(f"\nnext: {next_goal(conn, gf).id}")

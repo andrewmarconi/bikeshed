@@ -555,3 +555,39 @@ def test_process_3_refuses_a_free_text_goal(project):
     assert "process 3 runs briefed goals and this goal has none" in result.output and "--process 2" in result.output
     rejected = invoke("run", "Pick a colour", "--process", "4", "-c", config)
     assert rejected.exit_code != 0 and "--process must be 1, 2 or 3" in rejected.output
+
+
+def test_process_3_run_records_3_in_provenance_and_resume_keeps_it(project):
+    import sqlite3
+
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    result = invoke("run", "--next", "--process", "3", "--max-rounds", "1", "--no-postrun", "-c", config)
+    assert result.exit_code == 0, result.output  # the benchmark runs unbriefed under process 3
+    run_id = run_id_from(result.output)
+    conn = sqlite3.connect(tmp_path / "community" / "community.db")
+    assert conn.execute("SELECT process FROM runs WHERE id = ?", (run_id,)).fetchone()[0] == 3
+    provenance = json.loads(conn.execute("SELECT config FROM run_provenance WHERE run_id = ?", (run_id,)).fetchone()[0])
+    assert provenance["run"]["process"] == 3
+    rejected = invoke("run", "--resume", run_id, "--process", "2", "-c", config)
+    assert rejected.exit_code != 0 and "keeps its process" in rejected.output
+
+
+def test_process_3_lab_flags_and_refuses_an_unbriefed_queue_goal(project):
+    tmp_path, config = project
+    make_agents(config, "a")
+    config.write_text(config.read_text().replace("[run]\n", "[run]\nprocess = 3\n", 1))
+    (tmp_path / "community" / "goals.toml").write_text(
+        '[benchmark]\ntext = "Pick a topping."\ncategory = "underspecified"\nevery = 99\n\n'
+        '[[goals]]\nid = "bare"\ntext = "Pick a fruit."\ncategory = "unsettled"\n')
+    from bikeshed.db import connect
+    conn = connect(tmp_path / "community" / "community.db")
+    conn.execute("INSERT INTO runs (id, goal, status, agent_ids, created_at, is_benchmark) "
+                 "VALUES ('b1', 'Pick a topping.', 'closed', '[\"a\"]', 't', 1)")
+    conn.commit()
+    listing = invoke("goals", "list", "-c", config).output
+    assert "bare\tunsettled\tunused\tPick a fruit.\t[unbriefed: process 3 refuses it]" in listing
+    result = invoke("run", "--next", "--max-rounds", "1", "-c", config)
+    assert result.exit_code != 0
+    assert "goal bare has no briefs and this lab runs process 3" in result.output and "--process 2" not in result.output
+    assert conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 1
