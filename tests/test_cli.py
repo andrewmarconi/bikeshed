@@ -812,3 +812,21 @@ def test_a_paused_variant_resumes_on_its_backend(project, monkeypatch):
     scratch = connect(tmp_path / "baselines" / f"{run_id}-v1" / "community" / "community.db")
     models = json.loads(scratch.execute("SELECT models FROM run_provenance WHERE phase = 'resume'").fetchone()[0])
     assert {m["backend"] for m in models.values()} == {"claude"}
+
+
+def test_a_variant_refuses_to_resume_on_a_changed_backend(project, monkeypatch):
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    run_id = run_id_from(invoke("run", "Pick a colour", "--max-rounds", "2", "-c", config).output)
+    config.write_text(config.read_text() + '\n[models.think]\nkind = "openai"\nbase_url = "http://x/v1"\n'
+                      'model = "Think-Model"\nthinking = true\n')
+    working = cli.make_client
+    monkeypatch.setattr(cli, "make_client", lambda backend, retries: _Failing(
+        working(backend, retries), lambda system, first: re.search(r"^# Round", first, re.M) is not None))
+    paused = invoke("baseline", run_id, "--backend", "think", "-c", config)
+    assert paused.exit_code == 0 and "paused" in paused.output, paused.output
+    monkeypatch.setattr(cli, "make_client", working)
+    config.write_text(config.read_text().replace("thinking = true", "thinking = false"))
+    refused = invoke("baseline", "--resume", f"{run_id}-v1", "-c", config)
+    assert refused.exit_code == 1, refused.output
+    assert "backend 'think' changed since this variant started: thinking was True, now False" in refused.output
