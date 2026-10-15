@@ -1,6 +1,6 @@
-# Process 4: goal briefs
+# Goal briefs (Process 3)
 
-*2026-10-14. "Process 4" is this experiment's name, not a `--process` value: briefs belong to goals and run under Process 1 or 2, so goal content and phase order can vary separately. Extends the goal queue in the experiment harness design, the View in the base design, the Scorer spec and the post-run design. Generation 3's runs are unaffected; briefed goals are meant for the next generation's fresh cohort.*
+*2026-10-14. Briefs belong to goals and work under any process. Process 3, generation 4's process, is Process 2's rounds on briefed goals and is the one process that requires them (`2026-10-15-bikeshed-process3-design.md`). Extends the goal queue in the experiment harness design, the View in the base design, the Scorer spec and the post-run design. Generation 3's runs are unaffected; briefed goals are meant for the next generation's fresh cohort.*
 
 ## Problem
 
@@ -160,7 +160,7 @@ A starter set ships as a reference file, `docs/goals/briefed-goals.toml`, to cop
 
 ## Out of scope
 
-- Archiving earlier generations. `lab/` is always the current generation; moving an old one to `lab/generation-{x}/` is done by hand, and the harness knows only `lab/`.
+- Archiving earlier generations. `lab/` is always the current generation; moving an old one to `lab/archive/generation-{x}/` is done by hand, and the harness knows only `lab/`.
 - Brief options on `goals add`, and briefs on free-text runs.
 - Changing `DEFAULT_GOALS` or the benchmark.
 - Showing agents the Observer's disclosure or fabrication findings.

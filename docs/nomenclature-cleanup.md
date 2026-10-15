@@ -1,5 +1,7 @@
 # Nomenclature cleanup: Process 3
 
+*Done in sub-project F (`docs/superpowers/specs/2026-10-15-bikeshed-process3-design.md`). One item was resolved differently: the Observer's brief sections are named "Briefs" and "Briefed runs", not after Process 3, because briefs work under any process.*
+
 *15 October 2026. Written from the report side while the goal-briefs work is in progress. Nothing here has been changed in the code yet; this is the list for whoever picks it up.*
 
 ## The decision

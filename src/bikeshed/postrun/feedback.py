@@ -74,7 +74,7 @@ def feedback_packet(
 
     lines += ["", "## The outcome", answer.strip() or "(no report)", "", "## Your failed steps"]
     lines += [f"- round {rnd}: {kind}: {detail}" for rnd, kind, detail in failures] or ["(none)"]
-    if briefs:  # Process 4: after the run every brief is revealed
+    if briefs:  # briefed goals: after the run every brief is revealed
         lines += ["", briefs]
     return "\n".join(lines)
 

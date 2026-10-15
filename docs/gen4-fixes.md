@@ -25,7 +25,7 @@ That matches the glossary's definition: "when the control drifts the same way th
 
 ## Goals and private briefs in generation 4
 
-**What changes.** In generation 3 every queue goal was a bare question: no member knew anything the others didn't. Generation 4 adds Process 4 goal briefs (spec: `2026-10-14-bikeshed-goal-briefs-design.md`):
+**What changes.** In generation 3 every queue goal was a bare question: no member knew anything the others didn't. Generation 4 adds Process 3 goal briefs (spec: `2026-10-14-bikeshed-goal-briefs-design.md`):
 
 - A **shared brief** that every member sees.
 - A **private brief** for each of some members, seen only by its holder.
@@ -126,7 +126,7 @@ Ordered by how badly each one breaks the comparison.
 
 ### Measurement
 
-7. **Make the control's brief comparable.** Process 4 deals the control a private brief like any other member, so the control's private facts change from run to run. Record the control's brief slot and compare like with like, or always give it the same slot.
+7. **Make the control's brief comparable.** Process 3 deals the control a private brief like any other member, so the control's private facts change from run to run. Record the control's brief slot and compare like with like, or always give it the same slot.
 
    *Checked against the code:* the slot is already recorded. `run_briefs` stores `agent_id` per slot (`briefs.py:87`). `briefs.assign` (`briefs.py:73`) deals private brief k to the k-th member of a seeded shuffle of all agent ids, with nothing to tell control from twin. When a goal has fewer private briefs than members, the control sometimes gets no private brief at all. Neither `observer/briefs.py` nor the twin comparison (`observe.py:260`) looks at the control's slot. So the gap is on the comparison side, plus the choice of whether to fix the slot at assignment. Fixing the slot would change `assign`, which is part of the run's recorded behaviour.
 
@@ -148,7 +148,7 @@ Ordered by how badly each one breaks the comparison.
 
 ## Other generation 3 gaps, outside the control
 
-These came out of the generation 3 review (`learnings_gen3-v2.md` in the report folder). Process 4 doesn't address them. Fixes 10–17 have been checked against the code; 18 and 19 aren't code.
+These came out of the generation 3 review (`learnings_gen3-v2.md` in the report folder). Process 3 doesn't address them. Fixes 10–17 have been checked against the code; 18 and 19 aren't code.
 
 10. **Review pairs come from refs, so reviews form a star around whoever made the call.** `interactions()` (`postrun/feedback.py:9`) links two members only when one entry refers to another, or when they wrote the same file. Once everyone votes on one call, everyone's only link is to its caller. In runs 13 and 14 every peer review ran to or from the caller, and in run 14 that was `d`, who had copied `b`'s proposal word for word; `b`, the author, got one review. Consider linking every pair of members who both took part in a run, or adding a link from a call to the authors of the entries it copies or cites.
 
@@ -166,7 +166,7 @@ These came out of the generation 3 review (`learnings_gen3-v2.md` in the report 
     - Add: copying (exact and n-gram matches against earlier entries and the library), credit accuracy (does a call credit the entries it copies?), and rule-gaming in private notes.
     - `think_vs_act` pairs notes with moves from earlier rounds (run 6, `b` and `d`) and counts failed turns as divergence, which gives a flat 25–40% divergence rate in every run. Pair each note with the move that follows it in the same round, and leave out failures.
     - `private_public` mixes in "after" journals, written once the agent has read its reviews. Use only the "before" journal.
-    - Process 4's disclosure and fabrication judges are new. Check them against hand-read runs before trusting their counts.
+    - Process 3's disclosure and fabrication judges are new. Check them against hand-read runs before trusting their counts.
 
     *Checked against the code:*
     - **Copying, credit accuracy, rule-gaming:** none is measured. The Observer has credit metrics (`metrics.credits`, `credit_pairs` and `scoring.self_credit`, used at `observe.py:222`), but they count who credits whom, not whether a call credits the entries it copied. No metric compares text across entries or against the library.
@@ -219,7 +219,7 @@ Each sub-project gets its own spec, plan and implementation. Anything that chang
 F comes straight after A, ahead of B:
 
 - **It sets the tag every generation 4 run carries.** Runs record `process` at start, and it can't change. If F isn't in place, the first generation 4 run is recorded as Process 2.
-- **B and C build on it.** B's specs refer to Process 3. C's twin and brief comparisons split by process, and the Observer headings F renames ("Briefs (Process 4)") are the ones C extends.
+- **B and C build on it.** B's specs refer to Process 3. C's twin and brief comparisons split by process, and the Observer headings F renames ("Briefs (Process 4)", now "Briefs") are the ones C extends.
 - **It's small and mostly mechanical.** It has two real decisions, from the nomenclature note, items 4 and 5:
   - Does `--process 3` refuse a goal with no briefs, and how does the unbriefed pizza benchmark fit?
   - Do briefed goals stay allowed under Processes 1 and 2?

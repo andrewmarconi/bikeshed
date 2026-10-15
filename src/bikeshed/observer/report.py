@@ -40,7 +40,7 @@ class RunSection:
     process2: Process2Section | None = None  # only for runs with Process 2's rounds (processes 2 and 3)
     rulings: list[RulingRow] = field(default_factory=list)  # the Scorer's rulings, in board order
     awards: list[Award] = field(default_factory=list)  # Scorer points awarded in this run
-    briefs: BriefsSection | None = None  # Process 4 runs only
+    briefs: BriefsSection | None = None  # briefed runs only
 
 
 def _cell(text: str) -> str:

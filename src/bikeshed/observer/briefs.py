@@ -1,4 +1,4 @@
-"""Process 4 for the Observer: the Scorer's call-outs, how private facts travelled, and what was invented.
+"""Goal briefs for the Observer: the Scorer's call-outs, how private facts travelled, and what was invented.
 
 Read-only like the rest of the Observer. Nothing here reaches an agent.
 """

@@ -1,4 +1,4 @@
-"""Goal briefs (Process 4): facts a goal gives the community, shared by all or private to one member.
+"""Goal briefs (Process 3 requires them): facts a goal gives the community, shared by all or private to one member.
 
 Plain code. The Runner stores each run's briefs when it starts; the View, the Scorer, the post-run cycle and the
 Observer read them back from `run_briefs`. A brief states facts about the situation; it never tells anyone what to do.
