@@ -193,7 +193,8 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
         progress(f"  wrote {path}")
     if run_id is None:
         progress(f"summary across {len(runs)} runs" + (": drawing charts" if len(runs) >= 2 else ""))
-        summary = _write_summary(conn, store, ostore, runs, who, answers, out_dir, twin, note, in_progress)
+        summary = _write_summary(conn, store, ostore, runs, who, answers, out_dir, twin, note, in_progress,
+                                 cfg.runs_dir)
         written += summary
         progress(f"  wrote {summary[-1]} and {len(summary) - 1} chart{'s' if len(summary) != 2 else ''}")
     all_judgments = [j for r in targets for j in ostore.judgments(r.id)]
@@ -266,7 +267,7 @@ def _charts(conn: sqlite3.Connection, ostore: ObserverStore, runs: list[m.RunInf
 
 def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: ObserverStore, runs: list[m.RunInfo],
                    who: Who, answers: list[m.BenchmarkAnswer], out_dir: Path, twin: str | None,
-                   judge_note: str | None, in_progress: list[str]) -> list[Path]:
+                   judge_note: str | None, in_progress: list[str], runs_dir: Path) -> list[Path]:
     charts = _charts(conn, ostore, runs, who, out_dir) if len(runs) >= 2 else {}
     found = store.twins()
     if twin is not None:
@@ -277,7 +278,8 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
         rows = []
         for run in runs:
             peer, mix = m.peer_scores(conn, run.id), m.action_mix(conn, run)
-            rows += [(run.tag, agent, peer.get(agent), mix[agent]) for agent in group if agent in run.agent_ids]
+            rows += [(run.tag, agent, peer.get(agent), mix[agent], pb.slot_label(conn, run.id, agent))
+                     for agent in group if agent in run.agent_ids]
         twin_rows[control] = rows
         compared = [r for r in runs if any(a in r.agent_ids for a in group)]
         if len(compared) >= 2:
@@ -294,6 +296,25 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
             p2.combine_participation([p2.poll_participation(conn, r) for r in group]),
             p2.combine_order([p2.speaking_order(conn, r) for r in group]),
         )
+    copying: dict[int, Counter] = {}
+    credit_gaps: dict[int, tuple[int, int]] = {}
+    reuse: dict[int, tuple[int, int]] = {}
+    shown_count: Counter = Counter()
+    reused_count: Counter = Counter()
+    for r in runs:
+        copied = cp.copies(conn, r)
+        copying.setdefault(r.process, Counter()).update((c.copier, c.source_author, c.kind) for c in copied)
+        checks = cp.credit_accuracy(conn, r, copied)
+        gaps, calls = credit_gaps.get(r.process, (0, 0))
+        credit_gaps[r.process] = (gaps + sum(bool(c.uncredited) for c in checks), calls + len(checks))
+        got = cp.library_reuse(conn, r, runs_dir)
+        if got is not None:
+            used, shown = reuse.get(r.process, (0, 0))
+            reuse[r.process] = (used + sum(bool(x.reused_by) for x in got), shown + len(got))
+            shown_count.update(x.method_id for x in got)
+            reused_count.update(x.method_id for x in got if x.reused_by)
+    credit_gaps = {p: v for p, v in credit_gaps.items() if v[1]}
+    methods_shown = sorted(((mid, n, reused_count[mid]) for mid, n in shown_count.items()), key=lambda t: (-t[1], t[0]))
     rulings = [x for r in runs for x in sc.rulings(conn, r.id)]
     scorer = ScorerSummary(
         accepted=sum(x.accepted for x in rulings), rejected=sum(not x.accepted for x in rulings),
@@ -305,7 +326,8 @@ def _write_summary(conn: sqlite3.Connection, store: ProfileStore, ostore: Observ
         identity=m.identity_events(conn, store, runs), norms=m.norm_events(conn), codebook=ostore.codes(),
         twins=found, categories=m.by_category(conn, runs), failed=ostore.failed(), benchmark=answers,
         reciprocity=m.credit_pairs(conn, runs), in_progress=in_progress, judge_note=judge_note, twin_rows=twin_rows,
-        meetings=meetings, scorer=scorer,
+        meetings=meetings, scorer=scorer, copying=copying, credit_gaps=credit_gaps, reuse=reuse,
+        methods_shown=methods_shown, norm_overlaps=cp.norm_overlaps(conn, runs),
         briefed=[st for r in runs if (st := pb.run_stat(conn, r, who, ostore.judgments(r.id))) is not None],
     )
     path = out_dir / "summary.md"

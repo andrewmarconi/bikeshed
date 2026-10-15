@@ -278,3 +278,21 @@ def test_run_report_without_copies_or_a_library_record():
     text = render_run(section())
     assert "_No copied text found._" in text.split("## Copying\n")[1]
     assert "_Not recorded._" in text.split("## Library reuse\n")[1]
+
+
+def test_summary_shows_copying_credit_gaps_library_reuse_and_norm_overlap():
+    text = render_summary(summary_section(
+        copying={2: Counter({("a", "b", "exact"): 3, ("a", "b", "partial"): 1})},
+        credit_gaps={2: (1, 4)}, reuse={2: (2, 6)}, methods_shown=[(4, 5, 2)],
+        norm_overlaps=[NormOverlap(14, "r10", "a", 1, "Cite the entry you disagree with.", "partial", "rejected")]))
+    copying = text.split("## Copying\n")[1].split("\n## ")[0]
+    assert "### Process 2" in copying and "| Alpha (a) | Bea (b) | 3 | 1 |" in copying
+    assert "Process 2: 1 of 4 calls left out a copied source." in text
+    lib = text.split("## Library reuse\n")[1].split("\n## ")[0]
+    assert "Process 2: 2 of 6 shown methods reused." in lib and "| #4 | 5 | 2 |" in lib
+    overlap = text.split("## Norm overlap\n")[1].split("\n## ")[0]
+    assert "| #14 | r10 | Alpha (a) | #1 Cite the entry you disagree with. | partial | rejected |" in overlap
+
+
+def test_summary_without_norm_overlap():
+    assert "_No proposal restates an adopted norm._" in render_summary(summary_section())

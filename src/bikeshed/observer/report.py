@@ -4,7 +4,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from bikeshed.observer.briefs import BriefsSection, RunStat
-from bikeshed.observer.copying import CallCredit, Match, Reuse
+from bikeshed.observer.copying import CallCredit, Match, NormOverlap, Reuse
 from bikeshed.observer.metrics import (
     ACTIONS, PRE_ACTIONS, BenchmarkAnswer, CategoryStats, Credits, IdentityEvent, Influence, NormEvent, RunInfo,
 )
@@ -341,11 +341,16 @@ class SummarySection:
     reciprocity: list[tuple[str, str, str]]
     in_progress: list[str]
     judge_note: str | None
-    # control id -> rows of (run label, agent id, mean peer score, action counts) for the control and its twins
-    twin_rows: dict[str, list[tuple[str, str, float | None, Counter]]] = field(default_factory=dict)
+    # control id -> rows of (run label, agent id, mean peer score, action counts, brief) for the control and its twins
+    twin_rows: dict[str, list[tuple[str, str, float | None, Counter, str]]] = field(default_factory=dict)
     meetings: dict[int, Process2Summary] = field(default_factory=dict)  # process -> summary; processes are never summed together
     scorer: ScorerSummary | None = None
     briefed: list[RunStat] = field(default_factory=list)  # one row per run that had briefs
+    copying: dict[int, Counter] = field(default_factory=dict)  # process -> (copier, source, kind) counts
+    credit_gaps: dict[int, tuple[int, int]] = field(default_factory=dict)  # process -> (calls missing a source, calls)
+    reuse: dict[int, tuple[int, int]] = field(default_factory=dict)  # process -> (shown methods reused, shown)
+    methods_shown: list[tuple[int, int, int]] = field(default_factory=list)  # (method, runs shown, runs reused)
+    norm_overlaps: list[NormOverlap] = field(default_factory=list)
 
 
 TWIN_ACTIONS = ("propose", "critique", "adopt", "vote", "call_consensus", "failed")
@@ -362,11 +367,42 @@ def _control_vs_twin(s: SummarySection) -> list[str]:
         if not rows:
             out += ["_No closed runs with these agents yet._", ""]
             continue
-        out += ["| Run | Agent | peer | " + " | ".join(TWIN_ACTIONS) + " |", "|---" * (len(TWIN_ACTIONS) + 3) + "|"]
+        out += ["| Run | Agent | peer | " + " | ".join(TWIN_ACTIONS) + " | brief |",
+                "|---" * (len(TWIN_ACTIONS) + 4) + "|"]
         out += [f"| {label} | {s.who(agent)} | {_fmt(peer)} | " + " | ".join(str(mix.get(a, 0)) for a in TWIN_ACTIONS)
-                + " |" for label, agent, peer, mix in rows]
+                + f" | {brief} |" for label, agent, peer, mix, brief in rows]
         out.append("")
     return out
+
+
+def _text_reuse(s: SummarySection) -> list[str]:
+    out = []
+    for process, (gaps, calls) in sorted(s.credit_gaps.items()):
+        out.append(f"Process {process}: {gaps} of {calls} calls left out a copied source.")
+    out += ["", "## Copying", ""]
+    if not any(s.copying.values()):
+        out += ["_No copied text found._", ""]
+    for process, counts in sorted(s.copying.items()):
+        if not counts:
+            continue
+        pairs = sorted({(c, src) for c, src, _ in counts})
+        out += [f"### Process {process}", "", "| Copier | Source | exact | partial |", "|---|---|---|---|"]
+        out += [f"| {s.who(c)} | {s.who(src)} | {counts[(c, src, 'exact')]} | {counts[(c, src, 'partial')]} |"
+                for c, src in pairs] + [""]
+    out += [THRESHOLDS, "", "## Library reuse", ""]
+    out += [f"Process {p}: {used} of {shown} shown methods reused." for p, (used, shown) in sorted(s.reuse.items())] \
+        or ["_Not recorded._"]
+    if s.methods_shown:
+        out += ["", "| Method | Runs shown | Runs reused |", "|---|---|---|"]
+        out += [f"| #{m} | {shown} | {used} |" for m, shown, used in s.methods_shown]
+    out += ["", "## Norm overlap", ""]
+    if not s.norm_overlaps:
+        return out + ["_No proposal restates an adopted norm._", ""]
+    out += ["| Proposal | Run | Author | Overlaps | Match | Outcome |", "|---|---|---|---|---|---|"]
+    clip = lambda t: _cell(t if len(t) <= 120 else t[:120] + "…")
+    out += [f"| #{o.proposal_id} | {o.run_id} | {s.who(o.author)} | #{o.norm_id} {clip(o.norm_text)} | {o.kind} | "
+            f"{o.status} |" for o in s.norm_overlaps]
+    return out + [""]
 
 
 def _identity_line(e: IdentityEvent, who: Who) -> str:
@@ -416,6 +452,7 @@ def render_summary(s: SummarySection) -> str:
     out += [f"- {n.run_id} {s.who(n.author)} proposed a {n.kind} ({n.status}): {n.text}" for n in s.norms] or ["_None yet._"]
     out += ["", "## Credit reciprocity", ""]
     out += [f"- {run}: {s.who(g)} → {s.who(r)}" for run, g, r in s.reciprocity] or ["_No credits yet._"]
+    out += [""] + _text_reuse(s)
     if s.scorer is not None:
         out += [""] + _scorer_summary(s.scorer, s.who)
     if s.briefed:

@@ -106,7 +106,8 @@ async def test_summary_compares_the_control_with_its_twin(lab, community):
     summary = (lab.observer.dir / "summary.md").read_text()
     section = summary.split("\n## Control vs twin\n")[1].split("\n## ")[0]
     assert "Bea (b)" in section
-    assert "| best-fruit | Bea (b) | 4.0 |" in section
+    assert "| best-fruit | Bea (b) | 4.0 |" in section and section.count("| – |") >= 2
+    assert "| brief |" in section
     assert "| dishwasher | e (e) | 2.0 |" in section
     assert (lab.observer.dir / "charts" / "control_e.png").exists()
 
