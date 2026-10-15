@@ -356,12 +356,16 @@ def run(
 def baseline(
     run_id: Annotated[str | None, typer.Argument(help="A closed community run to mirror.")] = None,
     resume: Annotated[str | None, typer.Option(help="Continue a baseline (its directory name, e.g. RUN-b1).")] = None,
+    backend: Annotated[str | None, typer.Option(
+        help="A model variant: every agent runs on this backend instead, labelled as a variant.")] = None,
     config: ConfigOpt = DEFAULT_PATH,
 ) -> None:
     """Re-run a closed run's goal, settings, seed and briefs in a fresh room: no norms, library, history or post-run."""
     cfg = _load(config)
     if (run_id is None) == (resume is None):
         _fail("give a run id or --resume BASELINE_ID, not both")
+    if resume and backend:
+        _fail("--resume keeps the backend the variant started with; drop --backend")
     if cfg.scorer.judge is None:
         _fail('no [scorer] configured: add a [scorer] section with judge = "<model backend>" to the config')
     community = connect_readonly(cfg.db_path)
@@ -372,22 +376,24 @@ def baseline(
         if resume:
             directory = bl.home(cfg) / resume
             info = bl.read_info(directory)
+            backend = info.get("backend")
             source = bl.read_source(community, source_store, info["source_run"])
         else:
             source = bl.read_source(community, source_store, run_id)
-            directory = bl.new_directory(bl.home(cfg), source.run_id)
-        bl.check_backends(source, cfg)
+            directory = bl.new_directory(bl.home(cfg), source.run_id, variant=backend is not None)
+        bl.check_backends(source, cfg, backend)
     except (bl.BaselineError, ProfileError) as exc:
         _fail(str(exc))
+    kind = "variant" if backend else "baseline"
     settings = bl.settings_for(source, cfg)
     scfg = bl.scratch_config(cfg, directory, settings)
-    store = ProfileStore(scfg.community_dir) if resume else bl.prepare(directory, source)
+    store = ProfileStore(scfg.community_dir) if resume else bl.prepare(directory, source, backend)
     conn = connect(scfg.db_path)
     info = bl.read_info(directory)
     if "baseline_run" in info:
         status = conn.execute("SELECT status FROM runs WHERE id = ?", (info["baseline_run"],)).fetchone()
         if status is not None and status["status"] == "closed":
-            _fail(f"baseline {directory.name} is already closed")
+            _fail(f"{kind} {directory.name} is already closed")
     for agent_id in source.agent_ids:  # fresh introductions; a resume finishes any that failed
         if store.public(agent_id) is None:
             client = make_client(scfg.models[store.record(agent_id).model], scfg.run.model_retries)
@@ -417,9 +423,9 @@ def baseline(
         await capture(conn, b_run, "resume" if started else "start", scfg, backends, probe=probe_server)
         result = await runner.run(b_run)
         if result.status == "paused":
-            typer.echo(f"baseline {directory.name} paused; resume with `bikeshed baseline --resume {directory.name}`")
+            typer.echo(f"{kind} {directory.name} paused; resume with `bikeshed baseline --resume {directory.name}`")
             return
-        typer.echo(f"baseline {directory.name} closed: {result.reason}")
+        typer.echo(f"{kind} {directory.name} closed: {result.reason}")
         typer.echo(f"report: {scfg.runs_dir / b_run / 'report'}")
 
     asyncio.run(go())
