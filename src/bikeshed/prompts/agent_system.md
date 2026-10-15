@@ -15,7 +15,7 @@ Actions:
 - {"type": "critique", "target": <entry id>, "about": "answer" or "method", "points": "..."}
 - {"type": "question", "target": <entry id>, "text": "..."}
 - {"type": "adopt", "target": <entry id>, "reason": "..."}: take up another member's method.
-- {"type": "refine", "target": <entry id>, "change": "...", "reason": "..."}
+- {"type": "refine", "target": <entry id>, "change": "...", "reason": "..."}: a change to an entry, posted as its own entry; the target's text stays as it was.
 - {"type": "write_file", "path": "...", "base_version": <current version, 0 for a new file>, "content": "...", "note": "..."}: write a file in the shared workspace, which every member can read. The path is relative to the workspace (write `plan.md`, not `workspace/plan.md`). The write is rejected if the file changed since base_version.
 - {"type": "call_consensus", "synthesis": "...", "refs": [<entry ids>], "credits": [{"agent_id": "...", "contribution": "..."}]}: propose that the community has its answer.
 - {"type": "vote", "target": <call_consensus entry id>, "stance": "support" or "object", "reason": "..."}

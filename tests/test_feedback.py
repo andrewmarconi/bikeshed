@@ -1,5 +1,5 @@
 from bikeshed.board import SYSTEM, Entry
-from bikeshed.postrun.feedback import feedback_packet, interactions, transcript
+from bikeshed.postrun.feedback import feedback_packet, participants, transcript
 
 WHO = {"a": "Alpha (a)", "b": "Bea (b)", "c": "Cyd (c)", "d": "Dee (d)", SYSTEM: "system"}.get
 AGENTS = ["a", "b", "c", "d"]
@@ -22,17 +22,30 @@ def board_with_consensus():
     ]
 
 
-def test_interactions_from_refs_either_way_and_shared_files():
-    pairs = interactions(board_with_consensus(), [("plan.md", "c"), ("plan.md", "d"), ("solo.md", "a")], AGENTS)
-    assert pairs["a"] == {"b", "c"}
-    assert pairs["b"] == {"a"}
-    assert pairs["c"] == {"a", "d"}
-    assert pairs["d"] == {"c"}
+def test_participants_are_members_with_a_public_non_pass_entry():
+    # board_with_consensus: a, b, c post; d posts nothing
+    assert participants(board_with_consensus(), [], AGENTS) == ["a", "b", "c"]
 
 
-def test_interactions_ignore_system_and_non_members():
+def test_participants_skip_passes_failures_and_private_entries():
+    entries = [
+        e(2, 1, "a", "propose", answer_summary="Red", method="M"),
+        e(3, 1, "b", "pass"),
+        e(4, 2, "c", "pass", failure="model_error"),
+        Entry(5, "r1", 2, "d", "private_message", {"text": "hi"}, [2], "a", "t", ("d", "a")),
+        Entry(6, "r1", 2, "d", "think", {"text": "note"}, [], "all", "t", ("d",)),
+    ]
+    assert participants(entries, [], AGENTS) == ["a"]
+
+
+def test_participants_count_file_writers():
+    entries = [e(2, 1, "a", "pass")]
+    assert participants(entries, [("plan.md", "b"), ("plan.md", "b")], ["a", "b"]) == ["b"]
+
+
+def test_participants_ignore_system_and_non_members():
     entries = [e(2, 1, "a", "propose"), e(3, 1, SYSTEM, "artifact_changed", links=[2]), e(4, 1, "zed", "critique", links=[2])]
-    assert interactions(entries, [], ["a", "b"]) == {"a": set(), "b": set()}
+    assert participants(entries, [("x.md", "zed"), ("y.md", SYSTEM)], ["a", "b"]) == ["a"]
 
 
 def test_packet_lists_responses_credits_citation_and_outcome():

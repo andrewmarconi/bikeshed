@@ -22,7 +22,7 @@ from bikeshed.norms import (
     dimensions, proposals, render_norms, render_proposal,
 )
 from bikeshed.postrun.ask import ReplyError, ask
-from bikeshed.postrun.feedback import feedback_packet, interactions, transcript
+from bikeshed.postrun.feedback import feedback_packet, participants, transcript
 from bikeshed.postrun.replies import (
     JournalReply, NarrativeReply, NormCritiquesReply, NormVotesReply, ResponsesReply, ReviewReply, UpdateReply,
     is_keep, keeps_pronouns,
@@ -122,10 +122,15 @@ class PostRun:
         if step == "review":
             files = [(r["path"], r["author"]) for r in self.conn.execute(
                 "SELECT path, author FROM files WHERE run_id = ?", (ctx.run_id,))]
-            pairs = interactions(public(ctx.entries), files, ctx.agent_ids)
+            taking_part = participants(public(ctx.entries), files, ctx.agent_ids)
+
+            def subjects(reviewer: str) -> list[str]:
+                others = sorted(p for p in taking_part if p != reviewer) if reviewer in taking_part else []
+                return [*others, reviewer]
+
             return [
                 _Call(step, reviewer, reviewee, lambda r=reviewer, e=reviewee: self._review(ctx, r, e))
-                for reviewer in ctx.agent_ids for reviewee in [*sorted(pairs[reviewer]), reviewer]
+                for reviewer in ctx.agent_ids for reviewee in subjects(reviewer)
             ]
         if step == "responses":
             return [

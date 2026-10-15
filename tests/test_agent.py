@@ -187,6 +187,13 @@ def test_system_prompts_say_how_the_workspace_works(template):
     assert "relative to the workspace" in text
 
 
+@pytest.mark.parametrize("template", ["agent_system.md", "process2_agent_system.md"])
+def test_system_prompts_say_a_refine_leaves_its_target_unchanged(template):
+    text = system_prompt("Ash (a)", "Calm.", 2, template)
+    assert ('{"type": "refine", "target": <entry id>, "change": "...", "reason": "..."}: a change to an entry, '
+            "posted as its own entry; the target's text stays as it was.") in text
+
+
 def test_the_think_request_says_notes_are_kept():
     from bikeshed.prompts import render
 

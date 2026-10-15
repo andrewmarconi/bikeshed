@@ -16,7 +16,7 @@ from bikeshed.reviews import responses_for, reviews_of
 
 
 def finished_run(conn, tmp_path, make_run, reason="budget"):
-    """r1: a, b, c propose; b critiques a; c does nothing else. a and b interacted; c interacted with no one."""
+    """r1: a, b, c propose; b critiques a. All three took part, so all three review each other."""
     make_run(conn, "r1", ("a", "b", "c"))
     board = Board(conn, "r1")
     board.append(0, SYSTEM, "goal", {"goal": "Pick a colour"})
@@ -29,6 +29,23 @@ def finished_run(conn, tmp_path, make_run, reason="budget"):
     report = tmp_path / "runs" / "r1" / "report"
     report.mkdir(parents=True)
     (report / "answer.md").write_text("# Answer\nCOMPETING-POSITIONS\n")
+    return "r1"
+
+
+def star_run(conn, tmp_path, make_run):
+    """r1: a proposes and calls; b and c only vote on the call. Every ref points at a's entries."""
+    make_run(conn, "r1", ("a", "b", "c"))
+    board = Board(conn, "r1")
+    board.append(0, SYSTEM, "goal", {"goal": "Pick a colour"})
+    board.append(1, "a", "propose", {"answer_summary": "Red", "method": "M"})                       # 2
+    board.append(2, "a", "call_consensus", {"synthesis": "Red", "refs": [2], "credits": []}, refs=[2])  # 3
+    board.append(2, "b", "vote", {"target": 3, "stance": "support", "reason": "R"}, refs=[3])     # 4
+    board.append(2, "c", "vote", {"target": 3, "stance": "support", "reason": "R"}, refs=[3])     # 5
+    board.append(2, SYSTEM, "run_closed", {"reason": "consensus", "call_id": 3})                  # 6
+    conn.execute("UPDATE runs SET status = 'closed', ended_reason = 'consensus' WHERE id = 'r1'")
+    report = tmp_path / "runs" / "r1" / "report"
+    report.mkdir(parents=True)
+    (report / "answer.md").write_text("# Answer\nRED\n")
     return "r1"
 
 
@@ -60,17 +77,47 @@ async def test_cycle_writes_journals_reviews_and_responses(tmp_path, community, 
         assert journal_section(conn, agent, run_id, "before") == "Thoughts."
         assert (store.root / "agents" / agent / "journal" / f"{run_id}.md").exists()
     pairs = {(r["reviewer"], r["reviewee"]) for r in conn.execute("SELECT reviewer, reviewee FROM reviews")}
-    assert pairs == {("a", "b"), ("a", "a"), ("b", "a"), ("b", "b"), ("c", "c")}
-    for agent in "ab":
+    assert pairs == {(x, y) for x in "abc" for y in "abc"}
+    for agent in "abc":
         peer = reviews_of(conn, agent, run_id=run_id)
-        assert len(peer) == 1 and responses_for(conn, [peer[0].id])[peer[0].id].stance == "accept"
-    assert ("responses", "c", "") not in steps(conn)       # c has no peer reviews: no responses step
+        assert len(peer) == 2 and all(responses_for(conn, [p.id])[p.id].stance == "accept" for p in peer)
     assert set(steps(conn).values()) == {"done"}
     reasoning = conn.execute("SELECT reasoning FROM postrun_steps WHERE step = 'journal' AND agent_id = 'b'").fetchone()
     assert reasoning["reasoning"] == "REASONING-b"
     names = [e["event"] for e in read_events(tmp_path / "runs" / run_id / "events.jsonl")]
     assert names[0] == "postrun_started" and names[-1] == "postrun_finished"
     assert "postrun_step_finished" in names
+
+
+async def test_voters_on_one_call_still_review_each_other(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    run_id = star_run(conn, tmp_path, make_run)
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    await cycle(store, conn, tmp_path, clients).run(run_id)
+    pairs = {(r["reviewer"], r["reviewee"]) for r in conn.execute("SELECT reviewer, reviewee FROM reviews")}
+    assert pairs == {(x, y) for x in "abc" for y in "abc"}
+
+
+async def test_a_member_who_only_passed_writes_only_a_self_review(tmp_path, community, make_run, postrun_reply):
+    store, conn = community
+    make_run(conn, "r1", ("a", "b", "c"))
+    board = Board(conn, "r1")
+    board.append(0, SYSTEM, "goal", {"goal": "Pick a colour"})
+    board.append(1, "a", "propose", {"answer_summary": "Red", "method": "M"})        # 2
+    board.append(1, "b", "critique", {"target": 2, "about": "method", "points": "P"}, refs=[2])  # 3
+    board.append(1, "c", "pass", {})                                                  # 4
+    board.append(2, "c", "pass", {"failure": "model_error"})                          # 5
+    board.append(2, SYSTEM, "run_closed", {"reason": "budget", "call_id": None})      # 6
+    conn.execute("UPDATE runs SET status = 'closed', ended_reason = 'budget' WHERE id = 'r1'")
+    report = tmp_path / "runs" / "r1" / "report"
+    report.mkdir(parents=True)
+    (report / "answer.md").write_text("# Answer\nRED\n")
+    clients = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
+    await cycle(store, conn, tmp_path, clients).run("r1")
+    pairs = {(r["reviewer"], r["reviewee"]) for r in conn.execute("SELECT reviewer, reviewee FROM reviews")}
+    assert pairs == {("a", "a"), ("a", "b"), ("b", "a"), ("b", "b"), ("c", "c")}
+    c_update = next(m[0]["content"] for _, m, _ in clients["c"].calls if m[0]["content"].startswith("# Post-run: update"))
+    assert "private note" not in c_update                       # nobody reviewed c
 
 
 async def test_packets_tell_each_agent_how_the_run_ended(tmp_path, community, make_run, postrun_reply):
@@ -96,10 +143,10 @@ async def test_review_citing_unknown_entries_is_corrected_then_recorded_as_faile
         "c": FakeModel(responder(postrun_reply)),
     }
     result = await cycle(store, conn, tmp_path, clients).run(run_id)
-    assert result.status == "done" and result.failed == 2              # a→a and a→b
+    assert result.status == "done" and result.failed == 3              # a→a, a→b and a→c
     assert conn.execute("SELECT COUNT(*) FROM reviews WHERE reviewer = 'a'").fetchone()[0] == 0
     kinds = [r["kind"] for r in conn.execute("SELECT kind FROM failures WHERE agent_id = 'a'")]
-    assert kinds == ["postrun:review:invalid_reply", "postrun:review:invalid_reply"]
+    assert kinds == ["postrun:review:invalid_reply"] * 3
     assert steps(conn)[("review", "a", "b")] == "failed"
     assert journal_section(conn, "a", run_id, "before") == "Thoughts."   # the rest of the cycle still ran
 
@@ -123,7 +170,7 @@ async def test_rerun_retries_only_unfinished_calls_and_never_duplicates(tmp_path
     result = await cycle(store, conn, tmp_path, second).run(run_id)
     assert (result.status, result.failed) == ("done", 0)
     assert [len(second[a].calls) for a in "abc"] == [1, 1, 0]        # a's review of b, then b's response to it
-    assert conn.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 5
+    assert conn.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 9
     assert conn.execute("SELECT COUNT(*) FROM journals WHERE section = 'before'").fetchone()[0] == 3
 
     third = {a: FakeModel(responder(postrun_reply)) for a in "abc"}
@@ -199,7 +246,7 @@ async def test_update_request_shows_reviews_with_private_notes_and_responses(tmp
     assert "by Bea (b)" in update and "private note: Between us." in update and "response: accept — Fair." in update
     assert "## Your journal entry from before the reviews\n\nThoughts." in update
     c_update = next(m[0]["content"] for _, m, _ in clients["c"].calls if m[0]["content"].startswith("# Post-run: update"))
-    assert "private note" not in c_update                       # nobody reviewed c
+    assert "by Alpha (a)" in c_update and "by Bea (b)" in c_update  # c took part, so a and b reviewed it
 
 
 async def test_rejected_rewrites_keep_previous_versions_and_are_noted(tmp_path, community, make_run, postrun_reply):
@@ -258,7 +305,7 @@ async def test_resume_with_one_dead_backend_does_not_stall_everyone(tmp_path, co
     assert (await cycle(store, conn, tmp_path, clients).run(run_id)).status == "done"
     result = await cycle(store, conn, tmp_path, {**clients, "c": FakeModel(fail_times=1000)}).run(run_id)
     assert result.status == "done"
-    assert result.failed == 3                     # c's journal, self-review, and update, retried and failed again
+    assert result.failed == 6                     # c's journal, three reviews, response and update, retried and failed again
 
 
 async def test_update_can_set_pronouns_and_omitting_them_keeps_them(tmp_path, community, make_run, postrun_reply):
