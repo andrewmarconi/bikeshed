@@ -250,25 +250,23 @@ class BenchmarkAnswer:
     text: str
 
 
+def run_answer(conn: sqlite3.Connection, run: RunInfo, who: Who) -> BenchmarkAnswer:
+    """The closing call's synthesis, or each member's latest proposal when the run did not close on a call."""
+    closed = conn.execute("SELECT payload FROM entries WHERE run_id = ? AND type = 'run_closed'", (run.id,)).fetchone()
+    call_id = json.loads(closed["payload"]).get("call_id") if closed else None
+    if call_id:
+        call = conn.execute("SELECT payload FROM entries WHERE id = ?", (call_id,)).fetchone()
+        return BenchmarkAnswer(run.id, True, json.loads(call["payload"])["synthesis"])
+    latest: dict[str, str] = {}
+    for row in _entries(conn, run.id):
+        if row["type"] == "propose":
+            latest[row["author"]] = json.loads(row["payload"])["answer_summary"]
+    text = "\n".join(f"- {who(a)}: {t}" for a, t in latest.items()) or "(no proposals)"
+    return BenchmarkAnswer(run.id, False, text)
+
+
 def benchmark_answers(conn: sqlite3.Connection, runs: list[RunInfo], who: Who) -> list[BenchmarkAnswer]:
-    out = []
-    for run in runs:
-        if not run.is_benchmark:
-            continue
-        closed = conn.execute("SELECT payload FROM entries WHERE run_id = ? AND type = 'run_closed'",
-                              (run.id,)).fetchone()
-        call_id = json.loads(closed["payload"]).get("call_id") if closed else None
-        if call_id:
-            call = conn.execute("SELECT payload FROM entries WHERE id = ?", (call_id,)).fetchone()
-            out.append(BenchmarkAnswer(run.id, True, json.loads(call["payload"])["synthesis"]))
-            continue
-        latest: dict[str, str] = {}
-        for row in _entries(conn, run.id):
-            if row["type"] == "propose":
-                latest[row["author"]] = json.loads(row["payload"])["answer_summary"]
-        text = "\n".join(f"- {who(a)}: {t}" for a, t in latest.items()) or "(no proposals)"
-        out.append(BenchmarkAnswer(run.id, False, text))
-    return out
+    return [run_answer(conn, run, who) for run in runs if run.is_benchmark]
 
 
 @dataclass(frozen=True)

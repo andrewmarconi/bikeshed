@@ -3,6 +3,7 @@ import json
 import re
 
 import pytest
+from test_observer_baselines import make_baseline
 from observer_helpers import add_entry, add_journal, add_review, add_run
 
 from bikeshed.config import Config
@@ -318,3 +319,10 @@ async def test_observe_reports_copied_text(lab, community):
     await observe(lab, judge_note="--no-judge")
     report = (lab.observer.dir / "runs" / "r8.md").read_text()
     assert "| Alpha (a) |" in report.split("## Copying\n")[1] and "earlier round" in report
+
+
+async def test_observe_attaches_a_baseline_to_its_run(lab, community):
+    make_baseline(lab.community_dir.parent / "baselines", "r1-b1", "r1")
+    await observe(lab, judge_note="--no-judge")
+    assert "## Baseline" in (lab.observer.dir / "runs" / "r1.md").read_text()
+    assert "## Baseline vs community" in (lab.observer.dir / "summary.md").read_text()

@@ -462,3 +462,35 @@ async def test_control_library_list_is_shorter_when_only_its_own_methods_exist(t
     runner.embedder = embedder
     await runner.run(runner.start("Pick a colour", ["d"]))
     assert "# Methods from earlier runs" not in seen.calls[0][1][0]["content"]
+
+
+from bikeshed.briefs import Brief, BriefSpec, Constraint, RunBriefs  # noqa: E402
+from bikeshed.briefs import load as load_briefs  # noqa: E402
+
+
+def test_start_records_a_given_seed(community, runner_factory):
+    store, conn = community
+    run_id = runner_factory(store, conn, {}).start("G", AGENTS, seed=1234)
+    assert conn.execute("SELECT seed FROM runs WHERE id = ?", (run_id,)).fetchone()[0] == 1234
+
+
+def test_start_saves_a_given_brief_deal_as_it_is(community, runner_factory):
+    store, conn = community
+    deal = RunBriefs(Brief(0, None, "Shared.", (Constraint("s.c1", "Be home by ten."),)),
+                     (Brief(1, AGENTS[-1], "Private.", (Constraint("p1.c1", "No nuts."),)),))
+    run_id = runner_factory(store, conn, {}).start("G", AGENTS, process=3, briefs=deal)
+    assert load_briefs(conn, run_id) == deal
+
+
+def test_start_refuses_a_brief_and_a_brief_deal_together(community, runner_factory):
+    store, conn = community
+    with pytest.raises(ValueError, match="not both"):
+        runner_factory(store, conn, {}).start("G", AGENTS, brief=BriefSpec(shared="S"),
+                                              briefs=RunBriefs(Brief(0, None, "S", ())))
+
+
+def test_start_refuses_a_brief_deal_naming_a_non_member(community, runner_factory):
+    store, conn = community
+    deal = RunBriefs(None, (Brief(1, "zed", "Private.", ()),))
+    with pytest.raises(ValueError, match="zed"):
+        runner_factory(store, conn, {}).start("G", AGENTS, briefs=deal)

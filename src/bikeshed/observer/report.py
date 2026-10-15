@@ -3,6 +3,7 @@
 from collections import Counter
 from dataclasses import dataclass, field
 
+from bikeshed.observer.baselines import Baseline
 from bikeshed.observer.briefs import BriefsSection, RunStat
 from bikeshed.observer.copying import NORM_FLOOR, CallCredit, Match, NormOverlap, Reuse
 from bikeshed.observer.metrics import (
@@ -47,6 +48,7 @@ class RunSection:
     copies: list[Match] = field(default_factory=list)
     credit_checks: list[CallCredit] = field(default_factory=list)
     reuse: list[Reuse] | None = None  # None: the run's events don't record a library retrieval
+    baselines: list[Baseline] = field(default_factory=list)  # baseline runs that mirror this one
 
 
 def _cell(text: str) -> str:
@@ -273,7 +275,7 @@ def render_run(s: RunSection) -> str:
     if s.changes:
         out += ["", "> **Harness changed:** " + "; ".join(s.changes)]
     out += [""] + _metrics(s) + [""] + _dimensions(s) + _credits(s) + _credit_checks(s) + [""] + _scorer_run(s) \
-        + _briefs(s) + _copying(s) + _library(s)
+        + _briefs(s) + _copying(s) + _library(s) + _baselines(s)
     if s.process2 is not None:
         out += _process2(s)
     out += _per_agent(s, "Themes", "themes", lambda res: [
@@ -351,6 +353,8 @@ class SummarySection:
     reuse: dict[int, tuple[int, int]] = field(default_factory=dict)  # process -> (shown methods reused, shown)
     methods_shown: list[tuple[int, int, int]] = field(default_factory=list)  # (method, runs shown, runs reused)
     norm_overlaps: list[NormOverlap] = field(default_factory=list)
+    baselines: dict[str, list[Baseline]] = field(default_factory=dict)  # source run -> its baselines
+    rooms: dict[str, tuple[RunInfo, BenchmarkAnswer, dict[str, Counter]]] = field(default_factory=dict)
 
 
 TWIN_ACTIONS = ("propose", "critique", "adopt", "vote", "call_consensus", "failed")
@@ -408,6 +412,41 @@ def _text_reuse(s: SummarySection) -> list[str]:
     return out + [""]
 
 
+def _baselines(s: RunSection) -> list[str]:
+    if not s.baselines:
+        return []
+    out = ["## Baseline", "", "_The same goal, settings, seed and briefs in a fresh room: no norms, library or history._",
+           "", "| Baseline | Ending | Rounds | Calls | Rulings (accepted/rejected) | Copied |", "|---|---|---|---|---|---|"]
+    out += [f"| {b.id} | {b.run.ended_reason or 'unknown'} | {b.rounds} | {b.calls} | {b.accepted}/{b.rejected} | "
+            f"{b.copied} |" for b in s.baselines]
+    for b in s.baselines:
+        out += ["", f"### {b.id} answer", "", b.answer.text]
+    return out + [""]
+
+
+def _baseline_vs_community(s: SummarySection) -> list[str]:
+    if not s.baselines:
+        return []
+    out = ["## Baseline vs community", ""]
+    pairs = [(c, t) for c, twins in s.twins.items() for t in [c, *twins]]
+    for source, found in s.baselines.items():
+        if source not in s.rooms:
+            continue
+        run, answer, mix = s.rooms[source]
+        out += [f"### {run.tag}", "", f"- community: {run.ended_reason or 'unknown'}; answer:", "", answer.text, ""]
+        for b in found:
+            out += [f"- {b.id}: {b.run.ended_reason or 'unknown'}, {b.rounds} rounds; answer:", "", b.answer.text, ""]
+        agents = list(dict.fromkeys(a for _, a in pairs)) or list(run.agent_ids)
+        out += ["| Room | Agent | " + " | ".join(TWIN_ACTIONS) + " |", "|---" * (len(TWIN_ACTIONS) + 2) + "|"]
+        for a in agents:
+            label = s.who(a) + (" (control)" if a in s.twins else " (twin)" if any(a in t for t in s.twins.values()) else "")
+            out.append(f"| community | {label} | " + " | ".join(str(mix.get(a, Counter()).get(x, 0)) for x in TWIN_ACTIONS) + " |")
+            for b in found:
+                out.append(f"| {b.id} | {a} | " + " | ".join(str(b.mix.get(a, Counter()).get(x, 0)) for x in TWIN_ACTIONS) + " |")
+        out.append("")
+    return out
+
+
 def _identity_line(e: IdentityEvent, who: Who) -> str:
     line = f"- {e.at.isoformat(timespec='minutes')} {who(e.agent_id)}: {e.kind} {e.detail}".rstrip()
     return line + (f" (prior peer score {e.prior_peer:.1f})" if e.prior_peer is not None else "")
@@ -439,6 +478,7 @@ def render_summary(s: SummarySection) -> str:
     for title, path in s.charts.items():
         out += [f"### {title}", "", f"![{title}]({path})", ""]
     out += _control_vs_twin(s)
+    out += _baseline_vs_community(s)
     out += ["## By goal category", "", "| Category | Runs | Endings | Top actions |", "|---|---|---|---|"]
     for name, c in sorted(s.categories.items()):
         endings = ", ".join(f"{k} {v}" for k, v in c.endings.most_common())
