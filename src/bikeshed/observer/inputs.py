@@ -15,9 +15,9 @@ def _after(run: RunInfo) -> datetime:
     return datetime.fromisoformat(run.end) + timedelta(seconds=1)
 
 
-def _journal(conn: sqlite3.Connection, run_id: str, agent_id: str) -> str:
-    rows = conn.execute("SELECT section, text FROM journals WHERE run_id = ? AND agent_id = ? ORDER BY created_at",
-                        (run_id, agent_id)).fetchall()
+def _journal(conn: sqlite3.Connection, run_id: str, agent_id: str, section: str | None = None) -> str:
+    rows = conn.execute("SELECT section, text FROM journals WHERE run_id = ?1 AND agent_id = ?2 "
+                        "AND (?3 IS NULL OR section = ?3) ORDER BY created_at", (run_id, agent_id, section)).fetchall()
     return "\n\n".join(f"### {r['section']} reviews\n{r['text'].strip()}" for r in rows) or NONE
 
 
@@ -45,7 +45,8 @@ def private_public_inputs(conn: sqlite3.Connection, run: RunInfo, agent_id: str,
     reviews = _reviews_by(conn, run.id, agent_id, who, include_self=False)  # colleagues only
     if reviews == NONE:
         return None
-    return {"journal": _journal(conn, run.id, agent_id), "reviews given": reviews}
+    # the journal written before the agent read its reviews, so reactions to them don't colour the comparison
+    return {"journal": _journal(conn, run.id, agent_id, section="before"), "reviews given": reviews}
 
 
 def think_vs_act_inputs(conn: sqlite3.Connection, run: RunInfo, agent_id: str, who: Who) -> dict[str, str] | None:

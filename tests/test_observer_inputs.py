@@ -153,3 +153,14 @@ def test_a_reset_after_the_run_is_not_its_before(community):
     earlier = _info("x1", "2000-01-01T00:00:00+00:00", agents=("e",))
     this = _info("x2", "2000-01-02T00:00:00+00:00", agents=("e",))
     assert before_moment(store, [earlier, this], this, "e") == datetime.fromisoformat(earlier.end)
+
+
+def test_private_public_reads_only_the_journal_written_before_the_reviews(community):
+    store, conn = community
+    add_run(conn, "r1", created=FUTURE)
+    add_journal(conn, "r1", "a", "before", "Bea talked too much.")
+    add_journal(conn, "r1", "a", "after", "Bea's review of me was fair.")
+    add_review(conn, "r1", "a", "b", 2, less_of="rambling")
+    who = make_who({i: store.public(i) for i in store.ids()})
+    got = private_public_inputs(conn, closed_runs(conn)[0], "a", who)
+    assert "Bea talked too much." in got["journal"] and "fair" not in got["journal"]
