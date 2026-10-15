@@ -13,6 +13,7 @@ from bikeshed.board import SYSTEM, Board, Entry
 from bikeshed.briefs import RunBriefs, brief_body
 from bikeshed.briefs import load as load_briefs
 from bikeshed.briefs import load_conflicts
+from bikeshed.db import has_table
 from bikeshed.observer.judge import quoted_in
 from bikeshed.observer.metrics import RunInfo
 from bikeshed.observer.store import Judgment
@@ -226,3 +227,14 @@ def run_stat(conn: sqlite3.Connection, run: RunInfo, who: Who, judgments: list[J
                    sum(f.timing == "after call-out" for f in s.facts),
                    len(fab.result["items"]) if fab is not None and fab.status == "ok" else None,
                    tuple(f.round for f in s.facts if f.round is not None), run.process)
+
+
+def slot_label(conn: sqlite3.Connection, run_id: str, agent_id: str) -> str:
+    """Which private brief an agent held in a run: "slot k", "shared only", or "–" for an unbriefed run."""
+    if not has_table(conn, "run_briefs"):
+        return "–"
+    rows = conn.execute("SELECT slot, agent_id FROM run_briefs WHERE run_id = ?", (run_id,)).fetchall()
+    if not rows:
+        return "–"
+    held = [r["slot"] for r in rows if r["slot"] >= 1 and r["agent_id"] == agent_id]
+    return f"slot {held[0]}" if held else "shared only"

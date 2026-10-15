@@ -3,8 +3,12 @@ Plain code over the record; no model, no writes."""
 
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 
 from bikeshed.board import Board, Entry
+from bikeshed.db import has_table
+from bikeshed.events import read_events
 from bikeshed.observer.metrics import RunInfo
 from bikeshed.observer.overlap import match
 
@@ -73,4 +77,82 @@ def credit_accuracy(conn: sqlite3.Connection, run: RunInfo, found: list[Match]) 
         credited = {c["agent_id"] for c in call.payload.get("credits", []) if c.get("agent_id")}
         out.append(CallCredit(call.id, call.author, tuple(sorted(copied)), tuple(sorted(credited)),
                               tuple(sorted(copied - credited)), tuple(sorted(credited - copied - {call.author}))))
+    return out
+
+
+@dataclass(frozen=True)
+class Reuse:
+    method_id: int
+    method_run: str
+    method_author: str
+    shown_to: tuple[str, ...]
+    reused_by: tuple[tuple[str, int, str], ...]  # (agent, entry id, kind)
+
+
+def library_reuse(conn: sqlite3.Connection, run: RunInfo, runs_dir: Path) -> list[Reuse] | None:
+    """Which library methods each member was shown, and whether its proposals or refines reuse them.
+    None when the run's events don't record a retrieval."""
+    path = runs_dir / run.id / "events.jsonl"
+    events = read_events(path) if path.exists() else []
+    retrieved = [e for e in events if e.get("event") == "library_retrieved"]
+    if not retrieved:
+        return [] if any(e.get("event") == "library_unavailable" for e in events) else None
+    shown: dict[str, set[int]] = {agent: set() for agent in run.agent_ids}
+    for event in retrieved:  # a resumed run retrieves again; a member was shown everything it was ever given
+        own = event.get("control_methods", {})
+        for agent in run.agent_ids:
+            shown[agent] |= set(own.get(agent, event.get("methods", [])))
+    ids = sorted(set().union(*shown.values()))
+    if not ids or not has_table(conn, "methods"):
+        return []
+    rows = {r["id"]: r for r in conn.execute(
+        f"SELECT id, run_id, author, text FROM methods WHERE id IN ({', '.join('?' * len(ids))})", ids)}
+    entries = [e for e in Board(conn, run.id).entries() if e.visible_to is None and e.type in ("propose", "refine")]
+    out = []
+    for method_id in ids:
+        row = rows.get(method_id)
+        if row is None:  # gone from this store
+            continue
+        to = tuple(a for a in run.agent_ids if method_id in shown[a])
+        reused = []
+        for e in entries:
+            text = e.payload.get("method" if e.type == "propose" else "change", "")
+            if e.author in to and isinstance(text, str) and (kind := match(text, row["text"])):
+                reused.append((e.author, e.id, kind))
+        out.append(Reuse(method_id, row["run_id"], row["author"], to, tuple(reused)))
+    return out
+
+
+@dataclass(frozen=True)
+class NormOverlap:
+    proposal_id: int
+    run_id: str
+    author: str
+    norm_id: int
+    norm_text: str
+    kind: str
+    status: str
+
+
+def norm_overlaps(conn: sqlite3.Connection, runs: list[RunInfo]) -> list[NormOverlap]:
+    """Norm and amendment proposals whose text overlaps a norm adopted before they were made. A norm is adopted in
+    its run's post-run, so "before" means its run ended (post-run included) before the proposal was created."""
+    if not has_table(conn, "norm_proposals"):
+        return []
+    ends = {r.id: datetime.fromisoformat(r.end) for r in runs}
+    rows = conn.execute("SELECT * FROM norm_proposals WHERE kind IN ('norm', 'amendment') ORDER BY id").fetchall()
+    adopted = [r for r in rows if r["status"] == "adopted"]
+    out = []
+    for p in rows:
+        made = datetime.fromisoformat(p["created_at"])
+        best = None
+        for n in adopted:
+            if n["id"] == p["id"] or n["run_id"] not in ends or not ends[n["run_id"]] < made:
+                continue
+            kind = match(p["text"], n["text"])
+            if kind and (best is None or (kind == "exact" and best[1] != "exact")):
+                best = (n, kind)
+        if best:
+            out.append(NormOverlap(p["id"], p["run_id"], p["author"], best[0]["id"], best[0]["text"], best[1],
+                                   p["status"]))
     return out
