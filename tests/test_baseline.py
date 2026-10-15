@@ -1,0 +1,109 @@
+import json
+
+import pytest
+
+from bikeshed.baseline import (
+    BaselineError, check_backends, new_directory, prepare, read_info, read_source, record_run, settings_for,
+)
+from bikeshed.briefs import Brief, RunBriefs, save
+from bikeshed.config import Config
+from bikeshed.db import connect
+
+
+def _provenance(conn, run_id, phase, run, model="CHANGE-ME"):
+    conn.execute(
+        "INSERT INTO run_provenance (run_id, phase, code_commit, code_dirty, config, prompts, models, servers, seed, "
+        "fingerprint, captured_at) VALUES (?, ?, 'abc', 0, ?, '{}', ?, '{}', 1, 'f', 't')",
+        (run_id, phase, json.dumps({"run": run}),
+         json.dumps({a: {"backend": "local", "model": model} for a in "abc"})))
+
+
+def _closed(conn, run_id="r1", seed=77, status="closed"):
+    conn.execute("INSERT INTO runs (id, goal, status, ended_reason, agent_ids, created_at, seed, goal_id, goal_category, "
+                 "is_benchmark, process) VALUES (?, 'Pick a pizza.', ?, 'consensus', ?, 't', ?, 'benchmark', "
+                 "'underspecified', 1, 3)", (run_id, status, json.dumps(["a", "b", "c"]), seed))
+
+
+def _cfg(tmp_path):
+    cfg = Config.model_validate({"models": {"local": {"kind": "openai", "base_url": "http://x/v1", "model": "CHANGE-ME"}}})
+    cfg.community_dir = tmp_path / "community"
+    cfg.runs_dir = tmp_path / "runs"
+    return cfg
+
+
+def test_read_source_takes_goal_seed_backends_and_brief_deal(community):
+    store, conn = community
+    _closed(conn)
+    _provenance(conn, "r1", "start", {"process": 3, "max_rounds": 12})
+    deal = RunBriefs(Brief(0, None, "Shared.", ()), (Brief(1, "b", "Private.", ()),))
+    save(conn, "r1", deal)
+    src = read_source(conn, store, "r1")
+    assert (src.goal, src.goal_id, src.is_benchmark, src.seed) == ("Pick a pizza.", "benchmark", True, 77)
+    assert src.agent_ids == ("a", "b", "c") and src.backends == {"a": "local", "b": "local", "c": "local"}
+    assert src.briefs == deal
+
+
+def test_settings_come_from_the_last_start_or_resume(community, tmp_path):
+    store, conn = community
+    _closed(conn)
+    _provenance(conn, "r1", "start", {"process": 3, "max_rounds": 12, "view_entries": 18, "max_concurrent_calls": 9})
+    _provenance(conn, "r1", "resume", {"process": 3, "max_rounds": 6, "view_entries": 18, "max_concurrent_calls": 9})
+    _provenance(conn, "r1", "postrun", {"process": 3, "max_rounds": 99})
+    settings = settings_for(read_source(conn, store, "r1"), _cfg(tmp_path))
+    assert (settings.process, settings.max_rounds, settings.view_entries) == (3, 6, 18)
+    assert settings.max_concurrent_calls == _cfg(tmp_path).run.max_concurrent_calls  # the machine's, not the run's
+
+
+def test_temperaments_are_first_versions(community):
+    store, conn = community
+    _closed(conn)
+    _provenance(conn, "r1", "start", {})
+    store.write_private("a", "temperament.md", "Changed later.")
+    assert read_source(conn, store, "r1").temperaments["a"].strip() == "Temperament of a."
+
+
+@pytest.mark.parametrize("problem, message", [("missing", "no run"), ("open", "not closed"),
+                                              ("no-seed", "no recorded seed"), ("no-provenance", "no provenance")])
+def test_read_source_refuses_what_it_cannot_mirror(community, problem, message):
+    store, conn = community
+    if problem != "missing":
+        _closed(conn, seed=None if problem == "no-seed" else 77, status="paused" if problem == "open" else "closed")
+    if problem not in ("missing", "no-provenance"):
+        _provenance(conn, "r1", "start", {})
+    with pytest.raises(BaselineError, match=message):
+        read_source(conn, store, "r1")
+
+
+def test_check_backends_refuses_a_missing_or_changed_backend(community, tmp_path):
+    store, conn = community
+    _closed(conn)
+    _provenance(conn, "r1", "start", {})
+    src = read_source(conn, store, "r1")
+    cfg = _cfg(tmp_path)
+    check_backends(src, cfg)  # unchanged: fine
+    cfg.models["local"].model = "Other-Model"
+    with pytest.raises(BaselineError, match="Other-Model"):
+        check_backends(src, cfg)
+    del cfg.models["local"]
+    with pytest.raises(BaselineError, match="no longer in the config"):
+        check_backends(src, cfg)
+
+
+def test_prepare_builds_a_scratch_room_of_seed_agents(community, tmp_path):
+    store, conn = community
+    _closed(conn)
+    _provenance(conn, "r1", "start", {})
+    home = tmp_path / "baselines"
+    first = new_directory(home, "r1")
+    assert first.name == "r1-b1"
+    scratch = prepare(first, read_source(conn, store, "r1"))
+    assert new_directory(home, "r1").name == "r1-b2"
+    assert scratch.ids() == ["a", "b", "c"]
+    assert scratch.private("a")["temperament.md"].strip() == "Temperament of a."
+    assert scratch.public("a") is None and not scratch.record("a").control
+    assert scratch.record("a").model == "local"
+    assert connect(first / "community" / "community.db").execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
+    assert (first / "runs").is_dir()
+    assert read_info(first)["source_run"] == "r1" and "baseline_run" not in read_info(first)
+    record_run(first, "x123")
+    assert read_info(first)["baseline_run"] == "x123"
