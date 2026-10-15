@@ -6,31 +6,13 @@ from bikeshed.board import SYSTEM, Entry
 from bikeshed.view import Who, render_entry
 
 
-def interactions(
+def participants(
     entries: Sequence[Entry], file_authors: Sequence[tuple[str, str]], agent_ids: Sequence[str]
-) -> dict[str, set[str]]:
-    """For each member, the other members it interacted with: a ref either way, or a shared workspace file."""
-    members = set(agent_ids)
-    pairs: dict[str, set[str]] = {agent_id: set() for agent_id in agent_ids}
-
-    def link(x: str, y: str) -> None:
-        if x != y and x in members and y in members:
-            pairs[x].add(y)
-            pairs[y].add(x)
-
-    authors = {entry.id: entry.author for entry in entries}
-    for entry in entries:
-        for ref in entry.refs:
-            if ref in authors:
-                link(entry.author, authors[ref])
-    writers: dict[str, set[str]] = {}
-    for path, author in file_authors:
-        writers.setdefault(path, set()).add(author)
-    for group in writers.values():
-        for x in group:
-            for y in group:
-                link(x, y)
-    return pairs
+) -> list[str]:
+    """The members who took part in a run: a public entry other than a pass, or a workspace file written."""
+    took_part = {entry.author for entry in entries if entry.visible_to is None and entry.type != "pass"}
+    took_part |= {author for _, author in file_authors}
+    return [agent_id for agent_id in agent_ids if agent_id in took_part]
 
 
 def feedback_packet(
