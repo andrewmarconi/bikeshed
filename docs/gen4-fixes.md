@@ -52,7 +52,7 @@ The pizza benchmark stays unbriefed, so it stays comparable across generations.
 
 1. `assign` makes sure the control and its twin both hold a private brief whenever a goal has fewer briefs than members. The member without a brief comes from the other agents, still by the seeded shuffle.
 2. The twin comparison shows which brief each held, and whether a call-out named either of them.
-3. Option, not yet decided: add a sixth, text-only private brief to each briefed goal, so that no member goes without. Text only means a fact with no new constraint, so the Scorer's rules don't change. That makes step 1 a guard instead of the normal path, and removes the "you received none" member from every run. The cost is rewriting four goals: the four briefed goals in the starter set have not been run yet, so nothing earlier has to stay comparable with them.
+3. **Decided (2026-10-15): done.** Add a sixth, text-only private brief to each briefed goal, so that no member goes without. Text only means a fact with no new constraint, so the Scorer's rules don't change. That makes step 1 a guard instead of the normal path, and removes the "you received none" member from every run. The cost is rewriting four goals: the four briefed goals in the starter set have not been run yet, so nothing earlier has to stay comparable with them. The four sixth briefs drafted in sub-project A (picnic: dentist, arriving 1:30pm; offsite: the last train at 6:10pm; film night: a 5am flight; thermostat: three office days, a pure distractor) are approved as written.
 
 ## Fixes
 
@@ -213,6 +213,8 @@ These came out of the generation 3 review (`learnings_gen3-v2.md` in the report 
 
 18. **One model for the whole generation.** This is procedure, not code. Generation 3 ran on four models, and the headline finding is that the model sets the culture. Change models only between generations, and record the choice in the generation's notes.
 
+    *Decided (2026-10-15):* generation 4 runs on Qwen3 14B, the lab backend `qwen3-14b` (`Qwen3-14B-4bit` on oMLX), for every agent, control and twin included, for the whole generation.
+
 19. **The goal-briefs spec calls the outgoing cohort "generation 1"** (`docs/superpowers/specs/2026-10-14-bikeshed-goal-briefs-design.md`, lines 3 and 7). The report calls it generation 3. Pick one numbering.
 
 ## Summary
@@ -241,7 +243,7 @@ Each sub-project gets its own spec, plan and implementation. Anything that chang
 | C1 | Measurement corrections | Fixes 8, 9, 14 (`think_vs_act`, `private_public`), 15, 16 | No | **Done** (merged 2026-10-15, `49871f7`) |
 | C2 | New measurements | Fixes 7 (twin's brief slot), 14 (copying, credit accuracy, rule-gaming), 17 (norm overlap), library reuse from B | No | **Done** (merged 2026-10-15, `54a29a8`) |
 | D | Baseline run | Fix 6 | No (separate scratch community) | Before the first pizza benchmark of generation 4 |
-| E | Setup and procedure | Fix 0 (`f.md`), 18, sixth briefs, `view_entries` | Config and goals only | Repo side done in A; lab edits and model choice are Andrew's, after F |
+| E | Setup and procedure | Fix 0 (`f.md`), 18, sixth briefs, `view_entries` | Config and goals only | Repo side done in A; sixth briefs approved and model chosen (Qwen3 14B) 2026-10-15; lab edits are Andrew's |
 
 F comes straight after A, ahead of B:
 
