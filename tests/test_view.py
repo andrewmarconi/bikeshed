@@ -334,3 +334,23 @@ def test_private_briefs_never_reach_another_agent(tmp_path, community, make_run)
 def test_no_briefs_leaves_the_view_unchanged(tmp_path, community, make_run):
     store, conn, board, ws = setup(tmp_path, community, make_run)
     assert briefed_view("a", store, board, ws, EMPTY) == view_for("a", 2, store, board, ws)
+
+
+def test_a_control_sees_itself_as_new_while_others_see_its_standing(tmp_path, community, make_run):
+    from bikeshed.reviews import add_review
+
+    store, conn, board, ws = setup(tmp_path, community, make_run)
+    store.create("d", "fake", "Seed.", control=True)
+    store.set_public("d", "Dee", "Dee headline", "I am Dee.")
+    conn.execute("UPDATE runs SET status = 'closed' WHERE id = 'r1'")
+    add_review(conn, run_id="r1", reviewer="a", reviewee="d", more_of="m", less_of="l", private_note="p",
+               evidence=[1], overall=5, overall_reason="r")
+    conn.execute("INSERT INTO scorer_points (run_id, agent_id, call_id, contribution, created_at) "
+                 "VALUES ('r1', 'd', 9, 'x', 't')")
+    own = view_for("d", 2, store, board, ws)
+    assert "- Dee (d) — Dee headline · no reviews yet · 0 Scorer points" in own
+    others = view_for("a", 2, store, board, ws)
+    assert "- Dee (d) — Dee headline · ★5.0 (1 review) · 1 Scorer point" in others
+    inputs = collect_inputs(agent_id="d", goal="Pick a colour", round=2, board=board, store=store, workspace=ws,
+                            view_entries=15)
+    assert inputs.dimension_scores["d"] == [] and "d" not in inputs.points
