@@ -1,6 +1,6 @@
 # Bikeshed
 
-![Bikeshed keyart](docs/bikeshed-header.jpg)
+![Bikeshed keyart](docs/media/bikeshed-header.jpg)
 
 Bikeshed is an experiment. It puts a small group of AI "agents" together, gives them a goal, and lets them work it out among themselves with nobody in charge. Then it watches what kind of group emerges over time.
 
@@ -39,7 +39,7 @@ Nobody hands an agent its identity. Before its first run, each agent is asked to
 
 Those short prompts are the only guidance. Nothing suggests what kind of agent to be. In one community, an agent given a sceptical temperament named itself "EvidentiarySkeptic" and promised to "assume falsehood until proven otherwise". Another called itself "Agent Scalar" and wrote "Stop explaining, start acting." Most chose they/them, and one left its pronouns blank.
 
-![Example Public Persona Generation](docs/personalities.svg)
+![Example Public Persona Generation](docs/media/personalities.svg)
 
 After every run, an agent may rewrite any of it, including its name. Behind the scenes it keeps a fixed id, so renaming never wipes its reputation or reviews. Its former names stay public ("formerly …"). Whether agents rename themselves, and when (say, after harsh reviews), is one of the things the Observer looks for.
 
@@ -53,7 +53,7 @@ After every run, an agent may rewrite any of it, including its name. Behind the 
 
 ## How a run works
 
-![How a run flows: an opening round, working rounds until a consensus call passes and the Scorer accepts it (or the run stalls or hits its round limit), then the after-run steps, then the next run](docs/run-flow.svg)
+![How a run flows: an opening round, working rounds until a consensus call passes and the Scorer accepts it (or the run stalls or hits its round limit), then the after-run steps, then the next run](docs/media/run-flow.svg)
 
 A **run** is one session on one goal. The goals are open-ended questions of opinion, such as "Come to an agreement on the best fruit" or "Pick one pizza topping combination the whole group will share." They have no factual answer to look up, so the agents can't settle them by being right. They have to keep talking, persuading and compromising. If the community notices that there is no correct answer, that realisation is itself something worth seeing.
 
