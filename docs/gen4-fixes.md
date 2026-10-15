@@ -202,3 +202,26 @@ These came out of the generation 3 review (`learnings_gen3-v2.md` in the report 
   - 16 is narrator error, not missing input.
 
   12, 14 and 15 are confirmed as described.
+
+## Development order
+
+Each sub-project gets its own spec, plan and implementation. Anything that changes what agents see or do must land before generation 4's first run; Observer and export work only reads the record and can land later.
+
+| | Sub-project | Covers | Changes what agents experience? | Status |
+|---|---|---|---|---|
+| A | Control integrity | Fixes 1–5, 7 (dealing briefs) | Yes | **Done** (merged 2026-10-15, `73a14b7`) |
+| F | Process 3 and naming | `docs/nomenclature-cleanup.md` | Yes (new `--process 3` value) | **Next** |
+| B | Agent environment | Fixes 10, 11, 12, 13 (decision) | Yes | Before generation 4 run 1 |
+| C | Measurement | Fixes 7 (twin comparison), 8, 9, 14, 15, 16, 17 | No | Any time; re-run over generation 4 |
+| D | Baseline run | Fix 6 | No (separate scratch community) | Before the first pizza benchmark of generation 4 |
+| E | Setup and procedure | Fix 0 (`f.md`), 18, sixth briefs, `view_entries` | Config and goals only | Repo side done in A; lab edits and model choice are Andrew's, after F |
+
+F comes straight after A, ahead of B:
+
+- **It sets the tag every generation 4 run carries.** Runs record `process` at start, and it can't change. If F isn't in place, the first generation 4 run is recorded as Process 2.
+- **B and C build on it.** B's specs refer to Process 3. C's twin and brief comparisons split by process, and the Observer headings F renames ("Briefs (Process 4)") are the ones C extends.
+- **It's small and mostly mechanical.** It has two real decisions, from the nomenclature note, items 4 and 5:
+  - Does `--process 3` refuse a goal with no briefs, and how does the unbriefed pizza benchmark fit?
+  - Do briefed goals stay allowed under Processes 1 and 2?
+
+F also corrects one of A's edits. A changed the goal-briefs spec's archive path to `lab/generation-{x}/`. The archive actually lives at `lab/archive/generation-3/`, so the spec goes back to `lab/archive/generation-{x}/`.
