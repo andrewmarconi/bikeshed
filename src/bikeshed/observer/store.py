@@ -84,6 +84,11 @@ class ObserverStore:
              judgment.error, now_iso()),
         )
 
+    def drop(self, analysis: str, run_id: str, agent_id: str | None) -> None:
+        """Forget a unit's judgment once it has nothing left to judge, so an old one is not reported."""
+        self.conn.execute("DELETE FROM judgments WHERE analysis = ? AND run_id = ? AND agent_id IS ?",
+                          (analysis, run_id, agent_id))
+
     def judgments(self, run_id: str, analysis: str | None = None) -> list[Judgment]:
         sql, args = "SELECT * FROM judgments WHERE run_id = ?", [run_id]
         if analysis is not None:

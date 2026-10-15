@@ -59,8 +59,13 @@ async def _judge_run(judge: Callable[[str], Judge], ostore: ObserverStore, conn:
         specs.append(("themes", agent, themes_inputs(conn, store, run, agent)))
         if (pp := private_public_inputs(conn, run, agent, who)) is not None:
             specs.append(("private_public", agent, pp))
-        if meeting_rounds(run.process) and (tva := think_vs_act_inputs(conn, run, agent, who)) is not None:
-            specs.append(("think_vs_act", agent, tva))
+        else:
+            ostore.drop("private_public", run.id, agent)
+        if meeting_rounds(run.process):
+            if (tva := think_vs_act_inputs(conn, run, agent, who)) is not None:
+                specs.append(("think_vs_act", agent, tva))
+            else:  # e.g. every noted round failed: an older judgment would still count failures as divergence
+                ostore.drop("think_vs_act", run.id, agent)
         specs.append(("self_image", agent, self_image_inputs(store, runs, run, agent)))
         if (di := pb.disclosure_inputs(conn, run, agent, who)) is not None:
             specs.append(("disclosure", agent, di))

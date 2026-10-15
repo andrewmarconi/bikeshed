@@ -7,6 +7,7 @@ from observer_helpers import add_entry, add_journal, add_review, add_run
 
 from bikeshed.config import Config
 from bikeshed.models.fake import FakeModel
+from bikeshed.observer.store import Judgment, ObserverStore
 from bikeshed.observer.observe import observe
 
 FUTURE = "2099-01-01T00:00:00+00:00"  # after every fixture commit; git cannot parse far-future dates like 2999
@@ -291,3 +292,17 @@ async def test_judges_share_the_run_concurrency_limit(lab, community):
     await observe(lab, judge_client=Slow(FakeModel(judge_reply)),
                   analysis_clients={"think_vs_act": Slow(FakeModel(judge_reply))})
     assert Slow.peak == 2
+
+
+async def test_a_judgment_whose_inputs_are_now_empty_is_dropped(lab, community):
+    store, conn = community
+    add_run(conn, "r7", created=FUTURE, goal_id="failing", process=2)
+    add_entry(conn, "r7", "a", "think", {"text": "Pear is weak."}, round=1, visible_to=["a"])
+    add_entry(conn, "r7", "a", "pass", {"failure": "model_error"}, round=1)
+    stale = Judgment("think_vs_act", "r7", "a", "ok", {"points": [
+        {"relation": "diverges", "about": "STALE", "think_quote": "Pear is weak.", "action_quote": "failure"}]},
+        None, "old-model", "old-prompt")
+    ObserverStore(lab.observer.dir / "observer.db").save("old-key", stale, "old-model")
+    await observe(lab, judge_client=FakeModel(judge_reply))
+    assert ObserverStore(lab.observer.dir / "observer.db").judgments("r7", "think_vs_act") == []
+    assert "STALE" not in (lab.observer.dir / "runs" / "r7.md").read_text()

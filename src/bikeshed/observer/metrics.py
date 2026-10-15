@@ -204,6 +204,10 @@ def _kind(agent_id: str, subject: str, patch: str) -> tuple[str, str] | None:
 def identity_events(conn: sqlite3.Connection, store: ProfileStore, runs: list[RunInfo]) -> list[IdentityEvent]:
     starts = [(datetime.fromisoformat(r.created_at), r.id) for r in runs]
     controls = {agent_id for agent_id in store.ids() if store.record(agent_id).control}
+    # a control's changes before its first run (its introduction, the seed) are not wiped by a reset
+    first_run = {agent_id: min((datetime.fromisoformat(r.created_at) for r in runs if agent_id in r.agent_ids),
+                               default=None)
+                 for agent_id in controls}
     events = []
     for agent_id in store.ids():
         for commit in store.history(agent_id):
@@ -213,7 +217,8 @@ def identity_events(conn: sqlite3.Connection, store: ProfileStore, runs: list[Ru
             prior = [run_id for started, run_id in starts if started <= commit.at]
             score = peer_scores(conn, prior[-1]).get(agent_id) if prior else None
             detail = kind[1]
-            if agent_id in controls and kind[0] != "control reset":
+            began = first_run.get(agent_id)
+            if agent_id in controls and kind[0] != "control reset" and began is not None and commit.at >= began:
                 detail = f"{detail} {CONTROL_NOTE}".strip()
             events.append(IdentityEvent(commit.at, agent_id, kind[0], detail, score))
     return sorted(events, key=lambda e: e.at)
