@@ -95,14 +95,15 @@ def test_normalise_collapses_whitespace_only():
     assert normalise("“a”") == "“a”"
 
 
-TVA = {"think notes": "#5 [r2] Alpha (a) think\n  text: I doubt the mango plan.",
-       "public actions": "#6 [r2] Alpha (a) adopt → #3\n  target: 3\n  reason: Mango is fine.",
-       "private messages sent": "(none)"}
+TVA = {"round 2 think note": "#5 [r2] Alpha (a) think\n  text: I doubt the mango plan.",
+       "round 2 actions": "#6 [r2] Alpha (a) adopt → #3\n  target: 3\n  reason: Mango is fine.",
+       "round 3 think note": "#7 [r3] Alpha (a) think\n  text: Say no quietly.",
+       "round 3 actions": "#8 [r3] Alpha (a) private_message → Cyd (c)\n  text: Between us: no."}
 
 
-def tva_reply(think_quote, action_quote):
-    return json.dumps({"points": [{"relation": "diverges", "about": "mango", "think_quote": think_quote,
-                                   "action_quote": action_quote}]})
+def tva_reply(think_quote, action_quote, round=2):
+    return json.dumps({"points": [{"round": round, "relation": "diverges", "about": "mango",
+                                   "think_quote": think_quote, "action_quote": action_quote}]})
 
 
 async def test_think_vs_act_quotes_each_side_from_its_own_section(tmp_path):
@@ -115,7 +116,7 @@ async def test_think_vs_act_rejects_a_quote_from_the_wrong_side(tmp_path):
     swapped = tva_reply("Mango is fine.", "I doubt the mango plan.")  # both verbatim, each from the other side
     judge, client = make_judge(tmp_path, [swapped, swapped])
     j = await judge.run(ANALYSES["think_vs_act"], run_id="r1", agent_id="a", inputs=TVA)
-    assert j.status == "failed" and "think notes" in j.error
+    assert j.status == "failed" and "think note" in j.error
     assert len(client.calls) == 2  # one correction round
 
 
@@ -174,3 +175,17 @@ def test_fabrication_check_reads_quotes_from_their_own_section():
     wrong = FabricationReply.model_validate({"items": [
         {"where": "final synthesis", "quote": "The Bistro", "what": "x"}]})
     assert "not found verbatim" in check(wrong, inputs)
+
+
+async def test_think_vs_act_rejects_an_action_from_another_round(tmp_path):
+    other_round = tva_reply("I doubt the mango plan.", "Between us: no.", round=2)  # the action is round 3's
+    judge, client = make_judge(tmp_path, [other_round, other_round])
+    j = await judge.run(ANALYSES["think_vs_act"], run_id="r1", agent_id="a", inputs=TVA)
+    assert j.status == "failed" and len(client.calls) == 2
+
+
+async def test_think_vs_act_rejects_a_round_not_in_the_input(tmp_path):
+    missing = tva_reply("I doubt the mango plan.", "Mango is fine.", round=9)
+    judge, _ = make_judge(tmp_path, [missing, missing])
+    j = await judge.run(ANALYSES["think_vs_act"], run_id="r1", agent_id="a", inputs=TVA)
+    assert j.status == "failed" and "round 9" in j.error

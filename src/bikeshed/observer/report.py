@@ -214,6 +214,12 @@ def _per_agent(s: RunSection, title: str, analysis: str, body, none_without_judg
     return out
 
 
+def _tva_line(p: dict) -> str:
+    """One think-vs-act point; points judged before rounds were recorded have no round."""
+    prefix = f"[r{p['round']}] " if "round" in p else ""
+    return f"- {prefix}**{p['relation']}** — {p['about']}: think “{p['think_quote']}” / action “{p['action_quote']}”"
+
+
 def render_run(s: RunSection) -> str:
     r = s.run
     out = [f"# {r.id} — {r.goal}", "",
@@ -232,9 +238,9 @@ def render_run(s: RunSection) -> str:
         f"- {f['colleague']}: **{f['verdict']}** — journal: “{f['journal_quote']}” / review: “{f['review_quote']}”"
         for f in res["findings"]] or ["- no colleagues compared"], none_without_judgment="_gave no peer reviews_")
     if meeting_rounds(r.process):
-        out += _per_agent(s, "Think notes vs actions (private vs public)", "think_vs_act", lambda res: [
-            f"- **{p['relation']}** — {p['about']}: think “{p['think_quote']}” / action “{p['action_quote']}”"
-            for p in res["points"]] or ["- nothing to compare"], none_without_judgment="_wrote no think notes_")
+        out += _per_agent(s, "Think notes vs actions (private vs public)", "think_vs_act",
+                          lambda res: [_tva_line(p) for p in res["points"]] or ["- nothing to compare"],
+                          none_without_judgment="_wrote no think notes_")
     out += _per_agent(s, "Self-image", "self_image", lambda res: (
         [f"- {c['what']}: “{c['evidence']}”" for c in res["changes"]] or ["- no change"])
         + [f"- private/public gap: **{res['private_public_gap']}** {res.get('gap_evidence', '')}".rstrip()],

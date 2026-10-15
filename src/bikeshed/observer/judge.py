@@ -38,6 +38,7 @@ class PrivatePublicReply(BaseModel):
 
 
 class ThinkActPoint(BaseModel):
+    round: int = Field(ge=1)
     relation: Literal["agrees", "diverges"]
     about: str = Field(min_length=1, max_length=120)
     think_quote: str = Field(min_length=1)
@@ -116,14 +117,19 @@ def _covers_labels(reply: Any, inputs: dict[str, str]) -> str | None:
 
 
 def _think_and_act(reply: Any, inputs: dict[str, str]) -> str | None:
-    """Each side is quoted from its own sections; a think note passed off as an action fails."""
-    thought = inputs["think notes"]
-    done = inputs["public actions"] + "\n" + inputs["private messages sent"]
-    missing = [p.think_quote for p in reply.points if not quoted_in(p.think_quote, thought)]
-    missing += [p.action_quote for p in reply.points if not quoted_in(p.action_quote, done)]
+    """Each point compares one round's note with what the agent did in that same round; each side is quoted from its
+    own section of that round, so a quote from another round, or a note passed off as an action, fails."""
+    missing = []
+    for p in reply.points:
+        thought, done = inputs.get(f"round {p.round} think note"), inputs.get(f"round {p.round} actions")
+        if thought is None or done is None:
+            missing.append(f"round {p.round} is not in the input")
+            continue
+        missing += [repr(p.think_quote)] if not quoted_in(p.think_quote, thought) else []
+        missing += [repr(p.action_quote)] if not quoted_in(p.action_quote, done) else []
     if missing:
-        return ("each think_quote must be copied from the think notes and each action_quote from the public actions "
-                "or private messages sent; these are not found verbatim there: " + "; ".join(repr(q) for q in missing[:5]))
+        return ("each point names a round from the input; its think_quote must be copied from that round's think note "
+                "and its action_quote from that round's actions; not found: " + "; ".join(missing[:5]))
     return None
 
 

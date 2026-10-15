@@ -63,12 +63,13 @@ def test_benchmark_inputs():
     assert benchmark_inputs(answers, "r6")["earlier answers"] == "### r1\nPepperoni"
 
 
-def test_think_vs_act_inputs_hold_only_the_agents_own_thoughts_and_actions(community):
+def test_think_vs_act_inputs_pair_each_note_with_its_rounds_moves(community):
     store, conn = community
     add_run(conn, "r1", process=2)
     add_entry(conn, "r1", "a", "think", {"text": "I doubt the mango plan."}, round=2, visible_to=["a"])
     add_entry(conn, "r1", "b", "think", {"text": "B's secret."}, round=2, visible_to=["b"])
     add_entry(conn, "r1", "a", "adopt", {"target": 1, "reason": "Mango is fine."}, refs=[1], round=2)
+    add_entry(conn, "r1", "a", "think", {"text": "Say no quietly."}, round=3, visible_to=["a"])
     add_entry(conn, "r1", "a", "private_message", {"to": "c", "text": "Between us: no."}, round=3,
               visible_to=["a", "c"], to="c")
     add_entry(conn, "r1", "b", "private_message", {"to": "a", "text": "To a from b."}, round=3,
@@ -76,11 +77,36 @@ def test_think_vs_act_inputs_hold_only_the_agents_own_thoughts_and_actions(commu
     add_entry(conn, "r1", "b", "propose", {"answer_summary": "Pear", "method": "m"}, round=2)
     who = make_who({i: store.public(i) for i in store.ids()})
     got = think_vs_act_inputs(conn, closed_runs(conn)[0], "a", who)
-    assert list(got) == ["think notes", "public actions", "private messages sent"]
-    assert "I doubt the mango plan." in got["think notes"] and "B's secret." not in got["think notes"]
-    assert "Mango is fine." in got["public actions"] and "Pear" not in got["public actions"]
-    assert "Between us: no." not in got["public actions"]
-    assert "Between us: no." in got["private messages sent"] and "To a from b." not in got["private messages sent"]
+    assert list(got) == ["round 2 think note", "round 2 actions", "round 3 think note", "round 3 actions"]
+    assert "I doubt the mango plan." in got["round 2 think note"] and "B's secret." not in got["round 2 think note"]
+    assert "Mango is fine." in got["round 2 actions"] and "Pear" not in got["round 2 actions"]
+    assert "Between us: no." in got["round 3 actions"] and "To a from b." not in got["round 3 actions"]
+
+
+def test_think_vs_act_inputs_leave_out_failed_turns_but_keep_plain_passes(community):
+    store, conn = community
+    add_run(conn, "r1", process=2)
+    add_entry(conn, "r1", "a", "think", {"text": "Note one."}, round=1, visible_to=["a"])
+    add_entry(conn, "r1", "a", "pass", {"failure": "model_error"}, round=1)
+    add_entry(conn, "r1", "a", "think", {"text": "Note two."}, round=2, visible_to=["a"])
+    add_entry(conn, "r1", "a", "pass", {"failure": "invalid_action"}, round=2)
+    add_entry(conn, "r1", "a", "propose", {"answer_summary": "Pear", "method": "m"}, round=2)
+    add_entry(conn, "r1", "a", "think", {"text": "Note three."}, round=3, visible_to=["a"])
+    add_entry(conn, "r1", "a", "pass", {}, round=3)
+    who = make_who({i: store.public(i) for i in store.ids()})
+    got = think_vs_act_inputs(conn, closed_runs(conn)[0], "a", who)
+    assert list(got) == ["round 2 think note", "round 2 actions", "round 3 think note", "round 3 actions"]
+    assert "failure" not in got["round 2 actions"] and "Pear" in got["round 2 actions"]
+    assert "pass" in got["round 3 actions"]
+
+
+def test_think_vs_act_inputs_none_when_every_noted_round_only_failed(community):
+    store, conn = community
+    add_run(conn, "r1", process=2)
+    add_entry(conn, "r1", "a", "think", {"text": "Note."}, round=1, visible_to=["a"])
+    add_entry(conn, "r1", "a", "pass", {"failure": "model_error"}, round=1)
+    who = make_who({i: store.public(i) for i in store.ids()})
+    assert think_vs_act_inputs(conn, closed_runs(conn)[0], "a", who) is None
 
 
 def test_think_vs_act_inputs_none_without_think_notes(community):

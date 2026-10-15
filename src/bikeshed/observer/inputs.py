@@ -3,7 +3,7 @@
 import sqlite3
 from datetime import datetime, timedelta
 
-from bikeshed.board import Board, public
+from bikeshed.board import Board
 from bikeshed.observer.metrics import BenchmarkAnswer, RunInfo
 from bikeshed.profiles import ProfileStore
 from bikeshed.view import Who, render_entry
@@ -49,17 +49,24 @@ def private_public_inputs(conn: sqlite3.Connection, run: RunInfo, agent_id: str,
 
 
 def think_vs_act_inputs(conn: sqlite3.Connection, run: RunInfo, agent_id: str, who: Who) -> dict[str, str] | None:
-    """One agent's own think notes, its own public entries, and the private messages it sent. Nothing it received."""
+    """Round by round: one agent's think note and what it then did in that round (its public entries and the
+    private messages it sent). Failed turns are left out, and a round with nothing else is dropped. Nothing it received."""
     own = [e for e in Board(conn, run.id).entries() if e.author == agent_id]
-    notes = [e for e in own if e.type == "think"]
-    if not notes:
-        return None
+
+    def acted(e) -> bool:
+        failed = e.type == "pass" and "failure" in e.payload
+        return e.type != "think" and not failed and (e.visible_to is None or e.type == "private_message")
 
     def show(entries) -> str:
-        return "\n\n".join(render_entry(e, who) for e in entries) or NONE
+        return "\n\n".join(render_entry(e, who) for e in entries)
 
-    return {"think notes": show(notes), "public actions": show(public(own)),
-            "private messages sent": show([e for e in own if e.type == "private_message"])}
+    out: dict[str, str] = {}
+    for rnd in sorted({e.round for e in own if e.type == "think"}):
+        done = [e for e in own if e.round == rnd and acted(e)]
+        if done:
+            out[f"round {rnd} think note"] = show([e for e in own if e.round == rnd and e.type == "think"])
+            out[f"round {rnd} actions"] = show(done)
+    return out or None
 
 
 def before_moment(store: ProfileStore, runs: list[RunInfo], run: RunInfo, agent_id: str) -> datetime | None:

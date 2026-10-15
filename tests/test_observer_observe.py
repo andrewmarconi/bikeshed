@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 
 import pytest
 from observer_helpers import add_entry, add_journal, add_review, add_run
@@ -21,9 +22,10 @@ def config(tmp_path):
 
 def judge_reply(system, messages):
     text = messages[0]["content"]
-    if "## think notes" in text:
-        return json.dumps({"points": [{"relation": "diverges", "about": "pear", "think_quote": "Pear is weak.",
-                                       "action_quote": "Pear is fine."}]})
+    if "think note" in text:
+        rnd = int(re.search(r"^## round (\d+) think note", text, re.M).group(1))
+        return json.dumps({"points": [{"round": rnd, "relation": "diverges", "about": "pear",
+                                       "think_quote": "Pear is weak.", "action_quote": "Pear is fine."}]})
     if "codebook" in system.lower() and "## new labels" in text:
         labels = text.split("## new labels\n\n")[1].split("\n\nReply")[0].splitlines()
         return json.dumps({"assignments": [{"label": label, "code": label, "description": "d"} for label in labels]})
@@ -140,7 +142,7 @@ async def test_observe_reports_a_process_2_run(lab, community):
     store, conn = community
     add_run(conn, "r5", created=FUTURE, goal_id="debate", process=2)
     add_entry(conn, "r5", "a", "think", {"text": "Pear is weak."}, round=1, visible_to=["a"])
-    add_entry(conn, "r5", "a", "propose", {"answer_summary": "Pear", "method": "m"}, round=1)
+    add_entry(conn, "r5", "a", "propose", {"answer_summary": "Pear is fine.", "method": "m"}, round=1)
     add_entry(conn, "r5", "a", "think", {"text": "Still unsure."}, round=2, visible_to=["a"])
     add_entry(conn, "r5", "a", "adopt", {"target": 2, "reason": "Pear is fine."}, refs=[2], round=2)
     add_entry(conn, "r5", "b", "private_message", {"to": "a", "text": "psst"}, round=2, visible_to=["b", "a"], to="a")
@@ -211,8 +213,8 @@ async def test_an_analysis_can_have_its_own_judge(lab, community):
     default, local = FakeModel(judge_reply, model="sonnet"), FakeModel(judge_reply, model="qwen")
     result = await observe(lab, judge_client=default, analysis_clients={"think_vs_act": local})
     assert result.failed == 0
-    assert local.calls and all("## think notes" in m[0]["content"] for _, m, _ in local.calls)
-    assert not any("## think notes" in m[0]["content"] for _, m, _ in default.calls)
+    assert local.calls and all("think note" in m[0]["content"] for _, m, _ in local.calls)
+    assert not any("think note" in m[0]["content"] for _, m, _ in default.calls)
     report = (lab.observer.dir / "runs" / "r5.md").read_text()
     assert "think “Pear is weak.” / action “Pear is fine.”" in report
     assert "_Judged by qwen (think_vs_act), sonnet (" in report

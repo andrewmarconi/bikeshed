@@ -130,7 +130,8 @@ P2_SECTION = Process2Section(
 
 def tva(agent):
     return Judgment("think_vs_act", "r1", agent, "ok", {"points": [
-        {"relation": "diverges", "about": "mango", "think_quote": "I doubt it", "action_quote": "Mango is fine"}]},
+        {"round": 2, "relation": "diverges", "about": "mango", "think_quote": "I doubt it",
+         "action_quote": "Mango is fine"}]},
         None, "claude-x", "p")
 
 
@@ -142,7 +143,7 @@ def test_process_2_run_report():
     assert "| Alpha (a) | 1 | 1 | 0 | 0 | 0 | 1 |" in block  # polled, support, object, abstain, failed, unprompted
     assert "| 1 | 2 | 1 | 50% |" in block and "| 2 | 2 | 0 | 0% |" in block
     tva_block = text.split("## Think notes vs actions (private vs public)\n")[1]
-    assert "**diverges** — mango: think “I doubt it” / action “Mango is fine”" in tva_block
+    assert "- [r2] **diverges** — mango: think “I doubt it” / action “Mango is fine”" in tva_block
     assert "_wrote no think notes_" in tva_block  # b has no judgment and none was expected
 
 
@@ -248,3 +249,10 @@ def test_the_controls_self_image_says_it_is_compared_with_its_seed():
     alpha, bea = block.split("### Bea (b)")
     assert "compared with its seed" not in alpha
     assert bea.lstrip().startswith("_control: compared with its seed, not its previous run_")
+
+
+def test_old_think_vs_act_points_without_round_still_render():
+    old = Judgment("think_vs_act", "r1", "a", "ok", {"points": [
+        {"relation": "agrees", "about": "pear", "think_quote": "x", "action_quote": "y"}]}, None, "claude-x", "p")
+    text = render_run(section(run=P2, process2=P2_SECTION, judgments=[old]))
+    assert "- **agrees** — pear: think “x” / action “y”" in text
