@@ -87,6 +87,7 @@ class Runner:
             if not self.store.has_seed_public(agent_id):
                 raise ValueError(f"control agent {agent_id} has no seed profile; run `bikeshed agents introduce {agent_id}`")
         # Reset before the run exists: a failed reset must not leave a run whose control agent kept its memory.
+        protected = self._protected(controls, agent_ids) if brief is not None else []
         name_restored = {agent_id: self.store.reset_to_seed(agent_id) for agent_id in controls}
         run_id = new_run_id()
         seed = secrets.randbits(32)
@@ -100,7 +101,7 @@ class Runner:
             )
             Board(self.conn, run_id).append(0, SYSTEM, "goal", {"goal": goal})
             if brief is not None:
-                save_briefs(self.conn, run_id, assign(brief, agent_ids, seed))
+                save_briefs(self.conn, run_id, assign(brief, agent_ids, seed, protected=protected))
         self._workspace(run_id)
         events = self._events(run_id)
         events.emit("run_started", run_id=run_id, goal=goal, agents=list(agent_ids))
@@ -109,6 +110,13 @@ class Runner:
             if not name_restored[agent_id]:
                 events.emit("control_reset_name_kept", agent=agent_id)
         return run_id
+
+    def _protected(self, controls: Sequence[str], agent_ids: Sequence[str]) -> list[str]:
+        """The run's control agents and their twins in the run: the pair a control comparison needs."""
+        if not controls:
+            return []
+        twins = self.store.twins()
+        return sorted({*controls, *(t for c in controls for t in twins.get(c, []) if t in agent_ids)})
 
     async def run(self, run_id: str) -> RunResult:
         row = self.conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()

@@ -134,3 +134,20 @@ async def test_a_briefed_call_without_conflicts_closes_the_run(community, script
     result = await runner.run(run_id)
     assert result.reason == "consensus"
     assert conn.execute("SELECT COUNT(*) FROM scorer_conflicts").fetchone()[0] == 0
+
+
+def test_start_protects_the_control_and_its_twin(community, runner_factory, monkeypatch):
+    from bikeshed import runner as runner_module
+    from bikeshed.briefs import BriefSpec, assign
+    from bikeshed.briefs import load as load_briefs
+
+    store, conn = community
+    store.create("d", "fake", "Temperament of a.", control=True)  # a's twin: same seed temperament
+    store.set_public("d", "Dee", "Dee headline", "I am Dee.")
+    store.save_seed_public("d")
+    spec = BriefSpec("Shared.", (), (("One.", ()), ("Two.", ())))
+    agents = ["a", "b", "c", "d"]
+    seed = next(s for s in range(1000) if not {"a", "d"} <= {b.agent_id for b in assign(spec, agents, s).private})
+    monkeypatch.setattr(runner_module.secrets, "randbits", lambda bits: seed)
+    run_id = runner_factory(store, conn, {}).start("G", agents, brief=spec)
+    assert {b.agent_id for b in load_briefs(conn, run_id).private} == {"a", "d"}

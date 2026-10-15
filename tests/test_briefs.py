@@ -89,3 +89,33 @@ def test_reveal_lists_every_brief_and_each_callout():
         "### Scorer call-outs\n- call #12: \"C-one.\" (Bea (b)'s private brief)\n"
         "- call #12: \"Use the list.\" (the shared brief)")
     assert reveal(EMPTY, [], who) == ""
+
+
+FIVE = BriefSpec("Shared.", (), tuple((f"Brief {i}.", ()) for i in range(1, 6)))
+SIX_AGENTS = ["a", "b", "c", "d", "e", "f"]
+
+
+def holders(briefs):
+    return {b.agent_id for b in briefs.private}
+
+
+def test_protected_members_always_hold_a_brief_when_there_are_too_few():
+    unprotected_misses = 0
+    for seed in range(200):
+        briefs = assign(FIVE, SIX_AGENTS, seed, protected=("e", "f"))
+        assert {"e", "f"} <= holders(briefs), seed
+        unprotected_misses += not {"e", "f"} <= holders(assign(FIVE, SIX_AGENTS, seed))
+    assert unprotected_misses > 0  # the plain shuffle does leave them out; the guard is what fixes it
+
+
+def test_protection_changes_nothing_when_everyone_holds_a_brief():
+    six = BriefSpec("Shared.", (), tuple((f"Brief {i}.", ()) for i in range(1, 7)))
+    for seed in range(50):
+        assert assign(six, SIX_AGENTS, seed, protected=("e", "f")) == assign(six, SIX_AGENTS, seed)
+
+
+def test_protection_keeps_the_assignment_when_protected_members_already_hold_briefs():
+    for seed in range(200):
+        plain = assign(FIVE, SIX_AGENTS, seed)
+        if {"e", "f"} <= holders(plain):
+            assert assign(FIVE, SIX_AGENTS, seed, protected=("e", "f")) == plain
