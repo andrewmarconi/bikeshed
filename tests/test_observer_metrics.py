@@ -222,3 +222,16 @@ def test_action_mix_counts_pre_actions_apart_from_turns(community):
     mix = action_mix(conn, closed_runs(conn)[0])
     assert mix["a"]["pre:private_message"] == 1 and mix["a"]["pre:write_file"] == 1
     assert mix["a"]["private_message"] == 1 and mix["a"]["write_file"] == 0 and mix["a"]["pass"] == 1
+
+
+def test_a_control_agents_own_updates_are_labelled(community):
+    store, conn = community
+    add_run(conn, "r1", created="2000-01-01T00:00:00+00:00")
+    store.create("e", "fake", "Seed.", control=True)
+    store.write_private("e", "self.md", "After one cycle.")
+    store.write_private("a", "self.md", "I changed.")
+    events = identity_events(conn, store, closed_runs(conn))
+    control = next(e for e in events if e.agent_id == "e" and e.kind == "self.md")
+    member = next(e for e in events if e.agent_id == "a" and e.kind == "self.md")
+    assert control.detail == "(control; reset before its next run)"
+    assert member.detail == ""

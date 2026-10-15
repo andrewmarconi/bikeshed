@@ -235,3 +235,16 @@ def test_summary_has_one_section_per_meeting_process():
     three = text.split("## Process 3\n")[1]
     assert "Alpha (a) → Bea (b): 2 runs" in two and "Bea (b) → Alpha (a)" not in two
     assert "Bea (b) → Alpha (a): 3 runs" in three and "Summed over all Process 3 runs" in three
+
+
+def self_image(agent):
+    return Judgment("self_image", "r1", agent, "ok", {"changes": [], "private_public_gap": "none",
+                                                      "gap_evidence": ""}, None, "claude-x", "p")
+
+
+def test_the_controls_self_image_says_it_is_compared_with_its_seed():
+    text = render_run(section(judgments=[self_image("a"), self_image("b")], controls=frozenset({"b"})))
+    block = text.split("## Self-image\n")[1]
+    alpha, bea = block.split("### Bea (b)")
+    assert "compared with its seed" not in alpha
+    assert bea.lstrip().startswith("_control: compared with its seed, not its previous run_")

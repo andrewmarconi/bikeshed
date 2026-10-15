@@ -151,6 +151,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
         raise ValueError(f"no closed run {run_id!r}")
     in_progress = m.open_runs(conn) + [f"{r} (post-run)" for r in unfinished]
     who = make_who({i: store.public(i) for i in store.ids()})
+    known = set(store.ids())
     answers = m.benchmark_answers(conn, runs, who)
     judge = None if judge_client is None else _judges(cfg, ostore, judge_client, analysis_clients or {}, retry_failed)
     note = judge_note if judge is None else None
@@ -174,6 +175,7 @@ async def observe(cfg: Config, *, run_id: str | None = None, judge_client: Model
             dimensions=m.dimension_scores(conn, run.id), process2=_process2_section(conn, run, who, out_dir, written),
             rulings=sc.rulings(conn, run.id), awards=sc.awards(conn, run.id),
             briefs=pb.section(conn, run, who, judgments),
+            controls=frozenset(a for a in run.agent_ids if a in known and store.record(a).control),
         )
         path = out_dir / "runs" / f"{run.id}.md"
         path.parent.mkdir(parents=True, exist_ok=True)
