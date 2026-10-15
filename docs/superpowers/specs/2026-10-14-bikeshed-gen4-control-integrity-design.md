@@ -44,7 +44,7 @@ There's no override flag. `abandon` remains the way out.
 
 ### Its own standing (fix 4)
 
-In `view.collect_inputs`, when the viewing agent is a control, its own id is left out of `reputations`, `dimension_scores` and `points`. Its member line then renders like a member with no reviews and no Scorer points, which is how it looked at its seed. Every other member, and every other member's view of the control, is unchanged.
+In `view.collect_inputs`, when the viewing agent is a control, its own entries are replaced with what a new member has: `reputations[own] = Reputation(None, 0)` (rendered "no reviews yet"), `dimension_scores[own] = []`, and its own id is dropped from `points` (rendered "0 Scorer points"). Its member line then reads exactly as it did at its seed. Dropping the reputation entry instead would leave out "no reviews yet" and make the line look different from any other new member's. Every other member, and every other member's view of the control, is unchanged.
 
 `points` was not in `gen4-fixes.md`. It's the same leak: Scorer points build up across runs and survive the reset (`view.py:189`).
 
@@ -64,7 +64,7 @@ A helper `is_keep(value) -> bool` in `postrun/replies.py` is true for `None`, an
 In the update step (`postrun/cycle.py`):
 
 - `lessons`, `self_description`, `temperament`, `peer_notes`: a keep value leaves the file as it is. (`lessons` is required in the reply; "null" there keeps the current lessons rather than writing "null".)
-- `public_profile`: each field is checked on its own. A keep value takes the current profile's value for that field; if every field is a keep value, the profile isn't written. `pronouns` already treats `None` as keep and now treats the other keep values the same way. A reply that names a new value for some fields and "null" for others writes the merge.
+- `public_profile`: each field is checked on its own. A keep value takes the current profile's value for that field; if every field is a keep value, the profile isn't written. `pronouns` is the exception: the prompt says an empty value means "rather not say", so for pronouns only `None` and `"null"` keep the current value, and `""` still clears it. A reply that names a new value for some fields and "null" for others writes the merge.
 - `PublicReply`'s fields become optional (`str | None = None`) so a model can leave one out. `PublicReply` is used only by the update step; `agents introduce` and `checkin` have their own reply shapes and are unchanged. The merged profile still goes through `PublicProfile`'s validators, so the saved name, headline and introduction can never end up empty.
 
 `prompts/update_request.md` is unchanged. "Use null for any you keep" was right; the harness misread it.
@@ -72,7 +72,7 @@ In the update step (`postrun/cycle.py`):
 ## Brief assignment guard (fix 7)
 
 - `twins()` moves from `observer/metrics.py` to `ProfileStore.twins() -> dict[str, list[str]]`, unchanged. The Observer calls the store method.
-- `briefs.assign(spec, agent_ids, seed, protected=())` keeps its seeded shuffle. Afterwards, while any protected member is past the last brief slot, it swaps places with the last unprotected member that holds a brief. Protected members keep their relative order, and so does everyone else.
+- `briefs.assign(spec, agent_ids, seed, protected=())` keeps its seeded shuffle. Afterwards, each protected member past the last brief slot, taken in shuffled order, swaps places with the last unprotected member that still holds a brief.
 - `Runner.start` passes `protected` = the run's controls plus their twins in the run.
 - With at least as many briefs as members (which, once the sixth briefs are written, is true of every briefed goal), the guard never fires and the assignment is exactly what it is today. If there are more protected members than briefs, the guard places as many as it can.
 
@@ -84,7 +84,7 @@ Done by hand in `lab/` and in the repo's docs before the first run:
 
 - `lab/temperaments/f.md`: an exact copy of `e.md`. `init-agents.sh` is unchanged.
 - `lab/bikeshed.toml`: `view_entries = 18`.
-- `docs/goals/briefed-goals.toml`: a sixth private brief for `picnic-briefed`, `offsite-briefed`, `film-night` and `office-thermostat`. Text only, no constraint, a fact about the member's situation (spec 2026-10-14 goal briefs, "Writing briefs"), drafted for Andrew to review.
+- `docs/goals/briefed-goals.toml`: a sixth private brief for `picnic-briefed`, `offsite-briefed`, `film-night` and `office-thermostat`. Text only, no constraint, a fact about the member's situation (spec 2026-10-14 goal briefs, "Writing briefs"), drafted for Andrew to review. The goals that count the group say six: `offsite-briefed` ("for the six of you"; the venue budget becomes $1,920, keeping the $320-per-person limit that decides which venues fit) and `office-thermostat` ("The six of you"). `tests/test_briefed_goals_file.py` checks for a six-member lab.
 - `docs/superpowers/specs/2026-10-14-bikeshed-goal-briefs-design.md`: "generation 1" → "generation 3"; archive path `lab/archive/generation-{x}/` → `lab/generation-{x}/`.
 - The generation 4 model (fix 18): chosen by Andrew before the first run, recorded in the generation's notes. Not needed for anything in this spec.
 
