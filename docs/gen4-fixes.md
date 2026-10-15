@@ -124,6 +124,8 @@ Ordered by how badly each one breaks the comparison.
 
    That's a new run mode, not a patch.
 
+   *Done in sub-project D (`2026-10-15-bikeshed-gen4-baseline-run-design.md`):* `bikeshed baseline <run-id>` re-runs a closed run's goal, `[run]` settings, seed and brief deal in a scratch room under `lab/baselines/`, with fresh introductions and no norms, library, history or post-run. The Observer adds a "## Baseline" section to the source run's report and "## Baseline vs community" to the summary. A baseline can be made any time after its source run closes, as long as the backends still name the same models.
+
 ### Measurement
 
 7. **Make the control's brief comparable.** Process 3 deals the control a private brief like any other member, so the control's private facts change from run to run. Record the control's brief slot and compare like with like, or always give it the same slot.
@@ -242,7 +244,7 @@ Each sub-project gets its own spec, plan and implementation. Anything that chang
 | B | Agent environment | Fixes 10, 11, 12, 13 (decision) | Yes | **Done** (merged 2026-10-15, `8af1315`) |
 | C1 | Measurement corrections | Fixes 8, 9, 14 (`think_vs_act`, `private_public`), 15, 16 | No | **Done** (merged 2026-10-15, `49871f7`) |
 | C2 | New measurements | Fixes 7 (twin's brief slot), 14 (copying, credit accuracy, rule-gaming), 17 (norm overlap), library reuse from B | No | **Done** (merged 2026-10-15, `54a29a8`) |
-| D | Baseline run | Fix 6 | No (separate scratch community) | Before the first pizza benchmark of generation 4 |
+| D | Baseline run | Fix 6 | No (separate scratch community) | **In progress** |
 | E | Setup and procedure | Fix 0 (`f.md`), 18, sixth briefs, `view_entries` | Config and goals only | Repo side done in A; sixth briefs approved and model chosen (Qwen3 14B, thinking off) 2026-10-15; lab edits are Andrew's |
 
 F comes straight after A, ahead of B:
