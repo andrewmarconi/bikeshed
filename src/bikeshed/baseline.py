@@ -1,6 +1,6 @@
 """A baseline run: a closed community run's goal, settings, seed and brief deal, repeated in a fresh room of seed
-agents with no norms, no library, no history and no post-run. It lives in its own scratch community under
-`<lab>/baselines/` and never writes to the generation's."""
+agents with no norms, no library, no history and no post-run. A model variant is the same with every agent on another
+backend. Each lives in its own scratch community under `<lab>/baselines/` and never writes to the generation's."""
 
 import json
 import sqlite3
@@ -90,15 +90,23 @@ def _changes(then: dict[str, Any], now: dict[str, Any]) -> list[str]:
             if k not in MACHINE_KEYS and k != "api_key" and now.get(k) != then[k]]
 
 
-def check_backends(source: Source, cfg: Config) -> None:
-    """Every agent runs on the backend it ran on then, with the same settings; and the Scorer is the same one."""
-    for agent_id in source.agent_ids:
-        name = source.backends[agent_id]
-        backend = cfg.models.get(name)
-        if backend is None:
-            raise BaselineError(f"{agent_id} ran on backend {name!r}, which is no longer in the config")
-        if changed := _changes(source.specs[agent_id], backend.model_dump(mode="json")):
-            raise BaselineError(f"backend {name!r} changed since run {source.run_id}: {'; '.join(changed)}")
+def check_backends(source: Source, cfg: Config, variant: str | None = None) -> None:
+    """Every agent runs on the backend it ran on then, with the same settings, or, for a variant, every agent runs on
+    `variant`; and the Scorer is the same one either way, so rulings stay comparable."""
+    if variant is not None:
+        if variant not in cfg.models:
+            raise BaselineError(f"backend {variant!r} isn't in the config")
+        if all(source.backends[a] == variant for a in source.agent_ids):
+            raise BaselineError(f"every agent ran on {variant!r} in run {source.run_id}: that's a plain baseline, "
+                                "so drop --backend")
+    else:
+        for agent_id in source.agent_ids:
+            name = source.backends[agent_id]
+            backend = cfg.models.get(name)
+            if backend is None:
+                raise BaselineError(f"{agent_id} ran on backend {name!r}, which is no longer in the config")
+            if changed := _changes(source.specs[agent_id], backend.model_dump(mode="json")):
+                raise BaselineError(f"backend {name!r} changed since run {source.run_id}: {'; '.join(changed)}")
     if source.scorer is None:
         return
     if cfg.scorer.judge != source.scorer:
@@ -117,11 +125,13 @@ def home(cfg: Config) -> Path:
     return cfg.community_dir.parent / "baselines"
 
 
-def new_directory(home_dir: Path, run_id: str) -> Path:
+def new_directory(home_dir: Path, run_id: str, variant: bool = False) -> Path:
+    """`<run-id>-b<k>` for a baseline, `<run-id>-v<k>` for a model variant, each counting up from 1."""
+    letter = "v" if variant else "b"
     k = 1
-    while (home_dir / f"{run_id}-b{k}").exists():
+    while (home_dir / f"{run_id}-{letter}{k}").exists():
         k += 1
-    return home_dir / f"{run_id}-b{k}"
+    return home_dir / f"{run_id}-{letter}{k}"
 
 
 def scratch_config(cfg: Config, directory: Path, settings: RunSettings) -> Config:
@@ -134,14 +144,16 @@ def scratch_config(cfg: Config, directory: Path, settings: RunSettings) -> Confi
     return scratch
 
 
-def prepare(directory: Path, source: Source) -> ProfileStore:
-    """A fresh community holding the source run's agents as seeds: first temperament, same backend, no profile yet."""
+def prepare(directory: Path, source: Source, variant: str | None = None) -> ProfileStore:
+    """A fresh community holding the source run's agents as seeds: first temperament, no profile yet, each on the
+    backend it ran on, or every one on `variant`."""
     store = ProfileStore(directory / "community")
     connect(directory / "community" / "community.db").close()
     (directory / "runs").mkdir(parents=True, exist_ok=True)
     for agent_id in source.agent_ids:
-        store.create(agent_id, source.backends[agent_id], source.temperaments[agent_id])
-    _write_info(directory, {"source_run": source.run_id, "created_at": now_iso()})
+        store.create(agent_id, variant or source.backends[agent_id], source.temperaments[agent_id])
+    info = {"source_run": source.run_id, "created_at": now_iso()}
+    _write_info(directory, info | ({"backend": variant} if variant else {}))
     return store
 
 

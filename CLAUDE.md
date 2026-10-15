@@ -43,7 +43,7 @@ uv run bikeshed run "<goal>" | --next    # --next = queue (or benchmark when due
 uv run bikeshed run --resume <run-id>    # paused or interrupted run
 uv run bikeshed abandon <run-id> [-y]    # close for good; entries kept, no post-run
 uv run bikeshed postrun <run-id>         # start/resume/retry the post-run cycle
-uv run bikeshed baseline <run-id> | --resume <run-id>-b<k>   # same goal, settings, seed, briefs in a fresh room (lab/baselines/)
+uv run bikeshed baseline <run-id> [--backend <b>] | --resume <dir>   # same goal, settings, seed, briefs in a fresh room (lab/baselines/<run-id>-b<k>; --backend = model variant, -v<k>)
 
 # read-only (never reaches agents)
 uv run bikeshed watch [run-id]           # Textual TUI, latest run by default

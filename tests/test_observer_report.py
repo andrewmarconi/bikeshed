@@ -300,16 +300,16 @@ def test_summary_without_norm_overlap():
             in render_summary(summary_section()))
 
 
-def _baseline(source="r1"):
+def _baseline(source="r1", name="r1-b1", backend=None):
     run = RunInfo("x1", "Pick a fruit.", "best-fruit", "unsettled", False, "consensus", ("a", "b"), "t", "t")
-    return Baseline("r1-b1", source, run, 2, 1, 1, 0, BenchmarkAnswer("x1", True, "Mango."),
-                    {"a": Counter(propose=1), "b": Counter(vote=1)}, 3)
+    return Baseline(name, source, run, 2, 1, 1, 0, BenchmarkAnswer("x1", True, "Mango."),
+                    {"a": Counter(propose=1), "b": Counter(vote=1)}, 3, backend)
 
 
 def test_run_report_shows_its_baselines():
     text = render_run(section(baselines=[_baseline()]))
     block = text.split("## Baseline\n")[1].split("\n## ")[0]
-    assert "| r1-b1 | consensus | 2 | 1 | 1/0 | 3 |" in block and "Mango." in block
+    assert "| r1-b1 | as run | consensus | 2 | 1 | 1/0 | 3 |" in block and "Mango." in block
 
 
 def test_summary_compares_baseline_with_control_and_twin():
@@ -319,4 +319,18 @@ def test_summary_compares_baseline_with_control_and_twin():
     block = text.split("## Baseline vs community\n")[1].split("\n## ")[0]
     assert "### best-fruit" in block and "Pear" in block and "Mango." in block
     assert "| community | Alpha (a) (control) | 2 |" in block
-    assert "| r1-b1 | a | 1 |" in block
+    assert "| r1-b1 (baseline) | a | 1 |" in block
+
+
+def test_reports_label_a_variant():
+    variant = _baseline(name="r1-v1", backend="qwen3-14b")
+    run_text = render_run(section(baselines=[_baseline(), variant]))
+    block = run_text.split("## Baseline\n")[1].split("\n## ")[0]
+    assert "| r1-v1 | qwen3-14b | consensus |" in block and "| r1-b1 | as run | consensus |" in block
+    assert "### r1-v1 answer (variant (qwen3-14b))" in block and "A variant runs every agent" in block
+    summary = render_summary(summary_section(
+        twins={"a": ["b"]}, baselines={"r1": [_baseline(), variant]},
+        rooms={"r1": (RUN, BenchmarkAnswer("r1", False, "- Alpha (a): Pear"), {"a": Counter(propose=2)})}))
+    block = summary.split("## Baseline vs community\n")[1].split("\n## ")[0]
+    assert "- r1-v1 (variant (qwen3-14b)): consensus, 2 rounds" in block and "- r1-b1 (baseline): consensus" in block
+    assert "| r1-v1 (variant (qwen3-14b)) | a | 1 |" in block

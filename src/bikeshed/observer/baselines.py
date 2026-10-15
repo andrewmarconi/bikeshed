@@ -1,4 +1,5 @@
-"""Baseline runs, read only: each scratch room under <lab>/baselines/ that mirrors a closed community run."""
+"""Baseline runs and model variants, read only: each scratch room under <lab>/baselines/ that mirrors a closed community
+run."""
 
 import tomllib
 from collections import Counter
@@ -25,6 +26,11 @@ class Baseline:
     answer: m.BenchmarkAnswer
     mix: dict[str, Counter]
     copied: int
+    backend: str | None = None   # a model variant's backend; None for a plain baseline
+
+    @property
+    def label(self) -> str:
+        return f"variant ({self.backend})" if self.backend else "baseline"
 
 
 def find(home: Path) -> list[Baseline]:
@@ -52,5 +58,5 @@ def find(home: Path) -> list[Baseline]:
         out.append(Baseline(directory.name, info["source_run"], run, rounds, calls,
                             sum(r.accepted for r in rulings), sum(not r.accepted for r in rulings),
                             m.run_answer(conn, run, who), m.action_mix(conn, run),
-                            len(copies(conn, run, directory / "runs"))))
+                            len(copies(conn, run, directory / "runs")), info.get("backend")))
     return out

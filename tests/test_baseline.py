@@ -161,3 +161,73 @@ def test_check_backends_refuses_a_different_scorer(community, tmp_path):
     cfg.scorer.judge = "local"
     with pytest.raises(BaselineError, match="Scorer"):
         check_backends(read_source(conn, store, "r1"), cfg)
+
+
+def _think(cfg):
+    cfg.models["think"] = cfg.models["local"].model_copy(update={"thinking": True})
+    return cfg
+
+
+def test_variant_check_skips_agent_backends_but_keeps_the_scorer(community, tmp_path):
+    store, conn = community
+    _closed(conn)
+    _provenance(conn, "r1", "start", {}, scorer=("judge", {"kind": "openai", "base_url": "http://x/v1", "model": "J"}))
+    cfg = _think(_cfg(tmp_path))
+    cfg.models["judge"] = cfg.models["local"].model_copy(update={"model": "J"})
+    cfg.scorer.judge = "judge"
+    cfg.models["local"].model = "Other-Model"                  # the source backend changed since
+    src = read_source(conn, store, "r1")
+    with pytest.raises(BaselineError, match="Other-Model"):
+        check_backends(src, cfg)                               # a plain baseline is refused
+    check_backends(src, cfg, "think")                          # a variant isn't
+    cfg.models["judge"] = cfg.models["local"].model_copy(update={"model": "Other-Judge"})
+    with pytest.raises(BaselineError, match="Scorer"):
+        check_backends(src, cfg, "think")
+
+
+def test_variant_check_refuses_a_missing_backend(community, tmp_path):
+    store, conn = community
+    _closed(conn)
+    _provenance(conn, "r1", "start", {})
+    with pytest.raises(BaselineError, match="'nope' isn't in the config"):
+        check_backends(read_source(conn, store, "r1"), _cfg(tmp_path), "nope")
+
+
+def test_variant_check_refuses_the_backend_every_agent_used(community, tmp_path):
+    store, conn = community
+    _closed(conn)
+    _provenance(conn, "r1", "start", {})                       # a, b and c all on "local"
+    with pytest.raises(BaselineError, match="plain baseline, so drop --backend"):
+        check_backends(read_source(conn, store, "r1"), _cfg(tmp_path), "local")
+
+
+def test_variant_check_allows_a_partly_matching_source(community, tmp_path):
+    store, conn = community
+    _closed(conn)
+    _provenance(conn, "r1", "start", {})
+    src = read_source(conn, store, "r1")
+    src.backends["a"] = "think"                                # a ran on think; b and c on local
+    check_backends(src, _think(_cfg(tmp_path)), "think")
+
+
+def test_new_directory_counts_variants_apart_from_baselines(tmp_path):
+    home = tmp_path / "baselines"
+    assert new_directory(home, "r1", variant=True).name == "r1-v1"
+    (home / "r1-v1").mkdir(parents=True)
+    assert new_directory(home, "r1", variant=True).name == "r1-v2"
+    assert new_directory(home, "r1").name == "r1-b1"
+
+
+def test_prepare_variant_records_its_backend(community, tmp_path):
+    store, conn = community
+    _closed(conn)
+    _provenance(conn, "r1", "start", {})
+    directory = new_directory(tmp_path / "baselines", "r1", variant=True)
+    scratch = prepare(directory, read_source(conn, store, "r1"), "think")
+    assert {scratch.record(a).model for a in ("a", "b", "c")} == {"think"}
+    assert read_info(directory)["backend"] == "think"
+    record_run(directory, "x123")                              # must keep the backend it found
+    info = read_info(directory)
+    assert (info["backend"], info["baseline_run"], info["source_run"]) == ("think", "x123", "r1")
+    plain = prepare(new_directory(tmp_path / "baselines", "r1"), read_source(conn, store, "r1"))
+    assert plain.record("a").model == "local" and "backend" not in read_info(tmp_path / "baselines" / "r1-b1")

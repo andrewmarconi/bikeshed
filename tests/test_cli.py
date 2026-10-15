@@ -735,3 +735,80 @@ def test_resume_keeps_introductions_that_succeeded(project, monkeypatch):
     monkeypatch.setattr(cli, "make_client", working)
     assert invoke("baseline", "--resume", f"{run_id}-b1", "-c", config).exit_code == 0
     assert (home / "a" / "public.toml").read_text() == kept and (home / "b" / "public.toml").exists()
+
+
+def _recording(monkeypatch):
+    """Wraps cli.make_client so each call's backend model name is recorded."""
+    used, working = [], cli.make_client
+
+    def make(backend, retries):
+        used.append(backend.model)
+        return working(backend, retries)
+
+    monkeypatch.setattr(cli, "make_client", make)
+    return used
+
+
+def test_variant_runs_every_agent_on_the_given_backend(project, monkeypatch):
+    from bikeshed.db import connect
+    from bikeshed.profiles import ProfileStore
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    run_id = run_id_from(invoke("run", "Pick a colour", "--max-rounds", "2", "-c", config).output)
+    before = _snapshot(tmp_path)
+    used = _recording(monkeypatch)
+    result = invoke("baseline", run_id, "--backend", "claude", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert f"variant {run_id}-v1 closed" in result.output and f"baseline {run_id}-v1" not in result.output
+    assert _snapshot(tmp_path) == before
+    home = tmp_path / "baselines" / f"{run_id}-v1"
+    assert 'backend = "claude"' in (home / "baseline.toml").read_text()
+    assert {ProfileStore(home / "community").record(a).model for a in ("a", "b")} == {"claude"}
+    assert used[:2] == ["haiku", "haiku"]                       # both introductions through the variant
+    scratch = connect(home / "community" / "community.db")
+    models = json.loads(scratch.execute("SELECT models FROM run_provenance WHERE phase = 'start'").fetchone()[0])
+    assert {m["backend"] for m in models.values()} == {"claude"}
+    assert invoke("baseline", run_id, "--backend", "claude", "-c", config).exit_code == 0
+    assert (tmp_path / "baselines" / f"{run_id}-v2").is_dir()
+    assert invoke("baseline", run_id, "-c", config).exit_code == 0
+    assert (tmp_path / "baselines" / f"{run_id}-b1").is_dir()
+
+
+def test_variant_refusals(project):
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    run_id = run_id_from(invoke("run", "Pick a colour", "--max-rounds", "2", "-c", config).output)
+    missing = invoke("baseline", run_id, "--backend", "nope", "-c", config)
+    assert missing.exit_code == 1 and "'nope' isn't in the config" in missing.output
+    same = invoke("baseline", run_id, "--backend", "local", "-c", config)
+    assert same.exit_code == 1 and "plain baseline, so drop --backend" in same.output
+    both = invoke("baseline", "--resume", f"{run_id}-v1", "--backend", "claude", "-c", config)
+    assert both.exit_code == 1 and "drop --backend" in both.output
+    assert not (tmp_path / "baselines").exists()
+
+
+def test_variant_runs_after_the_source_backend_changed(project):
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    run_id = run_id_from(invoke("run", "Pick a colour", "--max-rounds", "2", "-c", config).output)
+    config.write_text(config.read_text().replace('model = "CHANGE-ME"', 'model = "Other-Model"', 1))
+    assert invoke("baseline", run_id, "-c", config).exit_code == 1
+    assert invoke("baseline", run_id, "--backend", "claude", "-c", config).exit_code == 0
+
+
+def test_a_paused_variant_resumes_on_its_backend(project, monkeypatch):
+    from bikeshed.db import connect
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    run_id = run_id_from(invoke("run", "Pick a colour", "--max-rounds", "2", "-c", config).output)
+    working = cli.make_client
+    monkeypatch.setattr(cli, "make_client", lambda backend, retries: _Failing(
+        working(backend, retries), lambda system, first: re.search(r"^# Round", first, re.M) is not None))
+    paused = invoke("baseline", run_id, "--backend", "claude", "-c", config)
+    assert paused.exit_code == 0 and f"variant {run_id}-v1 paused" in paused.output, paused.output
+    monkeypatch.setattr(cli, "make_client", working)
+    resumed = invoke("baseline", "--resume", f"{run_id}-v1", "-c", config)
+    assert resumed.exit_code == 0 and f"variant {run_id}-v1 closed" in resumed.output, resumed.output
+    scratch = connect(tmp_path / "baselines" / f"{run_id}-v1" / "community" / "community.db")
+    models = json.loads(scratch.execute("SELECT models FROM run_provenance WHERE phase = 'resume'").fetchone()[0])
+    assert {m["backend"] for m in models.values()} == {"claude"}
