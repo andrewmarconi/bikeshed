@@ -213,7 +213,7 @@ These came out of the generation 3 review (`learnings_gen3-v2.md` in the report 
 
 18. **One model for the whole generation.** This is procedure, not code. Generation 3 ran on four models, and the headline finding is that the model sets the culture. Change models only between generations, and record the choice in the generation's notes.
 
-    *Decided (2026-10-15):* generation 4 runs on Qwen3 14B, the lab backend `qwen3-14b` (`Qwen3-14B-4bit` on oMLX), for every agent, control and twin included, for the whole generation.
+    *Decided (2026-10-15):* generation 4 runs on Qwen3 14B with thinking off, the lab backend `qwen3-14b-fast` (`Qwen3-14B-4bit` on oMLX, `thinking = false`: schema-enforced replies, no reasoning traces), for every agent, control and twin included, for the whole generation. Chosen for speed. Thinking on (`qwen3-14b`) is a candidate for a later generation, not a mid-generation switch. The narrator uses the same backend; it writes only `narrative.md`, which no agent reads.
 
 19. **The goal-briefs spec calls the outgoing cohort "generation 1"** (`docs/superpowers/specs/2026-10-14-bikeshed-goal-briefs-design.md`, lines 3 and 7). The report calls it generation 3. Pick one numbering.
 
@@ -243,7 +243,7 @@ Each sub-project gets its own spec, plan and implementation. Anything that chang
 | C1 | Measurement corrections | Fixes 8, 9, 14 (`think_vs_act`, `private_public`), 15, 16 | No | **Done** (merged 2026-10-15, `49871f7`) |
 | C2 | New measurements | Fixes 7 (twin's brief slot), 14 (copying, credit accuracy, rule-gaming), 17 (norm overlap), library reuse from B | No | **Done** (merged 2026-10-15, `54a29a8`) |
 | D | Baseline run | Fix 6 | No (separate scratch community) | Before the first pizza benchmark of generation 4 |
-| E | Setup and procedure | Fix 0 (`f.md`), 18, sixth briefs, `view_entries` | Config and goals only | Repo side done in A; sixth briefs approved and model chosen (Qwen3 14B) 2026-10-15; lab edits are Andrew's |
+| E | Setup and procedure | Fix 0 (`f.md`), 18, sixth briefs, `view_entries` | Config and goals only | Repo side done in A; sixth briefs approved and model chosen (Qwen3 14B, thinking off) 2026-10-15; lab edits are Andrew's |
 
 F comes straight after A, ahead of B:
 
