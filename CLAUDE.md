@@ -58,7 +58,7 @@ uv run bikeshed export [--run <id>...] [--since YYYY-MM-DD] [--out <dir>]   # JS
 
 A run records code provenance (git HEAD and whether the tree is dirty, untracked files included), and `prompts.render()` reads prompt files from disk on every turn. So while a run is in progress:
 
-- Check `pgrep -fl "bikeshed (run|postrun)"` before committing, merging, or editing anything in the main checkout.
+- Check `pgrep -fl "bikeshed (run|postrun|baseline)"` before committing, merging, or editing anything in the main checkout.
 - If a run is live, work in a sibling worktree (`../Bikeshed-<name>`), not under the repo (`.worktrees/` is not gitignored).
 - Editing `lab/bikeshed.toml` is safe; it is re-read at the next start/resume and recorded then.
 - Don't run `omlx restart`; Andrew restarts oMLX from its app.
