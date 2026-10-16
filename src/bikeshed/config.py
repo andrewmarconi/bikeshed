@@ -15,6 +15,7 @@ class OpenAIBackend(BaseModel):
     context_window: int = Field(32768, gt=0)
     json_schema: bool = True
     thinking: bool | None = None  # None leaves it to the server's per-model setting
+    service_tier: Literal["auto", "default", "flex", "priority"] | None = None  # Bedrock pricing tier; None omits it
     timeout_s: float = Field(300.0, gt=0)
 
 

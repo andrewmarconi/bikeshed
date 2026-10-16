@@ -26,6 +26,8 @@ class OpenAICompatClient:
             kwargs["response_format"] = {"type": "json_schema", "json_schema": {"name": "reply", "schema": json_schema}}
         if self.backend.thinking is not None:
             kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": self.backend.thinking}}
+        if self.backend.service_tier is not None:
+            kwargs["service_tier"] = self.backend.service_tier
         try:
             # A total deadline: oMLX sends keepalive bytes while a request waits, which resets httpx's read timeout.
             response = await asyncio.wait_for(
