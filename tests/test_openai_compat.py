@@ -4,6 +4,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+from pydantic import ValidationError
 
 from bikeshed.config import OpenAIBackend
 from bikeshed.models.base import ModelError
@@ -105,6 +106,21 @@ async def test_thinking_sent_as_chat_template_kwarg(server, thinking):
 async def test_thinking_drops_the_schema_because_oMLX_skips_thinking_under_one(server):
     await OpenAICompatClient(backend(server, thinking=True)).chat("S", [], json_schema={"type": "object"})
     assert "response_format" not in server.requests[0][1]
+
+
+async def test_service_tier_left_to_server_by_default(server):
+    await OpenAICompatClient(backend(server)).chat("S", [])
+    assert "service_tier" not in server.requests[0][1]
+
+
+async def test_service_tier_sent_when_set(server):
+    await OpenAICompatClient(backend(server, service_tier="flex")).chat("S", [])
+    assert server.requests[0][1]["service_tier"] == "flex"
+
+
+def test_service_tier_rejects_unknown_tiers():
+    with pytest.raises(ValidationError):
+        OpenAIBackend(kind="openai", model="m", service_tier="cheap")
 
 
 class _AwkwardHandler(BaseHTTPRequestHandler):

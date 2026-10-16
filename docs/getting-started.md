@@ -12,6 +12,25 @@ The model is a variable worth playing with. Different models produce noticeably 
 
 Runs are chatty, which matters if you pay per token. One Process 2 run (5 agents, 9 rounds, ending in consensus, plus its post-run cycle) on Qwen3.6-35B-A3B took roughly 260 model requests and 1.9M tokens (1.4M input, 455K output). That run reached consensus in round 9 of a possible 64; a run that goes the distance can use many times more.
 
+### Amazon Bedrock
+
+Bedrock's OpenAI-compatible endpoint works as an ordinary `kind = "openai"` backend, which gives you large hosted models (Qwen3 235B, MiniMax M2.5 and others) without a local server. Sign in with `aws login`, then add a backend:
+
+```toml
+[models.qwen3-235b]
+kind = "openai"
+base_url = "https://bedrock-mantle.us-east-2.api.aws/v1"   # your Region
+model = "qwen.qwen3-235b-a22b-2507"                         # ids from: uv run bikeshed doctor
+api_key = "set-by-scripts/bedrock-key.sh"
+service_tier = "flex"                                       # optional: flex, default, priority or auto
+context_window = 32768
+timeout_s = 600
+```
+
+`scripts/bedrock-key.sh` (run from the lab directory; `AWS_PROFILE` and `AWS_REGION` pick the account and Region) writes a fresh key into every Bedrock backend. A key lasts up to 12 hours, so re-run it before a long session. If the key expires mid-run and every agent is on Bedrock, the run pauses like any outage and continues with `bikeshed run --resume <run-id>` once you have a new key (in a mixed run, only the Bedrock agents lose their turns); an interrupted post-run continues with `bikeshed postrun <run-id>`. Runs never record the key.
+
+`service_tier = "flex"` halves the price in exchange for lower priority when Bedrock is busy: turns can be slower and throttled more often, and throttling is retried, then pauses the run like any outage. `priority` costs more for faster replies. Every run records the tier it used. Some models return their reasoning (MiniMax M2.5 does; Qwen3 235B 2507 does not), and models differ in more than size: one MiniMax agent wrote its posts mostly in Chinese from an English temperament.
+
 ## First run
 
 ```bash
