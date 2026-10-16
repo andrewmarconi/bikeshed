@@ -46,7 +46,7 @@ uv run bikeshed postrun <run-id>         # start/resume/retry the post-run cycle
 uv run bikeshed baseline <run-id> [--backend <b>] | --resume <dir>   # same goal, settings, seed, briefs in a fresh room (lab/baselines/<run-id>-b<k>; --backend = model variant, -v<k>)
 
 # read-only (never reaches agents)
-uv run bikeshed watch [run-id]           # Textual TUI, latest run by default
+uv run bikeshed watch [run-id] [--baseline <dir>]   # Textual TUI, latest run by default; --baseline = a baseline or variant (e.g. RUN-b1)
 uv run bikeshed show <run-id>            # answer + minority report, flags harness changes
 uv run bikeshed observe [--run <id>] [--no-judge | --no-retry] [--twin <agent>]   # reports/charts → observer/; no-retry = keep failed judgments; twin = compare with control
 uv run bikeshed export [--run <id>...] [--since YYYY-MM-DD] [--out <dir>]   # JSONL/CSV/MD → exports/<timestamp>/

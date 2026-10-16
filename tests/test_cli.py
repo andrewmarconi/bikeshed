@@ -830,3 +830,30 @@ def test_a_variant_refuses_to_resume_on_a_changed_backend(project, monkeypatch):
     refused = invoke("baseline", "--resume", f"{run_id}-v1", "-c", config)
     assert refused.exit_code == 1, refused.output
     assert "backend 'think' changed since this variant started: thinking was True, now False" in refused.output
+
+
+def test_watch_opens_a_baseline_run(project, monkeypatch):
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    run_id = run_id_from(invoke("run", "Pick a colour", "--max-rounds", "2", "-c", config).output)
+    assert invoke("baseline", run_id, "-c", config).exit_code == 0
+    info = (tmp_path / "baselines" / f"{run_id}-b1" / "baseline.toml").read_text()
+    b_run = re.search(r'baseline_run = "(\S+)"', info).group(1)
+    opened = []
+    monkeypatch.setattr(cli.WatchApp, "run", lambda self: opened.append(self.watcher.state.run_id))
+    result = invoke("watch", "--baseline", f"{run_id}-b1", "-c", config)
+    assert result.exit_code == 0, result.output
+    assert opened == [b_run]
+
+
+def test_watch_a_baseline_says_when_it_is_still_introducing_or_missing(project, monkeypatch):
+    tmp_path, config = project
+    make_agents(config, "a", "b")
+    run_id = run_id_from(invoke("run", "Pick a colour", "--max-rounds", "2", "-c", config).output)
+    monkeypatch.setattr(cli, "make_client", lambda backend, retries: FakeModel(["not json"] * 9))
+    assert invoke("baseline", run_id, "--backend", "claude", "-c", config).exit_code == 1  # introductions fail
+    waiting = invoke("watch", "--baseline", f"{run_id}-v1", "-c", config)
+    assert waiting.exit_code == 1
+    assert f"variant {run_id}-v1 is still introducing its agents" in waiting.output
+    missing = invoke("watch", "--baseline", "nope-b1", "-c", config)
+    assert missing.exit_code == 1 and "no baseline nope-b1" in missing.output
