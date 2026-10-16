@@ -41,4 +41,4 @@ async def introduce(store: ProfileStore, agent_id: str, client: ModelClient) -> 
             {"role": "assistant", "content": result.text},
             {"role": "user", "content": correction_request(problem)},
         ]
-    raise ProfileError(f"{agent_id} did not produce a valid introduction")
+    raise ProfileError(f"{agent_id} did not produce a valid introduction: {problem}")
