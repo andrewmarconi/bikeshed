@@ -602,10 +602,23 @@ def export_data(
 @app.command()
 def watch(
     run_id: Annotated[str | None, typer.Argument(help="Run to watch (default: the latest).")] = None,
+    baseline: Annotated[str | None, typer.Option(
+        help="Watch a baseline or variant instead (its directory name, e.g. RUN-b1 or RUN-v1).")] = None,
     config: ConfigOpt = DEFAULT_PATH,
 ) -> None:
     """Live, read-only view of a run in this terminal (q to quit, f to toggle following)."""
     cfg = _load(config)
+    if baseline:
+        directory = bl.home(cfg) / baseline
+        try:
+            info = bl.read_info(directory)
+        except bl.BaselineError:
+            _fail(f"no baseline {baseline} under {bl.home(cfg)}")
+        if "baseline_run" not in info:
+            kind = "variant" if info.get("backend") else "baseline"
+            _fail(f"{kind} {baseline} is still introducing its agents; its run starts once they all have")
+        cfg = bl.scratch_config(cfg, directory, cfg.run)
+        run_id = run_id or info["baseline_run"]
     try:
         watcher = open_watcher(cfg, run_id)
     except (ValueError, sqlite3.OperationalError) as exc:
