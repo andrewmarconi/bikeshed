@@ -125,6 +125,11 @@ async def test_introduce_gives_up_after_two_invalid_replies(store):
     assert store.public("a") is None
 
 
+async def test_a_failed_introduction_says_why_the_last_reply_was_rejected(store):
+    with pytest.raises(ProfileError, match=r"a did not produce a valid introduction: .*headline"):
+        await introduce(store, "a", FakeModel(["garbage", intro("Wren", headline="x" * 300)]))
+
+
 def test_pronouns_are_optional_and_kept_unless_given(store):
     assert store.set_public("a", "Wren", "h", "i").pronouns == ""
     assert store.set_public("a", "Wren", "h", "i", pronouns=" they/them ").pronouns == "they/them"
